@@ -9,13 +9,61 @@ import android.view.SurfaceHolder
 import androidx.palette.graphics.Palette
 import androidx.core.graphics.ColorUtils
 import kotlin.math.sin
+import kotlin.math.cos
 import android.util.Log
 import android.text.StaticLayout
 import android.text.Layout
 import android.text.TextPaint
 import android.view.Choreographer
+import android.graphics.RuntimeShader
 
 class LyricsWallpaperService : WallpaperService() {
+
+    companion object {
+        private const val AURORA_SHADER = """
+            uniform float2 uRes;
+            uniform float uTime;
+            uniform vec3 uColor1;
+            uniform vec3 uColor2;
+            uniform vec3 uColor3;
+            uniform vec3 uColor4;
+            uniform vec3 uColor5;
+
+            float getWeight(vec2 uv, vec2 p) {
+                float d = distance(uv, p);
+                // Quadratic falloff with epsilon buffer (0.15) to cap peak intensity
+                // and prevent "sharp spot" artifacts.
+                return 1.0 / (d * d + 0.15);
+            }
+
+            vec4 main(vec2 fragCoord) {
+                vec2 uv = fragCoord / uRes;
+                float t = uTime * 0.12;
+                
+                // 5 anchor points with independent orbital movement
+                vec2 p1 = vec2(0.5 + 0.45 * sin(t * 0.7 + 0.5), 0.5 + 0.35 * cos(t * 0.5 + 1.2));
+                vec2 p2 = vec2(0.5 + 0.35 * sin(t * 0.6 + 2.1), 0.5 + 0.45 * cos(t * 0.8 + 0.3));
+                vec2 p3 = vec2(0.5 + 0.45 * sin(t * 0.4 + 3.8), 0.5 + 0.35 * cos(t * 0.7 + 2.5));
+                vec2 p4 = vec2(0.5 + 0.35 * sin(t * 0.9 + 5.2), 0.5 + 0.45 * cos(t * 0.4 + 4.1));
+                vec2 p5 = vec2(0.5 + 0.45 * sin(t * 0.5 + 1.1), 0.5 + 0.35 * cos(t * 1.1 + 0.7));
+
+                float w1 = getWeight(uv, p1);
+                float w2 = getWeight(uv, p2);
+                float w3 = getWeight(uv, p3);
+                float w4 = getWeight(uv, p4);
+                float w5 = getWeight(uv, p5);
+
+                float totalW = w1 + w2 + w3 + w4 + w5;
+                vec3 col = (uColor1 * w1 + uColor2 * w2 + uColor3 * w3 + uColor4 * w4 + uColor5 * w5) / totalW;
+
+                // Subtle dithering to eliminate banding
+                float dither = fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453);
+                col += (dither - 0.5) * 0.018;
+
+                return vec4(col * 0.85, 1.0);
+            }
+        """
+    }
 
     override fun onCreateEngine(): Engine {
         return LyricsEngine()
@@ -46,6 +94,13 @@ class LyricsWallpaperService : WallpaperService() {
                 xfermode = PorterDuffXfermode(PorterDuff.Mode.SCREEN)
             } 
         }
+
+        private var runtimeShader: RuntimeShader? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            RuntimeShader(AURORA_SHADER)
+        } else {
+            null
+        }
+        private val shaderPaint = Paint()
         
         @Volatile
         private var targetColors = IntArray(5) { Color.BLACK }
@@ -211,15 +266,54 @@ class LyricsWallpaperService : WallpaperService() {
             val width = canvas.width.toFloat()
             val height = canvas.height.toFloat()
             val time = (System.currentTimeMillis() - startTime) / 1000f
-            canvas.drawColor(Color.BLACK)
-            auroraPaints.forEachIndexed { index, paint ->
-                val x = width / 2 + (width / 2.2f) * sin(time * (0.08f + index * 0.02f) + index * 1.4f)
-                val y = height / 2 + (height / 3.5f) * sin(time * (0.06f + index * 0.01f) + index * 2.1f)
-                val radius = width * (1.5f + 0.2f * sin(time * 0.05f + index))
-                paint.shader = RadialGradient(x, y, radius, intArrayOf(currentColors[index], Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
-                canvas.drawCircle(x, y, radius, paint)
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && runtimeShader != null) {
+                runtimeShader?.let { shader ->
+                    shader.setFloatUniform("uRes", width, height)
+                    shader.setFloatUniform("uTime", time)
+                    
+                    // Set color uniforms (converting Int to RGB floats 0-1)
+                    currentColors.forEachIndexed { i, color ->
+                        val r = Color.red(color) / 255f
+                        val g = Color.green(color) / 255f
+                        val b = Color.blue(color) / 255f
+                        shader.setFloatUniform("uColor${i + 1}", r, g, b)
+                    }
+                    
+                    shaderPaint.shader = shader
+                    canvas.drawRect(0f, 0f, width, height, shaderPaint)
+                }
+            } else {
+                // Fallback for API < 33: Spicy Lyrics Mesh Gradient (Radial Blobs)
+                canvas.drawColor(Color.BLACK)
+
+                auroraPaints.forEachIndexed { index, paint ->
+                    val t = time * 0.12f
+                    // Orbital movement matching the shader logic
+                    val phase = index * 1.5f
+                    val x = width * (0.5f + 0.4f * sin(t * (0.6f + index * 0.1f) + phase).toFloat())
+                    val y = height * (0.5f + 0.4f * cos(t * (0.5f + index * 0.15f) + phase + 1f).toFloat())
+                    
+                    // Large radius for deep, diffused blending
+                    val radius = width * 1.6f
+                    
+                    val color = currentColors[index]
+                    val transparentColor = Color.argb(0, Color.red(color), Color.green(color), Color.blue(color))
+                    
+                    val gradient = RadialGradient(
+                        x, y, radius,
+                        intArrayOf(color, transparentColor),
+                        floatArrayOf(0.15f, 0.95f), // Pushes the center color out to soften the core
+                        Shader.TileMode.CLAMP
+                    )
+                    
+                    paint.shader = gradient
+                    canvas.drawCircle(x, y, radius, paint)
+                }
             }
-            canvas.drawColor(Color.argb(100, 0, 0, 0))
+            
+            // Subtle darkening overlay for text legibility
+            canvas.drawColor(Color.argb(130, 0, 0, 0))
         }
 
         private fun drawLyrics(canvas: Canvas, dt: Float) {
