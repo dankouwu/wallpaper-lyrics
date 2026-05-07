@@ -33,6 +33,7 @@ class LyricsWallpaperService : WallpaperService() {
         private var currentLyrics: List<LyricLine>? = null
         private var activeLayouts: List<StaticLayout>? = null
         private var inactiveLayouts: List<StaticLayout>? = null
+        private var lineOffsets: FloatArray? = null 
         
         private var currentTitle: String? = null
         private var currentArtist: String? = null
@@ -54,24 +55,29 @@ class LyricsWallpaperService : WallpaperService() {
             color = Color.WHITE
             textSize = 96f
             typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                Typeface.create(null, 1000, false)
+                Typeface.create(Typeface.SANS_SERIF, 900, false)
             } else {
-                Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                Typeface.DEFAULT_BOLD
             }
             isAntiAlias = true
-            setShadowLayer(10f, 0f, 0f, Color.argb(70, 0, 0, 0))
+            setShadowLayer(10f, 0f, 0f, Color.argb(80, 0, 0, 0))
         }
 
         private val inactivePaint = TextPaint().apply {
             color = Color.WHITE
             textSize = 96f
             typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                Typeface.create(null, 800, false)
+                Typeface.create(Typeface.SANS_SERIF, 600, false)
             } else {
-                Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                Typeface.DEFAULT
             }
             isAntiAlias = true
             alpha = (255 * 0.35f).toInt()
+        }
+        
+        private val artistPaint = TextPaint(inactivePaint).apply {
+            textSize = 62f
+            alpha = (255 * 0.5f).toInt()
         }
 
         private var scrollY = 0f
@@ -121,6 +127,7 @@ class LyricsWallpaperService : WallpaperService() {
                     currentLyrics = null 
                     activeLayouts = null
                     inactiveLayouts = null
+                    lineOffsets = null
                     lyricsManager.fetchLyrics(title, artist ?: "") { lines ->
                         currentLyrics = lines
                     }
@@ -141,8 +148,8 @@ class LyricsWallpaperService : WallpaperService() {
                                     var color = swatches[idx].rgb
                                     val hsv = FloatArray(3)
                                     Color.colorToHSV(color, hsv)
-                                    hsv[1] = (hsv[1] * 1.1f).coerceIn(0.1f, 1.0f)
-                                    hsv[2] = (hsv[2] * 0.9f).coerceIn(0.1f, 1.0f)
+                                    hsv[1] = (hsv[1] * 1.15f).coerceIn(0.1f, 1.0f)
+                                    hsv[2] = (hsv[2] * 1.05f).coerceIn(0.1f, 1.0f)
                                     newColors[i] = Color.HSVToColor(hsv)
                                 }
                             } else {
@@ -206,9 +213,9 @@ class LyricsWallpaperService : WallpaperService() {
             val time = (System.currentTimeMillis() - startTime) / 1000f
             canvas.drawColor(Color.BLACK)
             auroraPaints.forEachIndexed { index, paint ->
-                val x = width / 2 + (width / 2.0f) * sin(time * (0.08f + index * 0.01f) + index * 1.2f)
-                val y = height / 2 + (height / 3.0f) * sin(time * (0.06f + index * 0.008f) + index * 1.8f)
-                val radius = width * (1.4f + 0.1f * sin(time * 0.04f + index))
+                val x = width / 2 + (width / 2.2f) * sin(time * (0.08f + index * 0.02f) + index * 1.4f)
+                val y = height / 2 + (height / 3.5f) * sin(time * (0.06f + index * 0.01f) + index * 2.1f)
+                val radius = width * (1.5f + 0.2f * sin(time * 0.05f + index))
                 paint.shader = RadialGradient(x, y, radius, intArrayOf(currentColors[index], Color.TRANSPARENT), null, Shader.TileMode.CLAMP)
                 canvas.drawCircle(x, y, radius, paint)
             }
@@ -225,50 +232,60 @@ class LyricsWallpaperService : WallpaperService() {
             val centerY = height / 2
 
             val lines = currentLyrics
-            if (lines != null && activeLayouts == null) {
+            if (lines != null && (activeLayouts == null || lineOffsets == null)) {
                 activeLayouts = lines.map { line ->
                     StaticLayout.Builder.obtain(line.content, 0, line.content.length, activePaint, maxTextWidth)
                         .setAlignment(Layout.Alignment.ALIGN_CENTER)
-                        .setLineSpacing(0f, 1.1f)
+                        .setLineSpacing(0f, 1.15f)
                         .build()
                 }
                 inactiveLayouts = lines.map { line ->
                     StaticLayout.Builder.obtain(line.content, 0, line.content.length, inactivePaint, maxTextWidth)
                         .setAlignment(Layout.Alignment.ALIGN_CENTER)
-                        .setLineSpacing(0f, 1.1f)
+                        .setLineSpacing(0f, 1.15f)
                         .build()
                 }
+                
+                var currentY = 0f
+                val offsets = FloatArray(lines.size)
+                for (i in lines.indices) {
+                    val h = activeLayouts!![i].height
+                    offsets[i] = currentY + h / 2f
+                    currentY += h + 80f
+                }
+                lineOffsets = offsets
             }
 
             if (timeSinceSongStart < 5000 || lines.isNullOrEmpty()) {
                 val title = currentTitle ?: "No Music Playing"
                 drawSimpleText(canvas, title, centerX, centerY - 80, maxTextWidth, activePaint)
                 currentArtist?.let {
-                    drawSimpleText(canvas, it, centerX, centerY + 100, maxTextWidth, inactivePaint)
+                    drawSimpleText(canvas, it, centerX, centerY + 110, maxTextWidth, artistPaint)
                 }
                 return
             }
 
             val aLayouts = activeLayouts ?: return
             val iLayouts = inactiveLayouts ?: return
+            val offsets = lineOffsets ?: return
+            
             var currentIndex = lines.indexOfLast { it.startTime <= position }
             if (currentIndex == -1) currentIndex = 0
             
-            val lineHeight = 340f
-            targetScrollY = currentIndex * lineHeight
-            scrollY += (targetScrollY - scrollY) * (dt * 7.0f).coerceAtMost(1.0f)
+            targetScrollY = offsets[currentIndex]
+            scrollY += (targetScrollY - scrollY) * (dt * 8.0f).coerceAtMost(1.0f)
 
             canvas.save()
-            canvas.translate(0f, -scrollY)
-            val visibleRange = 6
+            canvas.translate(0f, centerY - scrollY)
+            val visibleRange = 7
             for (i in (currentIndex - visibleRange)..(currentIndex + visibleRange)) {
                 if (i in aLayouts.indices) {
                     val isCurrent = i == currentIndex
                     val layout = if (isCurrent) aLayouts[i] else iLayouts[i]
                     canvas.save()
-                    val lineY = centerY + (i * lineHeight)
-                    if (!isCurrent) canvas.scale(0.95f, 0.95f, centerX, lineY)
-                    canvas.translate(centerX - maxTextWidth / 2f, lineY - (layout.height / 2f))
+                    val lineCenterY = offsets[i]
+                    if (!isCurrent) canvas.scale(0.95f, 0.95f, centerX, lineCenterY)
+                    canvas.translate(centerX - maxTextWidth / 2f, lineCenterY - (layout.height / 2f))
                     layout.draw(canvas)
                     canvas.restore()
                 }
