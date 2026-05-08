@@ -10,6 +10,7 @@ import androidx.palette.graphics.Palette
 import androidx.core.graphics.ColorUtils
 import kotlin.math.sin
 import kotlin.math.cos
+import androidx.core.content.res.ResourcesCompat
 import android.util.Log
 import android.text.StaticLayout
 import android.text.Layout
@@ -85,6 +86,8 @@ class LyricsWallpaperService : WallpaperService() {
         
         private var currentTitle: String? = null
         private var currentArtist: String? = null
+        private var titleLayout: StaticLayout? = null
+        private var artistLayout: StaticLayout? = null
         private var songStartTime = 0L
         
         private val backgroundPaint = Paint().apply { color = Color.BLACK }
@@ -109,23 +112,17 @@ class LyricsWallpaperService : WallpaperService() {
         private val activePaint = TextPaint().apply {
             color = Color.WHITE
             textSize = 96f
-            typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                Typeface.create(Typeface.SANS_SERIF, 900, false)
-            } else {
-                Typeface.DEFAULT_BOLD
-            }
+            typeface = ResourcesCompat.getFont(this@LyricsWallpaperService, R.font.inter_black)
             isAntiAlias = true
+            letterSpacing = -0.02f
+            alpha = 230
             setShadowLayer(10f, 0f, 0f, Color.argb(80, 0, 0, 0))
         }
 
         private val inactivePaint = TextPaint().apply {
             color = Color.WHITE
             textSize = 96f
-            typeface = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                Typeface.create(Typeface.SANS_SERIF, 600, false)
-            } else {
-                Typeface.DEFAULT
-            }
+            typeface = ResourcesCompat.getFont(this@LyricsWallpaperService, R.font.inter_bold)
             isAntiAlias = true
             alpha = (255 * 0.35f).toInt()
         }
@@ -183,6 +180,8 @@ class LyricsWallpaperService : WallpaperService() {
                     activeLayouts = null
                     inactiveLayouts = null
                     lineOffsets = null
+                    titleLayout = null
+                    artistLayout = null
                     lyricsManager.fetchLyrics(title, artist ?: "") { lines ->
                         currentLyrics = lines
                     }
@@ -327,35 +326,76 @@ class LyricsWallpaperService : WallpaperService() {
 
             val lines = currentLyrics
             if (lines != null && (activeLayouts == null || lineOffsets == null)) {
-                activeLayouts = lines.map { line ->
-                    StaticLayout.Builder.obtain(line.content, 0, line.content.length, activePaint, maxTextWidth)
+                val aLayouts = mutableListOf<StaticLayout>()
+                val iLayouts = mutableListOf<StaticLayout>()
+                
+                lines.forEach { line ->
+                    // 1. Calculate the active layout (the "widest" one)
+                    val activeLayout = StaticLayout.Builder.obtain(line.content, 0, line.content.length, activePaint, maxTextWidth)
                         .setAlignment(Layout.Alignment.ALIGN_CENTER)
                         .setLineSpacing(0f, 1.15f)
                         .build()
-                }
-                inactiveLayouts = lines.map { line ->
-                    StaticLayout.Builder.obtain(line.content, 0, line.content.length, inactivePaint, maxTextWidth)
+                    aLayouts.add(activeLayout)
+
+                    // 2. Extract the line breaks from the active layout to "lock" the inactive one
+                    val lockedContent = StringBuilder()
+                    for (i in 0 until activeLayout.lineCount) {
+                        val start = activeLayout.getLineStart(i)
+                        val end = activeLayout.getLineEnd(i)
+                        var lineText = line.content.substring(start, end)
+                        lockedContent.append(lineText)
+                        // If the line doesn't already end with a newline and isn't the last line, add one
+                        if (i < activeLayout.lineCount - 1 && !lineText.endsWith("\n")) {
+                            lockedContent.append("\n")
+                        }
+                    }
+
+                    // 3. Create the inactive layout using the locked content
+                    // We use a slightly larger width constraint to ensure it doesn't wrap again
+                    val inactiveLayout = StaticLayout.Builder.obtain(lockedContent, 0, lockedContent.length, inactivePaint, maxTextWidth + 50)
                         .setAlignment(Layout.Alignment.ALIGN_CENTER)
                         .setLineSpacing(0f, 1.15f)
                         .build()
+                    iLayouts.add(inactiveLayout)
                 }
+                
+                activeLayouts = aLayouts
+                inactiveLayouts = iLayouts
                 
                 var currentY = 0f
                 val offsets = FloatArray(lines.size)
                 for (i in lines.indices) {
                     val h = activeLayouts!![i].height
                     offsets[i] = currentY + h / 2f
-                    currentY += h + 80f
+                    currentY += h + 26f 
                 }
                 lineOffsets = offsets
             }
 
             if (timeSinceSongStart < 5000 || lines.isNullOrEmpty()) {
-                val title = currentTitle ?: "No Music Playing"
-                drawSimpleText(canvas, title, centerX, centerY - 80, maxTextWidth, activePaint)
-                currentArtist?.let {
-                    drawSimpleText(canvas, it, centerX, centerY + 110, maxTextWidth, artistPaint)
+                if (titleLayout == null || artistLayout == null) {
+                    val title = currentTitle ?: "No Music Playing"
+                    titleLayout = StaticLayout.Builder.obtain(title, 0, title.length, activePaint, maxTextWidth)
+                        .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                        .build()
+                    
+                    val artist = currentArtist ?: ""
+                    artistLayout = StaticLayout.Builder.obtain(artist, 0, artist.length, artistPaint, maxTextWidth)
+                        .setAlignment(Layout.Alignment.ALIGN_CENTER)
+                        .build()
                 }
+
+                val tLayout = titleLayout!!
+                val aLayout = artistLayout!!
+                val metadataGap = 15f
+                val totalMetadataHeight = tLayout.height + metadataGap + aLayout.height
+                
+                // Position title and artist based on their actual heights
+                val titleCenterY = centerY - (totalMetadataHeight / 2f) + (tLayout.height / 2f)
+                val artistCenterY = centerY + (totalMetadataHeight / 2f) - (aLayout.height / 2f)
+
+                drawSimpleLayout(canvas, tLayout, centerX, titleCenterY, maxTextWidth)
+                drawSimpleLayout(canvas, aLayout, centerX, artistCenterY, maxTextWidth)
                 return
             }
 
@@ -371,7 +411,7 @@ class LyricsWallpaperService : WallpaperService() {
 
             canvas.save()
             canvas.translate(0f, centerY - scrollY)
-            val visibleRange = 7
+            val visibleRange = 12 // Increased range as lines are closer
             for (i in (currentIndex - visibleRange)..(currentIndex + visibleRange)) {
                 if (i in aLayouts.indices) {
                     val isCurrent = i == currentIndex
@@ -385,12 +425,25 @@ class LyricsWallpaperService : WallpaperService() {
                 }
             }
             canvas.restore()
+
+            // Draw fade-out gradients (Top and Bottom)
+            val fadeHeight = height * 0.25f
+            val fadePaint = Paint()
+
+            // Top fade
+            fadePaint.shader = LinearGradient(0f, 0f, 0f, fadeHeight, 
+                intArrayOf(Color.BLACK, Color.TRANSPARENT), 
+                null, Shader.TileMode.CLAMP)
+            canvas.drawRect(0f, 0f, width, fadeHeight, fadePaint)
+
+            // Bottom fade
+            fadePaint.shader = LinearGradient(0f, height - fadeHeight, 0f, height, 
+                intArrayOf(Color.TRANSPARENT, Color.BLACK), 
+                null, Shader.TileMode.CLAMP)
+            canvas.drawRect(0f, height - fadeHeight, width, height, fadePaint)
         }
 
-        private fun drawSimpleText(canvas: Canvas, text: String, x: Float, y: Float, maxWidth: Int, paint: TextPaint) {
-            val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, maxWidth)
-                .setAlignment(Layout.Alignment.ALIGN_CENTER)
-                .build()
+        private fun drawSimpleLayout(canvas: Canvas, layout: StaticLayout, x: Float, y: Float, maxWidth: Int) {
             canvas.save()
             canvas.translate(x - maxWidth / 2f, y - (layout.height / 2f))
             layout.draw(canvas)
