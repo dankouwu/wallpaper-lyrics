@@ -1,5 +1,6 @@
 package com.dnk.wallpaperlyrics
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
@@ -8,11 +9,15 @@ import android.widget.LinearLayout
 import android.view.Gravity
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
+import android.widget.TextView
 
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+
         try {
             val layout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
@@ -45,11 +50,35 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            val themeSwitchContainer = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 40, 0, 0)
+            }
+
+            val themeText = TextView(this).apply {
+                text = "Dynamic System Theming (Material You)"
+                textSize = 16f
+            }
+
+            val themeSwitch = SwitchCompat(this).apply {
+                textOn = ""
+                textOff = ""
+                isChecked = prefs.getBoolean("dynamic_theming", false)
+                setOnCheckedChangeListener { _, isChecked ->
+                    prefs.edit().putBoolean("dynamic_theming", isChecked).apply()
+                }
+                setPadding(30, 0, 0, 0)
+            }
+
+            themeSwitchContainer.addView(themeText)
+            themeSwitchContainer.addView(themeSwitch)
+
             layout.addView(btn)
             layout.addView(btnWallpaper)
+            layout.addView(themeSwitchContainer)
             setContentView(layout)
         } catch (e: Exception) {
-            // If it still crashes, this might catch it, though unlikely in onCreate
             e.printStackTrace()
         }
     }
