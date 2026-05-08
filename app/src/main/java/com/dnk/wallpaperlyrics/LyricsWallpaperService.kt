@@ -1,6 +1,8 @@
 package com.dnk.wallpaperlyrics
 
 import android.graphics.*
+import android.app.WallpaperColors
+import android.content.Context
 import android.media.MediaMetadata
 import android.media.session.PlaybackState
 import android.os.Build
@@ -210,12 +212,30 @@ class LyricsWallpaperService : WallpaperService() {
                                 newColors.fill(Color.BLACK)
                             }
                             targetColors = newColors
-                        }
-                    }
-                }
-            } catch (e: Exception) {
+
+                            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                            val isEnabled = prefs.getBoolean("dynamic_theming", false)
+
+                            if (isEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                                notifyColorsChanged()
+                            }
+                            }
+                            }
+                            }            } catch (e: Exception) {
                 Log.e("Wallpaper", "Metadata error", e)
             }
+        }
+
+        override fun onComputeColors(): WallpaperColors? {
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            if (prefs.getBoolean("dynamic_theming", false) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                // Use the primary, secondary, and tertiary colors from the sampled palette
+                val primary = Color.valueOf(targetColors[0])
+                val secondary = Color.valueOf(targetColors[2])
+                val tertiary = Color.valueOf(targetColors[4])
+                return WallpaperColors(primary, secondary, tertiary)
+            }
+            return null
         }
 
         private fun onPlaybackStateChanged(state: PlaybackState?) {}
