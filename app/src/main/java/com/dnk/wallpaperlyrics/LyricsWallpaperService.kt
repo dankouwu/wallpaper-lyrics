@@ -1,6 +1,8 @@
 package com.dnk.wallpaperlyrics
 
 import android.graphics.*
+import android.graphics.RenderEffect
+import android.graphics.Paint
 import android.app.WallpaperColors
 import android.content.Context
 import android.media.MediaMetadata
@@ -23,6 +25,41 @@ import android.graphics.RuntimeShader
 class LyricsWallpaperService : WallpaperService() {
 
     companion object {
+        private const val BLUR_SHADER = """
+            uniform shader content;
+            uniform float2 uRes;
+            
+            vec4 main(vec2 fragCoord) {
+                vec2 uv = fragCoord / uRes;
+                float dist = 0.0;
+                
+                // Calculate blur strength based on Y position (top 22% and bottom 22%)
+                if (uv.y < 0.22) {
+                    dist = (0.22 - uv.y) / 0.22;
+                } else if (uv.y > 0.78) {
+                    dist = (uv.y - 0.78) / 0.22;
+                }
+                
+                if (dist <= 0.0) return content.eval(fragCoord);
+                
+                // Gaussian-ish blur sampling
+                float blurSize = dist * 20.0; 
+                vec4 col = vec4(0.0);
+                float total = 0.0;
+                
+                for (float x = -2.0; x <= 2.0; x++) {
+                    for (float y = -2.0; y <= 2.0; y++) {
+                        float weight = 1.0 - (length(vec2(x, y)) / 3.0);
+                        if (weight > 0.0) {
+                            col += content.eval(fragCoord + vec2(x, y) * blurSize * 0.5) * weight;
+                            total += weight;
+                        }
+                    }
+                }
+                return col / total;
+            }
+        """
+
         private const val AURORA_SHADER = """
             uniform float2 uRes;
             uniform float uTime;
@@ -34,9 +71,17 @@ class LyricsWallpaperService : WallpaperService() {
 
             float getWeight(vec2 uv, vec2 p) {
                 float d = distance(uv, p);
-                // Quadratic falloff with epsilon buffer (0.15) to cap peak intensity
-                // and prevent "sharp spot" artifacts.
-                return 1.0 / (d * d + 0.15);
+                
+                // Restored to a more natural, balanced softness
+                float blurRegion = 0.22;
+                float softness = 0.15;
+                if (uv.y < blurRegion) {
+                    softness += (blurRegion - uv.y) * 3.0; 
+                } else if (uv.y > (1.0 - blurRegion)) {
+                    softness += (uv.y - (1.0 - blurRegion)) * 3.0;
+                }
+                
+                return 1.0 / (d * d + softness);
             }
 
             vec4 main(vec2 fragCoord) {
@@ -63,7 +108,7 @@ class LyricsWallpaperService : WallpaperService() {
                 float dither = fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453);
                 col += (dither - 0.5) * 0.018;
 
-                return vec4(col * 0.85, 1.0);
+                return vec4(col, 1.0);
             }
         """
     }
@@ -91,7 +136,8 @@ class LyricsWallpaperService : WallpaperService() {
         private var titleLayout: StaticLayout? = null
         private var artistLayout: StaticLayout? = null
         private var songStartTime = 0L
-        
+        private var lastWatchdogCheck = 0L
+
         private val backgroundPaint = Paint().apply { color = Color.BLACK }
         private val auroraPaints = List(5) { 
             Paint().apply { 
@@ -105,6 +151,13 @@ class LyricsWallpaperService : WallpaperService() {
         } else {
             null
         }
+
+        private var blurShader: RuntimeShader? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            RuntimeShader(BLUR_SHADER)
+        } else {
+            null
+        }
+
         private val shaderPaint = Paint()
         
         @Volatile
@@ -127,6 +180,9 @@ class LyricsWallpaperService : WallpaperService() {
             typeface = ResourcesCompat.getFont(this@LyricsWallpaperService, R.font.inter_bold)
             isAntiAlias = true
             alpha = (255 * 0.35f).toInt()
+            // Subtle stroke to simulate "ExtraBold" (between Bold 700 and Black 900)
+            style = Paint.Style.FILL_AND_STROKE
+            strokeWidth = 1.5f
         }
         
         private val artistPaint = TextPaint(inactivePaint).apply {
@@ -170,25 +226,30 @@ class LyricsWallpaperService : WallpaperService() {
 
         private fun onMetadataChanged(metadata: MediaMetadata?) {
             try {
-                val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
-                val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)
+                val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)?.trim()
+                val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST)?.trim()
                 val art = metadata?.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART) ?: metadata?.getBitmap(MediaMetadata.METADATA_KEY_ART)
 
-                if (title != null && (title != currentTitle || artist != currentArtist)) {
+                if (!title.isNullOrBlank() && (title != currentTitle || artist != currentArtist)) {
                     currentTitle = title
                     currentArtist = artist
                     songStartTime = System.currentTimeMillis()
-                    currentLyrics = null 
+
+                    // Reset everything for the new track
+                    currentLyrics = null
                     activeLayouts = null
                     inactiveLayouts = null
                     lineOffsets = null
                     titleLayout = null
                     artistLayout = null
+
                     lyricsManager.fetchLyrics(title, artist ?: "") { lines ->
-                        currentLyrics = lines
+                        // Only update if this response is still for the current track
+                        if (currentTitle == title) {
+                            currentLyrics = lines
+                        }
                     }
                 }
-
                 art?.let {
                     Palette.from(it).maximumColorCount(24).generate { palette ->
                         palette?.let { p ->
@@ -204,8 +265,8 @@ class LyricsWallpaperService : WallpaperService() {
                                     var color = swatches[idx].rgb
                                     val hsv = FloatArray(3)
                                     Color.colorToHSV(color, hsv)
-                                    hsv[1] = (hsv[1] * 1.15f).coerceIn(0.1f, 1.0f)
-                                    hsv[2] = (hsv[2] * 1.05f).coerceIn(0.1f, 1.0f)
+                                    hsv[1] = (hsv[1] * 1.35f).coerceIn(0.1f, 1.0f)
+                                    hsv[2] = (hsv[2] * 1.25f).coerceIn(0.1f, 1.0f)
                                     newColors[i] = Color.HSVToColor(hsv)
                                 }
                             } else {
@@ -319,10 +380,20 @@ class LyricsWallpaperService : WallpaperService() {
                     val color = currentColors[index]
                     val transparentColor = Color.argb(0, Color.red(color), Color.green(color), Color.blue(color))
                     
+                    // Dynamic softness for fallback path: restored to natural level
+                    var innerOffset = 0.15f
+                    val uvY = y / height
+                    val blurRegion = 0.22f
+                    if (uvY < blurRegion) {
+                        innerOffset += (blurRegion - uvY) * 0.8f 
+                    } else if (uvY > (1.0f - blurRegion)) {
+                        innerOffset += (uvY - (1.0f - blurRegion)) * 0.8f
+                    }
+
                     val gradient = RadialGradient(
                         x, y, radius,
                         intArrayOf(color, transparentColor),
-                        floatArrayOf(0.15f, 0.95f), // Pushes the center color out to soften the core
+                        floatArrayOf(innerOffset.coerceAtMost(0.85f), 0.96f), 
                         Shader.TileMode.CLAMP
                     )
                     
@@ -332,7 +403,7 @@ class LyricsWallpaperService : WallpaperService() {
             }
             
             // Subtle darkening overlay for text legibility
-            canvas.drawColor(Color.argb(130, 0, 0, 0))
+            canvas.drawColor(Color.argb(80, 0, 0, 0))
         }
 
         private fun drawLyrics(canvas: Canvas, dt: Float) {
@@ -350,6 +421,17 @@ class LyricsWallpaperService : WallpaperService() {
                 val iLayouts = mutableListOf<StaticLayout>()
                 
                 lines.forEach { line ->
+                    val isInstrumental = line.content == "♪"
+                    
+                    // Use larger font for the instrumental symbol
+                    if (isInstrumental) {
+                        activePaint.textSize = 120f
+                        inactivePaint.textSize = 120f
+                    } else {
+                        activePaint.textSize = 96f
+                        inactivePaint.textSize = 96f
+                    }
+
                     // 1. Calculate the active layout (the "widest" one)
                     val activeLayout = StaticLayout.Builder.obtain(line.content, 0, line.content.length, activePaint, maxTextWidth)
                         .setAlignment(Layout.Alignment.ALIGN_CENTER)
@@ -371,13 +453,16 @@ class LyricsWallpaperService : WallpaperService() {
                     }
 
                     // 3. Create the inactive layout using the locked content
-                    // We use a slightly larger width constraint to ensure it doesn't wrap again
                     val inactiveLayout = StaticLayout.Builder.obtain(lockedContent, 0, lockedContent.length, inactivePaint, maxTextWidth + 50)
                         .setAlignment(Layout.Alignment.ALIGN_CENTER)
                         .setLineSpacing(0f, 1.15f)
                         .build()
                     iLayouts.add(inactiveLayout)
                 }
+                
+                // Reset sizes to default after processing
+                activePaint.textSize = 96f
+                inactivePaint.textSize = 96f
                 
                 activeLayouts = aLayouts
                 inactiveLayouts = iLayouts
@@ -392,7 +477,23 @@ class LyricsWallpaperService : WallpaperService() {
                 lineOffsets = offsets
             }
 
-            if (timeSinceSongStart < 5000 || lines.isNullOrEmpty()) {
+            // Watchdog: If we've been on the metadata screen for >4s and still have no lyrics, 
+            // but have a valid track, try fetching again in case the request was lost.
+            val now = System.currentTimeMillis()
+            if (currentLyrics == null && !currentTitle.isNullOrBlank() && (now - songStartTime > 4000)) {
+                if (now - lastWatchdogCheck > 5000) { // Don't spam, check every 5s
+                    lastWatchdogCheck = now
+                    currentTitle?.let { title ->
+                        lyricsManager.fetchLyrics(title, currentArtist ?: "") { lines ->
+                            if (currentTitle == title && lines != null) {
+                                currentLyrics = lines
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (timeSinceSongStart < 3000 || lines.isNullOrEmpty()) {
                 if (titleLayout == null || artistLayout == null) {
                     val title = currentTitle ?: "No Music Playing"
                     titleLayout = StaticLayout.Builder.obtain(title, 0, title.length, activePaint, maxTextWidth)
@@ -407,7 +508,7 @@ class LyricsWallpaperService : WallpaperService() {
 
                 val tLayout = titleLayout!!
                 val aLayout = artistLayout!!
-                val metadataGap = 15f
+                val metadataGap = 10f
                 val totalMetadataHeight = tLayout.height + metadataGap + aLayout.height
                 
                 // Position title and artist based on their actual heights
@@ -439,7 +540,8 @@ class LyricsWallpaperService : WallpaperService() {
                     canvas.save()
                     val lineCenterY = offsets[i]
                     if (!isCurrent) canvas.scale(0.95f, 0.95f, centerX, lineCenterY)
-                    canvas.translate(centerX - maxTextWidth / 2f, lineCenterY - (layout.height / 2f))
+                    // Use layout.width to ensure both active and inactive layouts are perfectly centered
+                    canvas.translate(centerX - layout.width / 2f, lineCenterY - (layout.height / 2f))
                     layout.draw(canvas)
                     canvas.restore()
                 }
@@ -447,6 +549,10 @@ class LyricsWallpaperService : WallpaperService() {
             canvas.restore()
 
             // Draw fade-out gradients (Top and Bottom)
+            drawFadeGradients(canvas, width, height)
+        }
+
+        private fun drawFadeGradients(canvas: Canvas, width: Float, height: Float) {
             val fadeHeight = height * 0.25f
             val fadePaint = Paint()
 
