@@ -9,17 +9,21 @@ import java.io.IOException
 import java.net.URLEncoder
 
 data class LyricLine(
-    val startTime: Long, // in milliseconds
-    val content: String
+    val startTime: Long, 
+    val endTime: Long,
+    val content: String,
+    val isInstrumental: Boolean = false
 )
 
 data class LyricsResponse(
     val plainLyrics: String?,
-    val syncedLyrics: String?
+    val syncedLyrics: String?,
+    val enhancedSyncedLyrics: String?,
+    val duration: Double?
 )
 
 class LyricsManager(private val context: Context) {
-    private val client = OkHttpClient.Builder()
+    val client = OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .build()
@@ -27,11 +31,44 @@ class LyricsManager(private val context: Context) {
     private val cacheDir = File(context.cacheDir, "lyrics_cache").apply { mkdirs() }
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
+    fun fetchBitmap(url: String, callback: (android.graphics.Bitmap?) -> Unit) {
+        if (url.startsWith("content://")) {
+            try {
+                val uri = android.net.Uri.parse(url)
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                callback(bitmap)
+            } catch (e: Exception) {
+                Log.e("LyricsManager", "Failed to fetch content URI", e)
+                callback(null)
+            }
+            return
+        }
+
+        val request = Request.Builder().url(url).build()
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                callback(null)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.body?.use { body ->
+                    try {
+                        val bytes = body.bytes()
+                        val bitmap = android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                        callback(bitmap)
+                    } catch (e: Exception) {
+                        callback(null)
+                    }
+                } ?: callback(null)
+            }
+        })
+    }
+
     fun fetchLyrics(title: String, artist: String, attempt: Int = 1, callback: (List<LyricLine>?) -> Unit) {
         val cacheKey = "${title}_${artist}".hashCode().toString()
         val cacheFile = File(cacheDir, "$cacheKey.json")
         
-        // Try local cache first (Only on first attempt)
         if (attempt == 1 && cacheFile.exists()) {
             try {
                 val json = cacheFile.readText()
@@ -48,7 +85,7 @@ class LyricsManager(private val context: Context) {
 
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "WallpaperLyricsApp/1.0 (Android)") // Help prevent generic rate limits
+            .header("User-Agent", "WallpaperLyricsApp/1.0 (Android)") 
             .build()
 
         client.newCall(request).enqueue(object : Callback {
@@ -70,7 +107,6 @@ class LyricsManager(private val context: Context) {
                         retryOrNull(title, artist, attempt, callback)
                     }
                 } else if (response.code == 429 || response.code >= 500) {
-                    // Rate limit or server error - definitely retry
                     retryOrNull(title, artist, attempt, callback)
                 } else {
                     callback(null)
@@ -81,7 +117,7 @@ class LyricsManager(private val context: Context) {
 
     private fun retryOrNull(title: String, artist: String, attempt: Int, callback: (List<LyricLine>?) -> Unit) {
         if (attempt < 3) {
-            val delay = attempt * 2000L // 2s, 4s
+            val delay = attempt * 2000L 
             handler.postDelayed({
                 fetchLyrics(title, artist, attempt + 1, callback)
             }, delay)
@@ -92,6 +128,8 @@ class LyricsManager(private val context: Context) {
 
     private fun parseLyrics(res: LyricsResponse): List<LyricLine>? {
         val rawLines = mutableListOf<LyricLine>()
+        
+        // Priority: syncedLyrics (ELRC support can be added by parsing res.enhancedSyncedLyrics)
         if (!res.syncedLyrics.isNullOrBlank()) {
             val regex = Regex("\\[(\\d+):(\\d+)\\.(\\d+)\\](.*)")
             res.syncedLyrics.lines().forEach { line ->
@@ -100,47 +138,75 @@ class LyricsManager(private val context: Context) {
                     val min = match.groupValues[1].toLong()
                     val sec = match.groupValues[2].toLong()
                     val ms = match.groupValues[3].padEnd(3, '0').take(3).toLong()
-                    val content = match.groupValues[4].trim()
+                    var content = match.groupValues[4].trim()
+                    
+                    val isMarker = content.contains("♪") || 
+                                 content.contains("(Instrumental)", true) || 
+                                 content.contains("[Instrumental]", true)
+                    
+                    if (isMarker) content = "♪"
+                    
                     val startTime = (min * 60 + sec) * 1000 + ms
-                    if (content.isNotBlank()) rawLines.add(LyricLine(startTime, content))
+                    // Convert empty content into a marker if it's likely a pause
+                    val finalContent = if (content.isEmpty()) "♪" else content
+                    rawLines.add(LyricLine(startTime, 0, finalContent, finalContent == "♪"))
                 }
             }
-        } else if (!res.plainLyrics.isNullOrBlank()) {
-            rawLines.addAll(res.plainLyrics.lines()
-                .filter { it.isNotBlank() }
-                .mapIndexed { index, content -> LyricLine(index * 4000L, content) })
         }
 
         if (rawLines.isEmpty()) return null
 
-        // Inject Instrumental Markers (The "Apple Music" Dots)
-        val processedLines = mutableListOf<LyricLine>()
+        val songDurationMs = (res.duration?.times(1000)?.toLong()) ?: (rawLines.last().startTime + 10000)
+        val lineDensity = rawLines.size.toFloat() / (songDurationMs / 1000f)
         
-        // 1. Check for Intro Gap (Singer starts late)
-        if (rawLines[0].startTime > 8000) {
-            processedLines.add(LyricLine(3000, "♪"))
+        val gapThreshold = when {
+            lineDensity > 0.5 -> 4000L  
+            lineDensity < 0.2 -> 10000L 
+            else -> 7000L               
         }
 
-        // 2. Iterate and check for bridges/solos using character-aware estimation
+        val processedLines = mutableListOf<LyricLine>()
+        
         for (i in 0 until rawLines.size) {
-            processedLines.add(rawLines[i])
-            if (i < rawLines.size - 1) {
-                val currentLine = rawLines[i]
-                val nextLine = rawLines[i+1]
-                
-                val timeGap = nextLine.startTime - currentLine.startTime
-                // Estimate singing duration: ~250ms per character, capped at 8 seconds
-                val estimatedSingingDuration = (currentLine.content.length * 250L).coerceAtMost(8000L)
-                val trueSilence = timeGap - estimatedSingingDuration
-                
-                // Only inject a note if there's more than 12 seconds of true silence
-                if (trueSilence > 12000) {
-                    // Place the note 2 seconds after the estimated end of the lyric
-                    processedLines.add(LyricLine(currentLine.startTime + estimatedSingingDuration + 2000, "♪"))
+            val currentRaw = rawLines[i]
+            val nextRaw = if (i < rawLines.size - 1) rawLines[i + 1] else null
+            
+            // If this line is a marker, its duration is until the next line starts
+            val estimatedDuration = if (currentRaw.isInstrumental) {
+                nextRaw?.let { it.startTime - currentRaw.startTime } ?: 4000L
+            } else {
+                (currentRaw.content.length * 100L + 500L).coerceIn(2000L, 8000L)
+            }
+            
+            val endTime = nextRaw?.startTime?.let { Math.min(currentRaw.startTime + estimatedDuration, it - 200L) } 
+                          ?: (currentRaw.startTime + estimatedDuration)
+            
+            val currentLine = currentRaw.copy(endTime = endTime)
+            processedLines.add(currentLine)
+
+            // Step B: Dynamic Gap Heuristic (only if next line isn't already a marker)
+            if (nextRaw != null && !nextRaw.isInstrumental) {
+                val trueSilence = nextRaw.startTime - currentLine.endTime
+                if (trueSilence > gapThreshold) {
+                    processedLines.add(LyricLine(
+                        startTime = currentLine.endTime + 200L,
+                        endTime = nextRaw.startTime - 200L,
+                        content = "♪",
+                        isInstrumental = true
+                    ))
                 }
             }
         }
         
+        if (processedLines.first().startTime > 5000) {
+            processedLines.add(0, LyricLine(
+                startTime = 0,
+                endTime = processedLines.first().startTime - 500L,
+                content = "♪",
+                isInstrumental = true
+            ))
+        }
+
         return processedLines
     }
 }
