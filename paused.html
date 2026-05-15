@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Wallpaper - Polished</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            /* Adjust these colors to match the vibe of the song */
+            --accent-bg: #0f63ab; 
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            color: white;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        .screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100%;
+            max-width: 430px; /* Standard Pro Max width */
+            background: linear-gradient(135deg, var(--accent-bg) 0%, #000 80%);
+            padding: 2em;
+            text-align: center;
+        }
+
+        .album-wrapper {
+            width: 100%;
+            margin-bottom: 2.5em;
+            display: flex;
+            justify-content: center;
+        }
+
+        .album {
+            width: 85%;
+            aspect-ratio: 1 / 1;
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(0,0,0,0.4);
+            object-fit: cover;
+        }
+
+        .text-container {
+            width: 100%;
+            padding: 0 10%;
+        }
+
+        .title {
+            font-weight: 800;
+            font-size: 2.2em;
+            letter-spacing: -0.03em;
+            margin-bottom: 0.2em;
+            line-height: 1.1;
+        }
+
+        .artist {
+            font-weight: 400;
+            opacity: 0.6;
+            font-size: 1.4em;
+            letter-spacing: -0.01em;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="screen">
+        
+        <div class="album-wrapper">
+            <img src="https://m.media-amazon.com/images/I/61ayoTgYkmL.jpg" alt="More Life - Drake" class="album">
+        </div>
+
+        <div class="text-container">
+            <h1 class="title">Passionfruit</h1>
+            <h2 class="artist">Drake</h2>
+        </div>
+    </div>
+</body>
+</html>
