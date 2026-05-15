@@ -62,8 +62,6 @@ class MainActivity : AppCompatActivity() {
             }
 
             val themeSwitch = SwitchCompat(this).apply {
-                textOn = ""
-                textOff = ""
                 isChecked = prefs.getBoolean("dynamic_theming", false)
                 setOnCheckedChangeListener { _, isChecked ->
                     prefs.edit().putBoolean("dynamic_theming", isChecked).apply()
@@ -74,9 +72,48 @@ class MainActivity : AppCompatActivity() {
             themeSwitchContainer.addView(themeText)
             themeSwitchContainer.addView(themeSwitch)
 
+            // Offset Slider
+            val offsetContainer = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(0, 60, 0, 0)
+            }
+
+            val currentOffset = prefs.getInt("sync_offset", 0)
+            val offsetLabel = TextView(this).apply {
+                text = "Sync Offset: ${currentOffset}ms"
+                textSize = 16f
+                gravity = Gravity.CENTER
+            }
+
+            val offsetSlider = android.widget.SeekBar(this).apply {
+                max = 1000 // 0 to 1000, we'll shift it to -500 to +500
+                progress = currentOffset + 500
+                setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                        val realOffset = progress - 500
+                        offsetLabel.text = "Sync Offset: ${realOffset}ms"
+                        prefs.edit().putInt("sync_offset", realOffset).apply()
+                    }
+                    override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+                    override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+                })
+            }
+            
+            val offsetHint = TextView(this).apply {
+                text = "(Positive = Later, Negative = Earlier)"
+                textSize = 12f
+                alpha = 0.6f
+                gravity = Gravity.CENTER
+            }
+
+            offsetContainer.addView(offsetLabel)
+            offsetContainer.addView(offsetSlider)
+            offsetContainer.addView(offsetHint)
+
             layout.addView(btn)
             layout.addView(btnWallpaper)
             layout.addView(themeSwitchContainer)
+            layout.addView(offsetContainer)
             setContentView(layout)
         } catch (e: Exception) {
             e.printStackTrace()
