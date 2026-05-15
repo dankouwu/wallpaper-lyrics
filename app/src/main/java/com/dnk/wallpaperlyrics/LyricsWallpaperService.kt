@@ -146,6 +146,13 @@ class LyricsWallpaperService : WallpaperService() {
         private var viewAlpha = 1.0f
         private var targetViewAlpha = 1.0f
 
+        // Cached performance objects
+        private val fadePaint = Paint()
+        private var topFadeShader: LinearGradient? = null
+        private var bottomFadeShader: LinearGradient? = null
+        private var lastFadeWidth = 0f
+        private var lastFadeHeight = 0f
+
         private val backgroundPaint = Paint().apply { color = Color.BLACK }
         private val auroraPaints = List(5) { 
             Paint().apply { 
@@ -482,6 +489,7 @@ class LyricsWallpaperService : WallpaperService() {
             val centerY = height / 2
 
             val lines = currentLyrics
+            canvas.save() // SAVE here to balance the restores below
 
             // Determine target state
             val isMetadataState = !isPlaying || lines.isNullOrEmpty() || (System.currentTimeMillis() - songStartTime < 3000)
@@ -546,62 +554,76 @@ class LyricsWallpaperService : WallpaperService() {
                 val layouts = lyricLayouts ?: return
                 val offsets = lineOffsets ?: return
 
-                var currentIndex = lines.indexOfLast { it.startTime <= position }
+                val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                val userOffset = prefs.getInt("sync_offset", 0).toLong()
+                val leadTime = 50L // -50ms proactive lead time
+                val adjustedPos = position - userOffset + leadTime
+
+                var currentIndex = lines.indexOfLast { it.startTime <= adjustedPos }
                 if (currentIndex == -1) currentIndex = 0
 
-                targetScrollY = offsets[currentIndex]
+                val transitionDuration = 200f 
+
+                // Synchronized Glide
+                val currentOffset = offsets[currentIndex]
+                val prevOffset = if (currentIndex > 0) offsets[currentIndex - 1] else currentOffset
+                
+                val entryProgress = ((adjustedPos - lines[currentIndex].startTime) / transitionDuration).coerceIn(0f, 1f)
+                val easedGlide = 1f - (1f - entryProgress) * (1f - entryProgress)
+                
+                targetScrollY = prevOffset + (currentOffset - prevOffset) * easedGlide
+                
                 // Ease-out scroll
                 scrollY += (targetScrollY - scrollY) * (dt * 12.0f).coerceAtMost(1.0f)
 
-                // Use saveLayer for group alpha (Metadata vs Lyrics transition)
+                // Use saveLayer only during Metadata vs Lyrics transitions
                 val lyricsAlpha = ((1.0f - viewAlpha) * 255).toInt()
-                val layerPaint = Paint().apply { alpha = lyricsAlpha }
+                val needsLayer = lyricsAlpha < 255
 
-                canvas.saveLayer(null, layerPaint)
+                if (needsLayer) {
+                    val layerPaint = Paint().apply { alpha = lyricsAlpha }
+                    canvas.saveLayer(null, layerPaint)
+                }
+
                 canvas.translate(0f, centerY - scrollY)
-                val visibleRange = 12 
-                val transitionDuration = 200f 
-
+                val visibleRange = 8 
+                
                 for (i in (currentIndex - visibleRange)..(currentIndex + visibleRange)) {
                     if (i in layouts.indices) {
                         val line = lines[i]
                         val layout = layouts[i]
-
-                        // Calculate linear factors for entry and exit events
-                        val entryLinear = ((position - line.startTime) / transitionDuration).coerceIn(0f, 1f)
+                        
+                        val entryLinear = ((adjustedPos - line.startTime) / transitionDuration).coerceIn(0f, 1f)
                         val exitLinear = if (i < lines.size - 1) {
-                            ((position - lines[i+1].startTime) / transitionDuration).coerceIn(0f, 1f)
+                            ((adjustedPos - lines[i+1].startTime) / transitionDuration).coerceIn(0f, 1f)
                         } else 0f
-
-                        // Apply Quadratic Ease-Out to both (1 - (1-t)^2)
+                        
                         val easedEntry = 1f - (1f - entryLinear) * (1f - entryLinear)
                         val easedExit = 1f - (1f - exitLinear) * (1f - exitLinear)
-
-                        // The final active factor is the combined transition
                         val easedFactor = (easedEntry - easedExit).coerceIn(0f, 1f)
 
                         canvas.save()
-
                         val lineCenterY = offsets[i]
 
-                        // 1. Dynamic Scaling
                         val scale = 0.95f + (0.05f * easedFactor)
                         canvas.scale(scale, scale, centerX, lineCenterY)
 
-                        // 2. Dynamic Opacity & Shadow (interpolating between 35% and 90%)
                         val p = layout.paint
-                        val targetAlpha = (0.35f + (0.90f - 0.35f) * easedFactor) * 255
+                        val targetAlpha = (0.35f + (0.55f * easedFactor)) * 255
                         p.alpha = targetAlpha.toInt()
 
-                        // Animate shadow intensity
+                        // Performance optimization: Only update shadow if it actually changed significantly
+                        // This prevents expensive text re-uploads to the GPU
                         val shadowAlpha = (80 * easedFactor).toInt()
-                        p.setShadowLayer(10f, 0f, 0f, Color.argb(shadowAlpha, 0, 0, 0))
+                        if (shadowAlpha > 5) {
+                            p.setShadowLayer(10f, 0f, 0f, Color.argb(shadowAlpha, 0, 0, 0))
+                        } else {
+                            p.clearShadowLayer()
+                        }
 
-                        // 3. Render
                         canvas.translate(centerX - layout.width / 2f, lineCenterY - (layout.height / 2f))
                         layout.draw(canvas)
 
-                        // Add instrumental progress animation if active
                         if (line.isInstrumental && position in line.startTime..line.endTime) {
                             val progress = (position - line.startTime).toFloat() / (line.endTime - line.startTime)
                             drawInstrumentalProgress(canvas, layout, progress, position, line)
@@ -610,10 +632,9 @@ class LyricsWallpaperService : WallpaperService() {
                         canvas.restore()
                     }
                 }
-                canvas.restore()
-
-                drawFadeGradients(canvas, width, height, (1.0f - viewAlpha))
+                if (needsLayer) canvas.restore()
             }
+
 
 
             // Draw Metadata View if visible
@@ -623,25 +644,40 @@ class LyricsWallpaperService : WallpaperService() {
                 drawMetadataWithAlbumArt(canvas, width, height)
                 canvas.restore()
             }
+
+            canvas.restore() // Restore to absolute screen coordinates
+
+            // Draw fade-out gradients (Top and Bottom) at the very end to keep them static
+            drawFadeGradients(canvas, width, height, (1.0f - viewAlpha))
         }
 
         private fun drawFadeGradients(canvas: Canvas, width: Float, height: Float, alpha: Float) {
+            if (alpha <= 0f) return
+            
             val fadeHeight = height * 0.25f
-            val fadePaint = Paint()
-            val colorAlpha = (alpha * 255).toInt()
-            val black = Color.argb(colorAlpha, 0, 0, 0)
-            val transparent = Color.argb(0, 0, 0, 0)
+            
+            // Re-create shaders only if dimensions changed
+            if (width != lastFadeWidth || height != lastFadeHeight) {
+                lastFadeWidth = width
+                lastFadeHeight = height
+                
+                topFadeShader = LinearGradient(0f, 0f, 0f, fadeHeight, 
+                    intArrayOf(Color.BLACK, Color.TRANSPARENT), 
+                    null, Shader.TileMode.CLAMP)
+                    
+                bottomFadeShader = LinearGradient(0f, height - fadeHeight, 0f, height, 
+                    intArrayOf(Color.TRANSPARENT, Color.BLACK), 
+                    null, Shader.TileMode.CLAMP)
+            }
+
+            fadePaint.alpha = (alpha * 255).toInt()
 
             // Top fade
-            fadePaint.shader = LinearGradient(0f, 0f, 0f, fadeHeight, 
-                intArrayOf(black, transparent), 
-                null, Shader.TileMode.CLAMP)
+            fadePaint.shader = topFadeShader
             canvas.drawRect(0f, 0f, width, fadeHeight, fadePaint)
 
             // Bottom fade
-            fadePaint.shader = LinearGradient(0f, height - fadeHeight, 0f, height, 
-                intArrayOf(transparent, black), 
-                null, Shader.TileMode.CLAMP)
+            fadePaint.shader = bottomFadeShader
             canvas.drawRect(0f, height - fadeHeight, width, height, fadePaint)
         }
 
