@@ -5,6 +5,9 @@ import android.graphics.RenderEffect
 import android.graphics.Paint
 import android.app.WallpaperColors
 import android.content.Context
+import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.media.MediaMetadata
 import android.media.session.PlaybackState
 import android.os.Build
@@ -22,6 +25,15 @@ import android.text.TextPaint
 import android.view.Choreographer
 import android.graphics.RuntimeShader
 import android.graphics.text.LineBreaker
+import kotlinx.coroutines.*
+import kotlin.math.sqrt
+
+data class AuroraPalette(
+    val accent: Int,
+    val base: Int,
+    val mid: Int,
+    val highlight: Int
+)
 
 class LyricsWallpaperService : WallpaperService() {
 
@@ -62,54 +74,74 @@ class LyricsWallpaperService : WallpaperService() {
         """
 
         private const val AURORA_SHADER = """
+            uniform shader unused;
             uniform float2 uRes;
             uniform float uTime;
-            uniform vec3 uColor1;
-            uniform vec3 uColor2;
-            uniform vec3 uColor3;
-            uniform vec3 uColor4;
-            uniform vec3 uColor5;
+            uniform float uWarpIntensity;
+            uniform half4 uColor1;
+            uniform half4 uColor2;
+            uniform half4 uColor3;
+            uniform half4 uColor4;
 
-            float getWeight(vec2 uv, vec2 p) {
-                float d = distance(uv, p);
-                
-                // Restored to a more natural, balanced softness
-                float blurRegion = 0.22;
-                float softness = 0.15;
-                if (uv.y < blurRegion) {
-                    softness += (blurRegion - uv.y) * 3.0; 
-                } else if (uv.y > (1.0 - blurRegion)) {
-                    softness += (uv.y - (1.0 - blurRegion)) * 3.0;
-                }
-                
-                return 1.0 / (d * d + softness);
+            float random(float2 st) {
+                return fract(sin(dot(st.xy, float2(12.9898, 78.233))) * 43758.5453123);
             }
 
-            vec4 main(vec2 fragCoord) {
-                vec2 uv = fragCoord / uRes;
-                float t = uTime * 0.12;
+            float noise(float2 st) {
+                float2 i = floor(st);
+                float2 f = fract(st);
+                float a = random(i);
+                float b = random(i + float2(1.0, 0.0));
+                float c = random(i + float2(0.0, 1.0));
+                float d = random(i + float2(1.0, 1.0));
+                float2 u = f * f * (3.0 - 2.0 * f);
+                return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+            }
+
+            half4 main(float2 fragCoord) {
+                float2 uv = fragCoord / uRes;
+                float t = uTime * 0.05;
+
+                // 1. Stronger Base Anti-Symmetry Warp
+                float2 p = uv;
+                p.x += sin(p.y * 2.5 + t) * 0.2;
+                p.y += cos(p.x * 2.5 + t) * 0.2;
+
+                // 2. Large-Scale Domain Warping
+                float2 q = float2(
+                    noise(p * 1.2 + t),
+                    noise(p * 1.2 - t)
+                );
                 
-                // 5 anchor points with independent orbital movement
-                vec2 p1 = vec2(0.5 + 0.45 * sin(t * 0.7 + 0.5), 0.5 + 0.35 * cos(t * 0.5 + 1.2));
-                vec2 p2 = vec2(0.5 + 0.35 * sin(t * 0.6 + 2.1), 0.5 + 0.45 * cos(t * 0.8 + 0.3));
-                vec2 p3 = vec2(0.5 + 0.45 * sin(t * 0.4 + 3.8), 0.5 + 0.35 * cos(t * 0.7 + 2.5));
-                vec2 p4 = vec2(0.5 + 0.35 * sin(t * 0.9 + 5.2), 0.5 + 0.45 * cos(t * 0.4 + 4.1));
-                vec2 p5 = vec2(0.5 + 0.45 * sin(t * 0.5 + 1.1), 0.5 + 0.35 * cos(t * 1.1 + 0.7));
+                float2 r = float2(
+                    noise(p * 1.5 + q * 1.2 + t * 0.5),
+                    noise(p * 1.5 + q * 1.2 - t * 0.5)
+                );
 
-                float w1 = getWeight(uv, p1);
-                float w2 = getWeight(uv, p2);
-                float w3 = getWeight(uv, p3);
-                float w4 = getWeight(uv, p4);
-                float w5 = getWeight(uv, p5);
+                // 3. High-amplitude warp to UV
+                float2 warpedUV = p + (r - 0.5) * (uWarpIntensity * 0.5);
 
-                float totalW = w1 + w2 + w3 + w4 + w5;
-                vec3 col = (uColor1 * w1 + uColor2 * w2 + uColor3 * w3 + uColor4 * w4 + uColor5 * w5) / totalW;
+                // 4. Hybrid Mix Factor
+                float linearMix = clamp((1.0 - warpedUV.x + warpedUV.y) * 0.5, 0.0, 1.0);
+                float noisePattern = noise(warpedUV * 1.2 + t * 0.5);
+                float mixFactor = mix(linearMix, noisePattern, 0.45);
+                
+                // 5. Ultra-Smooth 4-Stop Interpolation
+                float m1 = smoothstep(-0.1, 0.5, mixFactor);
+                float m2 = smoothstep(0.2, 0.8, mixFactor);
+                float m3 = smoothstep(0.5, 1.1, mixFactor);
+                
+                half4 color = uColor1;
+                color = mix(color, uColor2, m1);
+                color = mix(color, uColor3, m2);
+                color = mix(color, uColor4, m3);
 
-                // Subtle dithering to eliminate banding
-                float dither = fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453);
-                col += (dither - 0.5) * 0.018;
+                // 6. Post-Processing
+                float luma = dot(color.rgb, float3(0.299, 0.587, 0.114));
+                color.rgb = mix(float3(luma), color.rgb, 2.5);
+                color.rgb *= 0.65;
 
-                return vec4(col, 1.0);
+                return color;
             }
         """
     }
@@ -123,6 +155,7 @@ class LyricsWallpaperService : WallpaperService() {
         private val lyricsManager = LyricsManager(this@LyricsWallpaperService)
         private val choreographer = Choreographer.getInstance()
         private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+        private val engineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
         
         private var visible = false
         private var startTime = System.currentTimeMillis()
@@ -176,8 +209,13 @@ class LyricsWallpaperService : WallpaperService() {
         private val shaderPaint = Paint()
         
         @Volatile
-        private var targetColors = IntArray(5) { Color.BLACK }
-        private var currentColors = IntArray(5) { Color.BLACK }
+        private var targetColors = intArrayOf(
+            0xFF1DB954.toInt(), // Accent (Spotify Green)
+            0xFF191414.toInt(), // Base (Dark)
+            0xFF6B7C96.toInt(), // Mid
+            0xFFEBF2FA.toInt()  // Highlight
+        )
+        private var currentColors = targetColors.copyOf()
 
         private val activePaint = TextPaint().apply {
             color = Color.WHITE
@@ -208,15 +246,42 @@ class LyricsWallpaperService : WallpaperService() {
         private var targetScrollY = 0f
         private var lastFrameTimeNanos = 0L
 
+        private var isScreenOff = false
+        private var lastWakeTime = 0L
+
+        private val screenStateReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                when (intent?.action) {
+                    Intent.ACTION_SCREEN_OFF -> {
+                        isScreenOff = true
+                        // Snap to metadata view immediately so it's ready on wake
+                        viewAlpha = 1.0f
+                        targetViewAlpha = 1.0f
+                    }
+                    Intent.ACTION_SCREEN_ON -> {
+                        isScreenOff = false
+                        lastWakeTime = System.currentTimeMillis()
+                    }
+                }
+            }
+        }
+
         override fun onCreate(surfaceHolder: SurfaceHolder?) {
             super.onCreate(surfaceHolder)
             mediaObserver.start()
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            }
+            registerReceiver(screenStateReceiver, filter)
         }
 
         override fun onDestroy() {
             super.onDestroy()
             mediaObserver.stop()
             choreographer.removeFrameCallback(this)
+            engineScope.cancel()
+            unregisterReceiver(screenStateReceiver)
         }
 
         override fun onVisibilityChanged(visible: Boolean) {
@@ -264,6 +329,9 @@ class LyricsWallpaperService : WallpaperService() {
                     currentArtUri = null 
                     hasArtForCurrentTrack = false
                     songStartTime = System.currentTimeMillis()
+                    
+                    // Force a transition to metadata view even if paused
+                    targetViewAlpha = 1.0f 
 
                     // Reset lyrics/layouts
                     currentLyrics = null
@@ -323,49 +391,97 @@ class LyricsWallpaperService : WallpaperService() {
             }
         }
 
-        private fun updateAlbumArt(bitmap: Bitmap) {
-            Log.d("Wallpaper", "Album Art Resolution: ${bitmap.width}x${bitmap.height}")
-            albumArt = bitmap
-            Palette.from(bitmap).maximumColorCount(24).generate { palette ->
-                palette?.let { p ->
-                    val swatches = p.swatches
-                        .sortedByDescending { it.population }
-                        .take(10)
-                        .sortedBy { swatch -> ColorUtils.calculateLuminance(swatch.rgb) }
+        private fun updateAlbumArt(sourceBitmap: Bitmap) {
+            albumArt = sourceBitmap
+            engineScope.launch {
+                val palette = withContext(Dispatchers.Default) {
+                    extractPalette(sourceBitmap)
+                }
+                
+                targetColors = intArrayOf(
+                    palette.accent,
+                    palette.base,
+                    palette.mid,
+                    palette.highlight
+                )
 
-                    val newColors = IntArray(5)
-                    if (swatches.isNotEmpty()) {
-                        for (i in 0 until 5) {
-                            val idx = (i * (swatches.size - 1) / 4).coerceIn(0, swatches.size - 1)
-                            var color = swatches[idx].rgb
-                            val hsv = FloatArray(3)
-                            Color.colorToHSV(color, hsv)
-                            hsv[1] = (hsv[1] * 1.35f).coerceIn(0.1f, 1.0f)
-                            hsv[2] = (hsv[2] * 1.25f).coerceIn(0.1f, 1.0f)
-                            newColors[i] = Color.HSVToColor(hsv)
-                        }
-                    } else {
-                        newColors.fill(Color.BLACK)
-                    }
-                    targetColors = newColors
+                val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                val isEnabled = prefs.getBoolean("dynamic_theming", false)
 
-                    val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-                    val isEnabled = prefs.getBoolean("dynamic_theming", false)
-
-                    if (isEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                        notifyColorsChanged()
-                    }
+                if (isEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                    notifyColorsChanged()
                 }
             }
+        }
+
+        private fun extractPalette(sourceBitmap: Bitmap): AuroraPalette {
+            // FIX 1: Turn ON filtering (true) for better bilinear interpolation to stop color fringing
+            val scaledBitmap = Bitmap.createScaledBitmap(sourceBitmap, 128, 128, true)
+            val p = Palette.from(scaledBitmap).generate()
+
+            // 1. Vibrant Accent
+            val vibrant = p.vibrantSwatch ?: p.dominantSwatch
+            var accent = vibrant?.rgb ?: 0xFF1A1A1A.toInt()
+
+            // 2. Deep Base
+            val dark = p.darkMutedSwatch ?: p.darkVibrantSwatch
+            var base = dark?.rgb ?: 0xFF0A0A0A.toInt()
+
+            // 3. Atmospheric Mid
+            val muted = p.mutedSwatch ?: p.dominantSwatch
+            var mid = muted?.rgb ?: 0xFFF4F4F2.toInt()
+
+            // 4. Highlight
+            val light = p.lightVibrantSwatch ?: p.lightMutedSwatch
+            var highlight = light?.rgb ?: 0xFFFFFFFF.toInt()
+
+            // FIX 2: Check if the image is essentially monochromatic
+            if (isMonochromatic(accent, base, mid, highlight)) {
+                accent = 0xFF1A1A1A.toInt()    // Crisp text black
+                base = 0xFF0A0A0A.toInt()      // Deep dark
+                mid = 0xFFEAEAEA.toInt()       // Soft paper gray
+                highlight = 0xFFFFFFFF.toInt() // Pure white flare
+            } else {
+                // Edge-case prevention: If accent and base are too similar, force visual separation
+                if (calculateColorDistance(accent, base) < 60.0f) {
+                    accent = shiftHue(base, 180f)
+                }
+            }
+
+            return AuroraPalette(accent, base, mid, highlight)
+        }
+
+        private fun isMonochromatic(vararg colors: Int): Boolean {
+            val hsv = FloatArray(3)
+            var totalSaturation = 0f
+            for (color in colors) {
+                Color.colorToHSV(color, hsv)
+                totalSaturation += hsv[1]
+            }
+            return (totalSaturation / colors.size) < 0.08f
+        }
+
+        private fun calculateColorDistance(c1: Int, c2: Int): Float {
+            val rDiff = (Color.red(c1) - Color.red(c2)) / 255f
+            val gDiff = (Color.green(c1) - Color.green(c2)) / 255f
+            val bDiff = (Color.blue(c1) - Color.blue(c2)) / 255f
+            return sqrt(rDiff * rDiff + gDiff * gDiff + bDiff * bDiff) * 255f
+        }
+
+        private fun shiftHue(color: Int, degrees: Float): Int {
+            val hsv = FloatArray(3)
+            Color.colorToHSV(color, hsv)
+            hsv[0] = (hsv[0] + degrees) % 360f // Rotate around the color wheel
+            hsv[1] = hsv[1].coerceAtLeast(0.7f) // Guarantee saturation
+            return Color.HSVToColor(hsv)
         }
 
         override fun onComputeColors(): WallpaperColors? {
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
             if (prefs.getBoolean("dynamic_theming", false) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-                // Use the primary, secondary, and tertiary colors from the sampled palette
                 val primary = Color.valueOf(targetColors[0])
-                val secondary = Color.valueOf(targetColors[2])
-                val tertiary = Color.valueOf(targetColors[4])
+                val secondary = Color.valueOf(targetColors[1])
+                val tertiary = Color.valueOf(targetColors[2])
                 return WallpaperColors(primary, secondary, tertiary)
             }
             return null
@@ -401,10 +517,11 @@ class LyricsWallpaperService : WallpaperService() {
         private fun updateColors(dt: Float) {
             val targets = targetColors
             val lerpFactor = (dt * 1.2f).coerceAtMost(1.0f)
+            if (currentColors.size != targets.size) {
+                currentColors = IntArray(targets.size) { Color.BLACK }
+            }
             for (i in currentColors.indices) {
-                if (i < targets.size) {
-                    currentColors[i] = interpolateColor(currentColors[i], targets[i], lerpFactor)
-                }
+                currentColors[i] = interpolateColor(currentColors[i], targets[i], lerpFactor)
             }
         }
 
@@ -425,23 +542,38 @@ class LyricsWallpaperService : WallpaperService() {
                 runtimeShader?.let { shader ->
                     shader.setFloatUniform("uRes", width, height)
                     shader.setFloatUniform("uTime", time)
+                    shader.setFloatUniform("uWarpIntensity", 1.4f)
                     
-                    // Set color uniforms (converting Int to RGB floats 0-1)
+                    // Set 4 dominant colors
                     currentColors.forEachIndexed { i, color ->
                         val r = Color.red(color) / 255f
                         val g = Color.green(color) / 255f
                         val b = Color.blue(color) / 255f
-                        shader.setFloatUniform("uColor${i + 1}", r, g, b)
+                        shader.setFloatUniform("uColor${i + 1}", r, g, b, 1f)
                     }
                     
                     shaderPaint.shader = shader
+
+                    // Apply Kawase Blur effect (200f radius) via reflection
+                    if (android.os.Build.VERSION.SDK_INT >= 31) {
+                        try {
+                            val base = android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "unused")
+                            val blur = android.graphics.RenderEffect.createBlurEffect(200f, 200f, base, android.graphics.Shader.TileMode.CLAMP)
+                            val method = shaderPaint.javaClass.getMethod("setRenderEffect", android.graphics.RenderEffect::class.java)
+                            method.invoke(shaderPaint, blur)
+                        } catch (e: Exception) {
+                            Log.e("Wallpaper", "Reflection blur error", e)
+                        }
+                    }
+                    
                     canvas.drawRect(0f, 0f, width, height, shaderPaint)
                 }
             } else {
                 // Fallback for API < 33: Spicy Lyrics Mesh Gradient (Radial Blobs)
                 canvas.drawColor(Color.BLACK)
 
-                auroraPaints.forEachIndexed { index, paint ->
+                for (index in currentColors.indices) {
+                    val paint = auroraPaints.getOrNull(index) ?: break
                     val t = time * 0.12f
                     // Orbital movement matching the shader logic
                     val phase = index * 1.5f
@@ -492,7 +624,7 @@ class LyricsWallpaperService : WallpaperService() {
             canvas.save() // SAVE here to balance the restores below
 
             // Determine target state
-            val isMetadataState = !isPlaying || lines.isNullOrEmpty() || (System.currentTimeMillis() - songStartTime < 3000)
+            val isMetadataState = isScreenOff || (System.currentTimeMillis() - lastWakeTime < 2000) || !isPlaying || lines.isNullOrEmpty() || (System.currentTimeMillis() - songStartTime < 3000)
             targetViewAlpha = if (isMetadataState) 1.0f else 0.0f
 
             // Snappier interpolation (dt * 8.0f / 12.0f for a very responsive feel)
