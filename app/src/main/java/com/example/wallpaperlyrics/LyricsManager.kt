@@ -173,14 +173,19 @@ class LyricsManager(private val context: Context) {
             
             // If this line is a marker, its duration is until the next line starts
             val estimatedDuration = if (currentRaw.isInstrumental) {
-                nextRaw?.let { it.startTime - currentRaw.startTime } ?: 4000L
+                nextRaw?.let { it.startTime - currentRaw.startTime } ?: (songDurationMs - currentRaw.startTime)
             } else {
                 (currentRaw.content.length * 100L + 500L).coerceIn(2000L, 8000L)
             }
             
-            val endTime = nextRaw?.startTime?.let { Math.min(currentRaw.startTime + estimatedDuration, it - 200L) } 
+            var endTime = nextRaw?.startTime?.let { Math.min(currentRaw.startTime + estimatedDuration, it - 200L) } 
                           ?: (currentRaw.startTime + estimatedDuration)
             
+            // If it's the last line and it's a note '♪', or just the last line, extend it to song end
+            if (nextRaw == null) {
+                endTime = songDurationMs
+            }
+
             val currentLine = currentRaw.copy(endTime = endTime)
             processedLines.add(currentLine)
 
@@ -196,6 +201,12 @@ class LyricsManager(private val context: Context) {
                     ))
                 }
             }
+        }
+        
+        // Final sanity check: if the very last processed line doesn't reach the end, stretch it
+        if (processedLines.isNotEmpty() && processedLines.last().endTime < songDurationMs) {
+            val last = processedLines.last()
+            processedLines[processedLines.size - 1] = last.copy(endTime = songDurationMs)
         }
         
         if (processedLines.first().startTime > 5000) {
