@@ -79,12 +79,19 @@ class MainActivity : AppCompatActivity() {
             })
 
             layout.addView(createStyledButton("Clear Lyrics Cache") {
-                val cacheDir = java.io.File(cacheDir, "lyrics_cache")
-                if (cacheDir.exists()) {
-                    cacheDir.deleteRecursively()
-                    cacheDir.mkdirs()
-                    Toast.makeText(this, "Cache cleared!", Toast.LENGTH_SHORT).show()
-                }
+                com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                    .setTitle("Clear Lyrics Cache?")
+                    .setMessage("This will delete all saved lyrics. You will need an internet connection to fetch them again.")
+                    .setNegativeButton("Cancel", null)
+                    .setPositiveButton("Clear All") { _, _ ->
+                        val cacheDir = java.io.File(cacheDir, "lyrics_cache")
+                        if (cacheDir.exists()) {
+                            cacheDir.deleteRecursively()
+                            cacheDir.mkdirs()
+                            Toast.makeText(this, "Cache cleared!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .show()
             })
 
             val themeSwitchContainer = LinearLayout(this).apply {
@@ -193,6 +200,82 @@ class MainActivity : AppCompatActivity() {
             offsetContainer.addView(offsetHint)
 
             layout.addView(offsetContainer)
+
+            // Background Speed Section
+            val speedContainer = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(20, 60, 20, 0)
+                gravity = Gravity.CENTER
+            }
+
+            val speedLabelContainer = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+            }
+
+            val speedLabel = TextView(this).apply {
+                text = "Background Speed: "
+                textSize = 16f
+                setTextColor(Color.WHITE)
+            }
+
+            val currentSpeed = prefs.getFloat("bg_speed", 1.0f)
+            val speedEdit = EditText(this).apply {
+                setText(String.format("%.1f", currentSpeed))
+                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+                setTextColor(Color.WHITE)
+                background = null
+                gravity = Gravity.CENTER
+                textSize = 18f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setPadding(10, 0, 10, 0)
+            }
+
+            val speedLabelSuffix = TextView(this).apply {
+                text = "x"
+                textSize = 16f
+                setTextColor(Color.WHITE)
+            }
+
+            speedLabelContainer.addView(speedLabel)
+            speedLabelContainer.addView(speedEdit)
+            speedLabelContainer.addView(speedLabelSuffix)
+
+            val speedSlider = android.widget.SeekBar(this).apply {
+                max = 99 // 0.1 to 10.0
+                progress = ((currentSpeed - 0.1f) * 10f).toInt().coerceIn(0, 99)
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { setMargins(0, 30, 0, 10) }
+            }
+
+            speedSlider.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) {
+                        val speed = 0.1f + (progress / 10f)
+                        speedEdit.setText(String.format("%.1f", speed))
+                        prefs.edit().putFloat("bg_speed", speed).apply()
+                    }
+                }
+                override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            })
+
+            speedEdit.addTextChangedListener(object : TextWatcher {
+                override fun afterTextChanged(s: Editable?) {
+                    val input = s?.toString()?.toFloatOrNull() ?: 1.0f
+                    val clamped = input.coerceIn(0.1f, 10.0f)
+                    speedSlider.progress = ((clamped - 0.1f) * 10f).toInt()
+                    prefs.edit().putFloat("bg_speed", clamped).apply()
+                }
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            })
+
+            speedContainer.addView(speedLabelContainer)
+            speedContainer.addView(speedSlider)
+            layout.addView(speedContainer)
             
             val scrollView = android.widget.ScrollView(this)
             scrollView.addView(layout)
