@@ -100,46 +100,43 @@ class LyricsWallpaperService : WallpaperService() {
 
             half4 main(float2 fragCoord) {
                 float2 uv = fragCoord / uRes;
-                float t = uTime * 0.05;
+                float t = uTime * 0.03;
 
-                // 1. Stronger Base Anti-Symmetry Warp
+                // 1. Base Anti-Symmetry to ensure rounded, non-linear movement
                 float2 p = uv;
-                p.x += sin(p.y * 2.5 + t) * 0.2;
-                p.y += cos(p.x * 2.5 + t) * 0.2;
+                p.x += sin(p.y * 3.0 + t) * 0.15;
+                p.y += cos(p.x * 3.0 + t) * 0.15;
 
-                // 2. Large-Scale Domain Warping
+                // 2. Recursive Domain Warping (Recursive Noise)
+                // This creates the 'liquid' feel without the sharp streaks
                 float2 q = float2(
-                    noise(p * 1.2 + t),
-                    noise(p * 1.2 - t)
+                    noise(p + t * 0.5),
+                    noise(p + float2(2.4, 4.8) + t * 0.3)
                 );
                 
                 float2 r = float2(
-                    noise(p * 1.5 + q * 1.2 + t * 0.5),
-                    noise(p * 1.5 + q * 1.2 - t * 0.5)
+                    noise(p + q * 1.2 + float2(1.7, 9.2) + t * 0.2),
+                    noise(p + q * 1.2 + float2(8.3, 2.8) + t * 0.1)
                 );
-
-                // 3. High-amplitude warp to UV
-                float2 warpedUV = p + (r - 0.5) * (uWarpIntensity * 0.5);
-
-                // 4. Hybrid Mix Factor
-                float linearMix = clamp((1.0 - warpedUV.x + warpedUV.y) * 0.5, 0.0, 1.0);
-                float noisePattern = noise(warpedUV * 1.2 + t * 0.5);
-                float mixFactor = mix(linearMix, noisePattern, 0.45);
                 
-                // 5. Ultra-Smooth 4-Stop Interpolation
-                float m1 = smoothstep(-0.1, 0.5, mixFactor);
+                // Final noise value for color mixing
+                float mixFactor = noise(p + r);
+
+                // 3. Ultra-Smooth 4-Stop Interpolation with wider ranges
+                // Wide smoothsteps eliminate 'pointy' segments and sharp edges
+                float m1 = smoothstep(0.0, 0.6, mixFactor);
                 float m2 = smoothstep(0.2, 0.8, mixFactor);
-                float m3 = smoothstep(0.5, 1.1, mixFactor);
+                float m3 = smoothstep(0.4, 1.0, mixFactor);
                 
                 half4 color = uColor1;
                 color = mix(color, uColor2, m1);
                 color = mix(color, uColor3, m2);
                 color = mix(color, uColor4, m3);
 
-                // 6. Post-Processing
+                // 4. Post-Processing
                 float luma = dot(color.rgb, float3(0.299, 0.587, 0.114));
-                color.rgb = mix(float3(luma), color.rgb, 2.5);
-                color.rgb *= 0.65;
+                color.rgb = mix(float3(luma), color.rgb, 2.3); // Saturate
+                color.rgb *= 0.6; // Darken for readability
 
                 return color;
             }
@@ -536,7 +533,10 @@ class LyricsWallpaperService : WallpaperService() {
         private fun drawAurora(canvas: Canvas) {
             val width = canvas.width.toFloat()
             val height = canvas.height.toFloat()
-            val time = (System.currentTimeMillis() - startTime) / 1000f
+            
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            val speedMult = prefs.getFloat("bg_speed", 1.0f)
+            val time = ((System.currentTimeMillis() - startTime) / 1000f) * speedMult
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && runtimeShader != null) {
                 runtimeShader?.let { shader ->
