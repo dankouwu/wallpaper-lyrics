@@ -63,7 +63,6 @@ class MediaObserver(
 
     private fun updateActiveController(controllers: List<MediaController>?) {
         val newController = controllers?.find { it.packageName.contains("spotify", ignoreCase = true) }
-            ?: controllers?.firstOrNull()
 
         if (newController?.packageName != activeController?.packageName) {
             activeController?.unregisterCallback(callback)
