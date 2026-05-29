@@ -207,10 +207,10 @@ class LyricsWallpaperService : WallpaperService() {
         
         @Volatile
         private var targetColors = intArrayOf(
-            0xFF1DB954.toInt(), // Accent (Spotify Green)
-            0xFF191414.toInt(), // Base (Dark)
-            0xFF6B7C96.toInt(), // Mid
-            0xFFEBF2FA.toInt()  // Highlight
+            0xFFFF0055.toInt(), // Accent (Neon Crimson Red)
+            0xFF0A0B1A.toInt(), // Base (Midnight Indigo Blue)
+            0xFF7A22FF.toInt(), // Mid (Deep Electric Purple)
+            0xFFD6C7FF.toInt()  // Highlight (Luminous Soft Lavender)
         )
         private var currentColors = targetColors.copyOf()
 
@@ -317,7 +317,10 @@ class LyricsWallpaperService : WallpaperService() {
 
                 Log.d("Wallpaper", "Metadata: $title - $artist ($album), Uri: $albumArtUri, ArtBitmap: ${art != null}")
 
-                if (title.isNullOrBlank()) return
+                if (title.isNullOrBlank()) {
+                    resetToIdleState()
+                    return
+                }
 
                 val isNewTrack = (title != currentTitle || artist != currentArtist)
                 if (isNewTrack) {
@@ -486,6 +489,36 @@ class LyricsWallpaperService : WallpaperService() {
 
         private fun onPlaybackStateChanged(state: PlaybackState?) {
             isPlaying = state?.state == PlaybackState.STATE_PLAYING
+        }
+
+        private fun resetToIdleState() {
+            currentTitle = null
+            currentArtist = null
+            albumArt = null
+            currentLyrics = null
+            currentArtUri = null
+            hasArtForCurrentTrack = false
+            
+            // Nullify layouts so they are re-created with "No Music Playing"
+            metadataTitleLayout = null
+            metadataArtistLayout = null
+            titleLayout = null
+            artistLayout = null
+            lyricLayouts = null
+            lineOffsets = null
+
+            // Restore the "No Music Playing" palette
+            targetColors = intArrayOf(
+                0xFFFF0055.toInt(), // Accent (Neon Crimson Red)
+                0xFF0A0B1A.toInt(), // Base (Midnight Indigo Blue)
+                0xFF7A22FF.toInt(), // Mid (Deep Electric Purple)
+                0xFFD6C7FF.toInt()  // Highlight (Luminous Soft Lavender)
+            )
+            
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            if (prefs.getBoolean("dynamic_theming", false) && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+                notifyColorsChanged()
+            }
         }
 
         private fun drawFrame(dt: Float) {
@@ -853,8 +886,8 @@ class LyricsWallpaperService : WallpaperService() {
             canvas.save()
             canvas.scale(scale, scale, centerX, centerY)
 
-            val albumSize = width * 0.70f
-            val albumTextGap = width * 0.04f 
+            val albumSize = if (albumArt != null) width * 0.70f else 0f
+            val albumTextGap = if (albumArt != null) width * 0.04f else 0f
             val metadataGap = 5.0f
             
             val totalHeight = albumSize + albumTextGap + tLayout.height + metadataGap + aLayout.height
@@ -870,9 +903,8 @@ class LyricsWallpaperService : WallpaperService() {
                 canvas.clipPath(path)
                 canvas.drawBitmap(art, Rect(0, 0, art.width, art.height), rect, paint)
                 canvas.restore()
+                currentY += albumSize + albumTextGap
             }
-            
-            currentY += albumSize + albumTextGap
             
             // Draw Title
             drawSimpleLayout(canvas, tLayout, centerX, currentY + tLayout.height / 2f)
