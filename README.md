@@ -4,31 +4,34 @@ A high-performance Android live wallpaper that renders a dynamic aurora backgrou
 
 ## Features
 
-- **Dynamic Background:** Utilizes an AGSL domain-warping shader (Android 13+) to generate fluid, liquid-style gradients.
-- **Color Extraction:** Implements an asynchronous 4-color palette extraction system using the Android Palette API with bilinear downsampling to prevent color fringing.
-- **Synced Lyrics:** Fetches and displays timestamped lyrics from LRCLIB, featuring a predictive timing model for millisecond-perfect synchronization.
-- **Aesthetic Design:** Mimics the Apple Music "Lyrics" interface with high-contrast Inter typography and chained blur effects.
-- **Performance:** Targets 60+ FPS using Hardware Accelerated Canvas and Choreographer-aligned frame callbacks.
+- **Dynamic Background:** Utilizes an AGSL triple-layer domain-warping shader (Android 13+) to generate fluid, liquid-style gradients with organic motion.
+- **Spotify Exclusive:** Optimized specifically for Spotify media sessions to ensure the highest reliability and metadata accuracy.
+- **Color Extraction:** Implements an asynchronous 4-color palette extraction system using the Android Palette API with bilinear downsampling and monochromatic safeguards.
+- **Synced Lyrics:** Fetches and displays timestamped lyrics from LRCLIB, featuring a predictive timing model and instrumental progress indicators.
+- **Aesthetic Design:** Mimics the Apple Music "Lyrics" interface with high-contrast Inter typography, chained blur effects, and a vibrant Neon/Midnight idle palette.
+- **Performance:** Targets 60+ FPS using Hardware Accelerated Canvas, `Choreographer` callbacks, and background-thread color processing.
 
 ## Requirements
 
 - Android 12 (API 31) or higher (AGSL features require Android 13+).
-- **Battery Optimization:** Must be set to "Unrestricted" to ensure consistent rendering and background network access.
-- **Media Access:** Notification access is required to observe media controller metadata.
-- **Spotify Support:** "Device Broadcast Status" must be enabled in Spotify settings for metadata visibility.
+- **Battery Optimization:** Must be set to "Unrestricted" to ensure consistent rendering and network access.
+- **Media Access:** Notification access is required to observe Spotify media metadata.
+- **Spotify Settings:** "Device Broadcast Status" must be enabled in Spotify settings.
 
 ## Configuration
 
-- **Sync Offset:** Adjustable from -1000ms to +1000ms to account for Bluetooth latency or lyrics discrepancy.
-- **Background Speed:** Configurable animation speed multiplier (0.1x - 2.0x).
+- **Sync Offset:** Precision control from -1000ms to +1000ms with bi-directional slider and manual numeric input.
+- **Background Speed:** Configurable fluid motion multiplier from 0.1x up to 10.0x with manual input support.
 - **Dynamic Theming:** Optional support for Material You system-wide color synchronization.
+- **Cache Management:** Built-in lyrics cache utility with a confirmation-protected clear function.
 
 ## Build Instructions
 
-Ensure `ANDROID_HOME` is correctly set in your environment.
+Ensure `ANDROID_HOME` and `JAVA_HOME` (JDK 17+) are correctly set in your environment.
 
 ```bash
 export ANDROID_HOME=~/Android/Sdk
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 ./gradlew assembleDebug
 ```
 
@@ -36,6 +39,6 @@ The resulting APK will be located at `app/build/outputs/apk/debug/app-debug.apk`
 
 ## Architecture
 
-- **LyricsWallpaperService:** Core engine handling Hardware Canvas rendering and screen state management.
-- **MediaObserver:** Monitors MediaSessionManager for active playback and position tracking.
-- **LyricsManager:** Handles API communication, JSON caching, and dynamic gap heuristics for instrumental breaks.
+- **LyricsWallpaperService:** Core engine handling AGSL shader rendering, hardware canvas synchronization, and screen-state transitions.
+- **MediaObserver:** Monitors `MediaSessionManager` specifically for active Spotify controllers.
+- **LyricsManager:** Handles LRCLIB API communication, local JSON caching, and dynamic gap heuristics for instrumental breaks.
