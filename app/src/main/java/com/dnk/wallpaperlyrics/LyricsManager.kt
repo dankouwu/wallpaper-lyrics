@@ -22,6 +22,15 @@ data class LyricsResponse(
     val duration: Double?
 )
 
+data class SearchResult(
+    val trackName: String?,
+    val artistName: String?,
+    val duration: Double?,
+    val instrumental: Boolean?,
+    val plainLyrics: String?,
+    val syncedLyrics: String?
+)
+
 class LyricsManager(private val context: Context) {
     val client = OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
@@ -29,7 +38,11 @@ class LyricsManager(private val context: Context) {
         .build()
     private val gson = Gson()
     private val cacheDir = File(context.cacheDir, "lyrics_cache").apply { mkdirs() }
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    companion object {
+        private const val USER_AGENT = "WallpaperLyricsApp/1.0 (Android)"
+        private const val MISS_TTL_MS = 24 * 60 * 60 * 1000L
+    }
 
     fun fetchBitmap(url: String, callback: (android.graphics.Bitmap?) -> Unit) {
         if (url.startsWith("content://")) {
@@ -65,65 +78,149 @@ class LyricsManager(private val context: Context) {
         })
     }
 
-    fun fetchLyrics(title: String, artist: String, attempt: Int = 1, callback: (List<LyricLine>?) -> Unit) {
+    /**
+     * Query ladder: cache -> /api/get exact -> /api/search with sanitized variants ->
+     * /api/search free-text. Stops at the first accepted hit.
+     *
+     * The callback's second parameter is true when the result is definitive (lyrics
+     * found, or LRCLIB conclusively has nothing for this track) and false on transient
+     * failures (offline, 429, 5xx) where the caller's watchdog may retry later.
+     */
+    fun fetchLyrics(title: String, artist: String, durationMs: Long, callback: (List<LyricLine>?, Boolean) -> Unit) {
         val cacheKey = "${title}_${artist}".hashCode().toString()
         val cacheFile = File(cacheDir, "$cacheKey.json")
-        
-        if (attempt == 1 && cacheFile.exists()) {
+        val missFile = File(cacheDir, "$cacheKey.miss")
+
+        if (cacheFile.exists()) {
             try {
                 val json = cacheFile.readText()
                 val lines = gson.fromJson(json, Array<LyricLine>::class.java).toList()
-                callback(lines)
+                callback(lines, true)
                 return
             } catch (e: Exception) {
                 cacheFile.delete()
             }
         }
 
-        val query = "track_name=${URLEncoder.encode(title, "UTF-8")}&artist_name=${URLEncoder.encode(artist, "UTF-8")}"
-        val url = "https://lrclib.net/api/get?$query"
+        if (missFile.exists()) {
+            val stamp = try { missFile.readText().toLongOrNull() } catch (e: Exception) { null } ?: 0L
+            if (System.currentTimeMillis() - stamp < MISS_TTL_MS) {
+                callback(null, true)
+                return
+            }
+            missFile.delete()
+        }
 
+        val candidates = TrackQuery.buildQueries(title, artist)
+        if (candidates.isEmpty()) {
+            callback(null, true)
+            return
+        }
+        val wantedDurationSec = if (durationMs > 0) durationMs / 1000.0 else null
+
+        val steps = mutableListOf<Step>()
+        steps.add(Step(getUrl(candidates.first()), isSearch = false))
+        candidates.drop(1).forEach { steps.add(Step(searchUrl(it), isSearch = true)) }
+        // Free-text last resort with the cleaned full title (variant 1).
+        val freeText = candidates.getOrNull(1) ?: candidates.first()
+        steps.add(Step(qUrl(freeText.title), isSearch = true))
+
+        val deduped = steps.distinctBy { it.url }
+        runStep(deduped, 0, candidates, wantedDurationSec, cacheFile, missFile, callback)
+    }
+
+    private data class Step(val url: String, val isSearch: Boolean)
+
+    private fun getUrl(c: QueryCandidate) =
+        "https://lrclib.net/api/get?track_name=${URLEncoder.encode(c.title, "UTF-8")}&artist_name=${URLEncoder.encode(c.artist, "UTF-8")}"
+
+    private fun searchUrl(c: QueryCandidate) = if (c.artist.isBlank()) qUrl(c.title) else
+        "https://lrclib.net/api/search?track_name=${URLEncoder.encode(c.title, "UTF-8")}&artist_name=${URLEncoder.encode(c.artist, "UTF-8")}"
+
+    private fun qUrl(q: String) =
+        "https://lrclib.net/api/search?q=${URLEncoder.encode(q, "UTF-8")}"
+
+    private fun runStep(
+        steps: List<Step>,
+        index: Int,
+        candidates: List<QueryCandidate>,
+        wantedDurationSec: Double?,
+        cacheFile: File,
+        missFile: File,
+        callback: (List<LyricLine>?, Boolean) -> Unit
+    ) {
+        if (index >= steps.size) {
+            try { missFile.writeText(System.currentTimeMillis().toString()) } catch (e: Exception) {}
+            callback(null, true)
+            return
+        }
+
+        val step = steps[index]
         val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "WallpaperLyricsApp/1.0 (Android)") 
+            .url(step.url)
+            .header("User-Agent", USER_AGENT)
             .build()
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                retryOrNull(title, artist, attempt, callback)
+                // Transient: abort the whole ladder, no negative cache. The service
+                // watchdog is the retry layer.
+                callback(null, false)
             }
 
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string()
-                if (response.isSuccessful && body != null) {
+                if (response.code == 429 || response.code >= 500) {
+                    callback(null, false)
+                    return
+                }
+                // 404 and other 4xx are definitive for this step: advance the ladder.
+                val lines = if (response.isSuccessful && body != null) {
                     try {
-                        val lyricsRes = gson.fromJson(body, LyricsResponse::class.java)
-                        val lines = parseLyrics(lyricsRes)
-                        if (lines != null) {
-                            cacheFile.writeText(gson.toJson(lines))
-                        }
-                        callback(lines)
+                        if (step.isSearch) pickFromSearch(body, candidates, wantedDurationSec)
+                        else parseLyrics(gson.fromJson(body, LyricsResponse::class.java))
                     } catch (e: Exception) {
-                        retryOrNull(title, artist, attempt, callback)
+                        Log.e("LyricsManager", "Parse failure for ${step.url}", e)
+                        null
                     }
-                } else if (response.code == 429 || response.code >= 500) {
-                    retryOrNull(title, artist, attempt, callback)
+                } else null
+
+                if (lines != null) {
+                    try { cacheFile.writeText(gson.toJson(lines)) } catch (e: Exception) {}
+                    callback(lines, true)
                 } else {
-                    callback(null)
+                    runStep(steps, index + 1, candidates, wantedDurationSec, cacheFile, missFile, callback)
                 }
             }
         })
     }
 
-    private fun retryOrNull(title: String, artist: String, attempt: Int, callback: (List<LyricLine>?) -> Unit) {
-        if (attempt < 3) {
-            val delay = attempt * 2000L 
-            handler.postDelayed({
-                fetchLyrics(title, artist, attempt + 1, callback)
-            }, delay)
-        } else {
-            callback(null)
-        }
+    private fun pickFromSearch(
+        body: String,
+        candidates: List<QueryCandidate>,
+        wantedDurationSec: Double?
+    ): List<LyricLine>? {
+        val results = gson.fromJson(body, Array<SearchResult>::class.java) ?: return null
+        val best = results
+            .filter { !it.syncedLyrics.isNullOrBlank() }
+            .map { result ->
+                val score = candidates.maxOf { wanted ->
+                    TrackQuery.scoreCandidate(
+                        result.trackName.orEmpty(),
+                        result.artistName.orEmpty(),
+                        result.duration,
+                        wanted,
+                        wantedDurationSec
+                    )
+                }
+                result to score
+            }
+            .maxByOrNull { it.second }
+
+        if (best == null || best.second < TrackQuery.ACCEPT_THRESHOLD) return null
+        val r = best.first
+        Log.d("LyricsManager", "Search match: ${r.trackName} - ${r.artistName} (score ${best.second})")
+        return parseLyrics(LyricsResponse(r.plainLyrics, r.syncedLyrics, null, r.duration))
     }
 
     private fun parseLyrics(res: LyricsResponse): List<LyricLine>? {

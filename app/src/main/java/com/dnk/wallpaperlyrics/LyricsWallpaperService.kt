@@ -164,6 +164,10 @@ class LyricsWallpaperService : WallpaperService() {
         
         private var currentTitle: String? = null
         private var currentArtist: String? = null
+        private var currentDurationMs = 0L
+        // Written from OkHttp threads, read in the draw loop — volatile like currentLyrics.
+        @Volatile
+        private var lyricsSearchExhausted = false
         private var albumArt: Bitmap? = null
         private var isPlaying = false
         private var titleLayout: StaticLayout? = null
@@ -322,16 +326,21 @@ class LyricsWallpaperService : WallpaperService() {
                     return
                 }
 
+                val durationMs = metadata?.getLong(MediaMetadata.METADATA_KEY_DURATION) ?: 0L
+
                 val isNewTrack = (title != currentTitle || artist != currentArtist)
+                if (durationMs > 0) currentDurationMs = durationMs
                 if (isNewTrack) {
                     currentTitle = title
                     currentArtist = artist
-                    currentArtUri = null 
+                    currentDurationMs = durationMs
+                    lyricsSearchExhausted = false
+                    currentArtUri = null
                     hasArtForCurrentTrack = false
                     songStartTime = System.currentTimeMillis()
-                    
+
                     // Force a transition to metadata view even if paused
-                    targetViewAlpha = 1.0f 
+                    targetViewAlpha = 1.0f
 
                     // Reset lyrics/layouts
                     currentLyrics = null
@@ -341,12 +350,15 @@ class LyricsWallpaperService : WallpaperService() {
                     artistLayout = null
                     metadataTitleLayout = null
                     metadataArtistLayout = null
-                    
+
                     showToast("Fetching lyrics...")
-                    lyricsManager.fetchLyrics(title, artist ?: "") { lines ->
+                    lyricsManager.fetchLyrics(title, artist ?: "", durationMs) { lines, definitive ->
                         if (currentTitle == title) {
                             currentLyrics = lines
-                            showToast(if (lines != null) "Lyrics synced!" else "Lyrics unavailable")
+                            if (lines == null && definitive) lyricsSearchExhausted = true
+                            if (lines != null) showToast("Lyrics synced!")
+                            else if (definitive) showToast("Lyrics unavailable")
+                            // Transient failure stays quiet; the watchdog retries shortly.
                         }
                     }
                 }
@@ -494,6 +506,8 @@ class LyricsWallpaperService : WallpaperService() {
         private fun resetToIdleState() {
             currentTitle = null
             currentArtist = null
+            currentDurationMs = 0L
+            lyricsSearchExhausted = false
             albumArt = null
             currentLyrics = null
             currentArtUri = null
@@ -697,16 +711,17 @@ class LyricsWallpaperService : WallpaperService() {
                 lineOffsets = offsets
             }
 
-            // Watchdog logic...
+            // Watchdog logic... (only retry layer; disarmed once a miss is definitive)
             val now = System.currentTimeMillis()
-            if (currentLyrics == null && !currentTitle.isNullOrBlank() && (now - songStartTime > 4000)) {
-                if (now - lastWatchdogCheck > 5000) { 
+            if (currentLyrics == null && !lyricsSearchExhausted && !currentTitle.isNullOrBlank() && (now - songStartTime > 4000)) {
+                if (now - lastWatchdogCheck > 5000) {
                     lastWatchdogCheck = now
                     currentTitle?.let { title ->
                         showToast("Retrying lyrics...")
-                        lyricsManager.fetchLyrics(title, currentArtist ?: "") { l ->
+                        lyricsManager.fetchLyrics(title, currentArtist ?: "", currentDurationMs) { l, definitive ->
                             if (currentTitle == title) {
                                 currentLyrics = l
+                                if (l == null && definitive) lyricsSearchExhausted = true
                                 if (l != null) showToast("Lyrics synced!")
                             }
                         }
