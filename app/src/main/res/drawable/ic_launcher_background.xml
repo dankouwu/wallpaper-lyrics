@@ -1,10 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
+    android:width="512dp"
+    android:height="512dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+    <!-- Solid Black full-bleed background (letting the OS mask it natively) -->
     <path
-        android:fillColor="#3DDC84"
-        android:pathData="M0,0h108v108h-108z" />
+        android:fillColor="#000000"
+        android:pathData="M0,0 h512 v512 h-512 z" />
+
+    <!-- Music Note Icon (White, centered, scaled to 320x320) -->
+    <group
+        android:translateX="96"
+        android:translateY="96"
+        android:scaleX="13.333333"
+        android:scaleY="13.333333">
+        <!-- Stem & Flag -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M9,18 V5 l12,-2 v13" />
+
+        <!-- Left Circle Outline -->
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M 6,15 a 3,3 0 1,0 0,6 a 3,3 0 1,0 0,-6" />
+
+        <!-- Left Circle Fill -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M 6,14 a 4,4 0 1,0 0,8 a 4,4 0 1,0 0,-8" />
+
+        <!-- Right Circle Fill -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M 18,12 a 4,4 0 1,0 0,8 a 4,4 0 1,0 0,-8" />
+    </group>
 </vector>
