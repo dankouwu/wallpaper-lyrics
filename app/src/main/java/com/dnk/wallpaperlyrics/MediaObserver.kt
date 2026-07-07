@@ -53,16 +53,23 @@ class MediaObserver(
     }
 
     fun refresh() {
-        try {
-            val controllers = mediaSessionManager.getActiveSessions(componentName)
-            updateActiveController(controllers)
-        } catch (e: Exception) {
-            Log.e("MediaObserver", "Failed to refresh sessions", e)
+        kotlin.concurrent.thread(start = true) {
+            try {
+                val controllers = mediaSessionManager.getActiveSessions(componentName)
+                handler.post {
+                    updateActiveController(controllers)
+                }
+            } catch (e: Exception) {
+                Log.e("MediaObserver", "Failed to refresh sessions", e)
+            }
         }
     }
 
     private fun updateActiveController(controllers: List<MediaController>?) {
-        val newController = controllers?.find { it.packageName.contains("spotify", ignoreCase = true) }
+        val newController = controllers?.find { 
+            val pkg = it.packageName.lowercase()
+            pkg.contains("spotify") || pkg.contains("tidal")
+        }
 
         if (newController?.packageName != activeController?.packageName) {
             activeController?.unregisterCallback(callback)
