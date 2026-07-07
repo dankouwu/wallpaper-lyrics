@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
     enum class TrailingType { CHEVRON, SWITCH, VALUE, CHECK, NONE }
 
     class CustomIconDrawable(private val context: Context, private val iconType: IconType) : android.graphics.drawable.Drawable() {
-        enum class IconType { BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH, GITHUB, BUG, COPYRIGHT, INFO, CHECK }
+        enum class IconType { BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH, GITHUB, BUG, COPYRIGHT, INFO, CHECK, FILE_STACK }
         
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -175,6 +175,13 @@ class MainActivity : AppCompatActivity() {
                     IconType.CHECK -> {
                         drawPaths(canvas, listOf(
                             "M20 6 9 17l-5-5"
+                        ))
+                    }
+                    IconType.FILE_STACK -> {
+                        drawPaths(canvas, listOf(
+                            "M11 21a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1",
+                            "M16 16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1",
+                            "M21 6a2 2 0 0 0-.586-1.414l-2-2A2 2 0 0 0 17 2h-3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1z"
                         ))
                     }
                 }
@@ -674,7 +681,17 @@ class MainActivity : AppCompatActivity() {
             // CARD 4: About Section
             addSectionHeader("About")
             val card4 = SettingsCard(this).apply {
-                // Row 1: GitHub Repository
+                // Row 1: Version
+                addRow(SettingsRow(
+                    this@MainActivity,
+                    CustomIconDrawable.IconType.FILE_STACK,
+                    "Version",
+                    "1.4.0",
+                    TrailingType.NONE,
+                    onClick = {}
+                ))
+
+                // Row 2: GitHub Repository
                 addRow(SettingsRow(
                     this@MainActivity,
                     CustomIconDrawable.IconType.GITHUB,
