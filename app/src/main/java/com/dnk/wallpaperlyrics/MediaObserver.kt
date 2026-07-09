@@ -66,9 +66,16 @@ class MediaObserver(
     }
 
     private fun updateActiveController(controllers: List<MediaController>?) {
+        val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
+
         val newController = controllers?.find { 
             val pkg = it.packageName.lowercase()
-            pkg.contains("spotify") || pkg.contains("tidal")
+            when (preferred) {
+                "spotify" -> pkg.contains("spotify")
+                "tidal" -> pkg.contains("tidal")
+                else -> pkg.contains("spotify") || pkg.contains("tidal")
+            }
         }
 
         if (newController?.packageName != activeController?.packageName) {

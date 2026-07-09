@@ -204,6 +204,7 @@ class LyricsWallpaperService : WallpaperService() {
                 "bg_speed" -> prefBgSpeed = prefs.getFloat("bg_speed", 1.0f)
                 "sync_offset" -> prefSyncOffset = prefs.getInt("sync_offset", 0)
                 "album_corner_radius" -> prefAlbumCornerRadius = prefs.getFloat("album_corner_radius", 48f)
+                "preferred_media_player" -> mediaObserver.refresh()
             }
         }
 

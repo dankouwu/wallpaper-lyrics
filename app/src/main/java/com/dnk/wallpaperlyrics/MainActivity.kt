@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
     enum class TrailingType { CHEVRON, SWITCH, VALUE, CHECK, NONE }
 
     class CustomIconDrawable(private val context: Context, private val iconType: IconType) : android.graphics.drawable.Drawable() {
-        enum class IconType { BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH, GITHUB, BUG, COPYRIGHT, INFO, CHECK, FILE_STACK }
+        enum class IconType { BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH, GITHUB, BUG, COPYRIGHT, INFO, CHECK, FILE_STACK, SQUARE_PLAY }
         
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -182,6 +182,12 @@ class MainActivity : AppCompatActivity() {
                             "M11 21a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1",
                             "M16 16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1",
                             "M21 6a2 2 0 0 0-.586-1.414l-2-2A2 2 0 0 0 17 2h-3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1z"
+                        ))
+                    }
+                    IconType.SQUARE_PLAY -> {
+                        drawPaths(canvas, listOf(
+                            "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
+                            "M9 9.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997A1 1 0 0 1 9 14.996z"
                         ))
                     }
                 }
@@ -574,6 +580,47 @@ class MainActivity : AppCompatActivity() {
                     }
                 )
                 addRow(radiusRow)
+
+                // Row 5: Preferred Media Player (conditional)
+                val showPlayerSelection = isSpotifyInstalled() && isTidalInstalled()
+                if (showPlayerSelection) {
+                    val currentPref = prefs.getString("preferred_media_player", "default") ?: "default"
+                    val displayValue = when (currentPref) {
+                        "spotify" -> "Spotify"
+                        "tidal" -> "Tidal"
+                        else -> "Default"
+                    }
+                    lateinit var playerRow: SettingsRow
+                    playerRow = SettingsRow(
+                        this@MainActivity,
+                        CustomIconDrawable.IconType.SQUARE_PLAY,
+                        "Preferred Media Player",
+                        "Track lyrics from a specific player",
+                        TrailingType.VALUE,
+                        displayValue,
+                        onClick = {
+                            val activePref = prefs.getString("preferred_media_player", "default") ?: "default"
+                            showOptionPickerDialog(
+                                "Preferred Media Player",
+                                listOf(
+                                    Pair("Default", "default"),
+                                    Pair("Spotify", "spotify"),
+                                    Pair("Tidal", "tidal")
+                                ),
+                                activePref
+                            ) { selectedVal ->
+                                prefs.edit().putString("preferred_media_player", selectedVal).apply()
+                                val newDisplayValue = when (selectedVal) {
+                                    "spotify" -> "Spotify"
+                                    "tidal" -> "Tidal"
+                                    else -> "Default"
+                                }
+                                playerRow.updateValue(newDisplayValue)
+                            }
+                        }
+                    )
+                    addRow(playerRow)
+                }
             }
             rootLayout.addView(card1)
 
@@ -804,9 +851,15 @@ class MainActivity : AppCompatActivity() {
             val componentName = ComponentName(this, NotificationService::class.java)
             val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
             val controllers = mediaSessionManager.getActiveSessions(componentName)
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
             val active = controllers.find { 
                 val pkg = it.packageName.lowercase()
-                pkg.contains("spotify") || pkg.contains("tidal")
+                when (preferred) {
+                    "spotify" -> pkg.contains("spotify")
+                    "tidal" -> pkg.contains("tidal")
+                    else -> pkg.contains("spotify") || pkg.contains("tidal")
+                }
             }
             if (active != null) {
                 val metadata = active.metadata
@@ -1110,9 +1163,15 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
         val active = controllers.find { 
             val pkg = it.packageName.lowercase()
-            pkg.contains("spotify") || pkg.contains("tidal")
+            when (preferred) {
+                "spotify" -> pkg.contains("spotify")
+                "tidal" -> pkg.contains("tidal")
+                else -> pkg.contains("spotify") || pkg.contains("tidal")
+            }
         }
 
         if (active == null) {
@@ -1356,5 +1415,119 @@ class MainActivity : AppCompatActivity() {
 
     private fun dpToPx(dp: Float): Int {
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, resources.displayMetrics).toInt()
+    }
+
+    private fun isSpotifyInstalled(): Boolean {
+        return isPackageInstalled("com.spotify.music") || isPackageInstalled("com.spotify.lite")
+    }
+
+    private fun isTidalInstalled(): Boolean {
+        return isPackageInstalled("com.aspiro.tidal")
+    }
+
+    private fun isPackageInstalled(packageName: String): Boolean {
+        return try {
+            packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+            false
+        }
+    }
+
+    private fun showOptionPickerDialog(
+        title: String,
+        options: List<Pair<String, String>>,
+        currentValue: String,
+        onOptionSelected: (String) -> Unit
+    ) {
+        val dialog = android.app.Dialog(this).apply {
+            requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+            setCancelable(true)
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dpToPx(24f), dpToPx(24f), dpToPx(24f), dpToPx(20f))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#333333"))
+                cornerRadius = dpToPx(16f).toFloat()
+            }
+        }
+
+        val titleText = TextView(this).apply {
+            text = title
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            setPadding(0, 0, 0, dpToPx(16f))
+        }
+        container.addView(titleText)
+
+        options.forEach { (displayName, value) ->
+            val optionLayout = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                val p12 = dpToPx(12f)
+                val p16 = dpToPx(16f)
+                setPadding(p16, p12, p16, p12)
+                isClickable = true
+                
+                val outVal = TypedValue()
+                theme.resolveAttribute(android.R.attr.selectableItemBackground, outVal, true)
+                setBackgroundResource(outVal.resourceId)
+                
+                setOnClickListener {
+                    onOptionSelected(value)
+                    dialog.dismiss()
+                }
+            }
+
+            val optionText = TextView(this).apply {
+                text = displayName
+                textSize = 16f
+                setTextColor(Color.WHITE)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            optionLayout.addView(optionText)
+
+            if (value == currentValue) {
+                val checkView = android.widget.ImageView(this).apply {
+                    val checkDrawable = CustomIconDrawable(this@MainActivity, CustomIconDrawable.IconType.CHECK)
+                    setImageDrawable(checkDrawable)
+                    layoutParams = LinearLayout.LayoutParams(dpToPx(20f), dpToPx(20f))
+                }
+                optionLayout.addView(checkView)
+            }
+
+            container.addView(optionLayout)
+        }
+
+        val buttonLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, dpToPx(16f), 0, 0)
+        }
+
+        val cancelButton = Button(this).apply {
+            text = "Cancel"
+            setTextColor(Color.parseColor("#8E8E93"))
+            transformationMethod = null
+            background = null
+            setOnClickListener { dialog.dismiss() }
+        }
+        buttonLayout.addView(cancelButton)
+        container.addView(buttonLayout)
+
+        dialog.setContentView(container)
+
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            setLayout(
+                (resources.displayMetrics.widthPixels * 0.85f).toInt(),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        dialog.show()
     }
 }
