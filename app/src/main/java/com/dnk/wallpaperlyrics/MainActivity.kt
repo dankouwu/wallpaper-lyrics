@@ -230,6 +230,7 @@ class MainActivity : AppCompatActivity() {
                 setColor(Color.parseColor("#333333")) // Card Background #333333
                 cornerRadius = dpToPx(18f).toFloat()
             }
+            clipToOutline = true
             layoutParams = LayoutParams(
                 LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT
