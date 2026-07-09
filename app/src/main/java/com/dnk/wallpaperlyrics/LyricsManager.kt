@@ -132,53 +132,16 @@ class LyricsManager(private val context: Context) {
         }
         val wantedDurationSec = if (durationMs > 0) durationMs / 1000.0 else null
 
-        val steps = mutableListOf<Step>()
-        steps.add(Step(getUrl(candidates.first()), isSearch = false))
-        candidates.drop(1).forEach { steps.add(Step(searchUrl(it), isSearch = true)) }
-        // Free-text last resort with the cleaned full title (variant 1).
-        val freeText = candidates.getOrNull(1) ?: candidates.first()
-        steps.add(Step(qUrl(freeText.title), isSearch = true))
+        val primary = candidates.first()
+        val url = "https://lrclib.net/api/search?track_name=${URLEncoder.encode(primary.title, "UTF-8")}&artist_name=${URLEncoder.encode(primary.artist, "UTF-8")}"
 
-        val deduped = steps.distinctBy { it.url }
-        runStep(deduped, 0, candidates, wantedDurationSec, cacheFile, missFile, callback)
-    }
-
-    private data class Step(val url: String, val isSearch: Boolean)
-
-    private fun getUrl(c: QueryCandidate) =
-        "https://lrclib.net/api/get?track_name=${URLEncoder.encode(c.title, "UTF-8")}&artist_name=${URLEncoder.encode(c.artist, "UTF-8")}"
-
-    private fun searchUrl(c: QueryCandidate) = if (c.artist.isBlank()) qUrl(c.title) else
-        "https://lrclib.net/api/search?track_name=${URLEncoder.encode(c.title, "UTF-8")}&artist_name=${URLEncoder.encode(c.artist, "UTF-8")}"
-
-    private fun qUrl(q: String) =
-        "https://lrclib.net/api/search?q=${URLEncoder.encode(q, "UTF-8")}"
-
-    private fun runStep(
-        steps: List<Step>,
-        index: Int,
-        candidates: List<QueryCandidate>,
-        wantedDurationSec: Double?,
-        cacheFile: File,
-        missFile: File,
-        callback: (List<LyricLine>?, Boolean) -> Unit
-    ) {
-        if (index >= steps.size) {
-            try { missFile.writeText(System.currentTimeMillis().toString()) } catch (e: Exception) {}
-            callback(null, true)
-            return
-        }
-
-        val step = steps[index]
         val request = Request.Builder()
-            .url(step.url)
+            .url(url)
             .header("User-Agent", USER_AGENT)
             .build()
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                // Transient: abort the whole ladder, no negative cache. The service
-                // watchdog is the retry layer.
                 callback(null, false)
             }
 
@@ -188,13 +151,12 @@ class LyricsManager(private val context: Context) {
                     callback(null, false)
                     return
                 }
-                // 404 and other 4xx are definitive for this step: advance the ladder.
+
                 val lines = if (response.isSuccessful && body != null) {
                     try {
-                        if (step.isSearch) pickFromSearch(body, candidates, wantedDurationSec)
-                        else parseLyrics(gson.fromJson(body, LyricsResponse::class.java))
+                        pickFromSearch(body, candidates, wantedDurationSec)
                     } catch (e: Exception) {
-                        Log.e("LyricsManager", "Parse failure for ${step.url}", e)
+                        Log.e("LyricsManager", "Parse failure for $url", e)
                         null
                     }
                 } else null
@@ -203,7 +165,8 @@ class LyricsManager(private val context: Context) {
                     try { cacheFile.writeText(gson.toJson(lines)) } catch (e: Exception) {}
                     callback(lines, true)
                 } else {
-                    runStep(steps, index + 1, candidates, wantedDurationSec, cacheFile, missFile, callback)
+                    try { missFile.writeText(System.currentTimeMillis().toString()) } catch (e: Exception) {}
+                    callback(null, true)
                 }
             }
         })
