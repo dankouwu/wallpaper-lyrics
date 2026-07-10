@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
     enum class TrailingType { CHEVRON, SWITCH, VALUE, CHECK, NONE }
 
     class CustomIconDrawable(private val context: Context, private val iconType: IconType) : android.graphics.drawable.Drawable() {
-        enum class IconType { BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH, GITHUB, BUG, COPYRIGHT, INFO, CHECK, FILE_STACK, SQUARE_PLAY }
+        enum class IconType { BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH, GITHUB, BUG, COPYRIGHT, INFO, CHECK, FILE_STACK, SQUARE_PLAY, SPOTIFY, TIDAL, LIST_MUSIC }
         
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -189,6 +189,34 @@ class MainActivity : AppCompatActivity() {
                             "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
                             "M9 9.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997A1 1 0 0 1 9 14.996z"
                         ))
+                    }
+                    IconType.SPOTIFY -> {
+                        canvas.drawCircle(12f, 12f, 9.5f, paint)
+                        drawPaths(canvas, listOf(
+                            "M7.5 9c2.5-1 6.5-1 9 0",
+                            "M8.5 12c2-.7 5-.7 7 0",
+                            "M9.5 15c1.5-.5 3.5-.5 5 0"
+                        ))
+                    }
+                    IconType.TIDAL -> {
+                        paint.style = Paint.Style.FILL
+                        drawPaths(canvas, listOf(
+                            "M12 5l3.5 3.5l-3.5 3.5l-3.5-3.5z",
+                            "M5 5l3.5 3.5l-3.5 3.5l-3.5-3.5z",
+                            "M19 5l3.5 3.5l-3.5 3.5l-3.5-3.5z",
+                            "M12 12l3.5 3.5l-3.5 3.5l-3.5-3.5z"
+                        ))
+                        paint.style = Paint.Style.STROKE
+                    }
+                    IconType.LIST_MUSIC -> {
+                        drawPaths(canvas, listOf(
+                            "M16 5H3",
+                            "M11 12H3",
+                            "M11 19H3",
+                            "M21 16V5"
+                        ))
+                        val circlePaint = Paint(paint).apply { style = Paint.Style.STROKE }
+                        canvas.drawCircle(18f, 16f, 3f, circlePaint)
                     }
                 }
             } catch (e: Exception) {
@@ -1482,6 +1510,20 @@ class MainActivity : AppCompatActivity() {
                     dialog.dismiss()
                 }
             }
+
+            val iconType = when (value) {
+                "spotify" -> CustomIconDrawable.IconType.SPOTIFY
+                "tidal" -> CustomIconDrawable.IconType.TIDAL
+                else -> CustomIconDrawable.IconType.LIST_MUSIC
+            }
+
+            val iconView = View(this).apply {
+                background = CustomIconDrawable(this@MainActivity, iconType)
+                layoutParams = LinearLayout.LayoutParams(dpToPx(24f), dpToPx(24f)).apply {
+                    rightMargin = dpToPx(16f)
+                }
+            }
+            optionLayout.addView(iconView)
 
             val optionText = TextView(this).apply {
                 text = displayName
