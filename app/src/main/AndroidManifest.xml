@@ -8,6 +8,7 @@
         <package android:name="com.spotify.music" />
         <package android:name="com.spotify.lite" />
         <package android:name="com.aspiro.tidal" />
+        <package android:name="org.kde.kdeconnect_tp" />
     </queries>
 
     <application
@@ -15,6 +16,7 @@
         android:icon="@drawable/ic_launcher_background"
         android:label="Wallpaper Lyrics"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar">
 
         <service
@@ -48,6 +50,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".BackgroundSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".EnhancedLyricsActivity"
+            android:exported="false" />
 
     </application>
 
