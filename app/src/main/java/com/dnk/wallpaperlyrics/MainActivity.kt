@@ -34,7 +34,7 @@ class MainActivity : AppCompatActivity() {
     enum class TrailingType { CHEVRON, SWITCH, VALUE, CHECK, NONE }
 
     class CustomIconDrawable(private val context: Context, private val iconType: IconType) : android.graphics.drawable.Drawable() {
-        enum class IconType { BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH, GITHUB, BUG, COPYRIGHT, INFO, CHECK, FILE_STACK, SQUARE_PLAY, SPOTIFY, TIDAL, LIST_MUSIC }
+        enum class IconType { BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH, GITHUB, BUG, COPYRIGHT, INFO, CHECK, FILE_STACK, SQUARE_PLAY, SPOTIFY, TIDAL, KDECONNECT, LIST_MUSIC, SLIDERS, ARROW_LEFT }
         
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -208,6 +208,12 @@ class MainActivity : AppCompatActivity() {
                         ))
                         paint.style = Paint.Style.STROKE
                     }
+                    IconType.KDECONNECT -> {
+                        drawPaths(canvas, listOf(
+                            "M6.75 5.75h10.5M7.5 2.75h9c0.6925 0 1.25 0.5575 1.25 1.25v16c0 0.6925-0.5575 1.25-1.25 1.25H7.5c-0.6925 0-1.25-0.5575-1.25-1.25V4c0-0.6925 0.5575-1.25 1.25-1.25zm-0.75 15.5h10.5",
+                            "M10.5 9.59375v4.75m3.09375-4.6875L11.8875 11.915l1.70625 2.49125"
+                        ))
+                    }
                     IconType.LIST_MUSIC -> {
                         drawPaths(canvas, listOf(
                             "M16 5H3",
@@ -217,6 +223,25 @@ class MainActivity : AppCompatActivity() {
                         ))
                         val circlePaint = Paint(paint).apply { style = Paint.Style.STROKE }
                         canvas.drawCircle(18f, 16f, 3f, circlePaint)
+                    }
+                    IconType.SLIDERS -> {
+                        drawPaths(canvas, listOf(
+                            "M10 5H3",
+                            "M12 19H3",
+                            "M14 3v4",
+                            "M16 17v4",
+                            "M21 12h-9",
+                            "M21 19h-5",
+                            "M21 5h-7",
+                            "M8 10v4",
+                            "M8 12H3"
+                        ))
+                    }
+                    IconType.ARROW_LEFT -> {
+                        drawPaths(canvas, listOf(
+                            "M19 12H5",
+                            "m12 19-7-7 7-7"
+                        ))
                     }
                 }
             } catch (e: Exception) {
@@ -576,47 +601,38 @@ class MainActivity : AppCompatActivity() {
                 )
                 addRow(wallpaperRow)
 
-                // Row 3: Dynamic Accent colors
+                // Row 3: Background Settings
                 addRow(SettingsRow(
                     this@MainActivity,
-                    CustomIconDrawable.IconType.PALETTE,
-                    "Dynamic Theming",
-                    "Sync highlights with Material You palette",
-                    TrailingType.SWITCH,
-                    prefs.getBoolean("dynamic_theming", false).toString(),
-                    onCheckedChange = { checked ->
-                        prefs.edit().putBoolean("dynamic_theming", checked).apply()
+                    CustomIconDrawable.IconType.SLIDERS,
+                    "Background Settings",
+                    "Configure liquid wallpaper visuals",
+                    TrailingType.CHEVRON,
+                    onClick = {
+                        startActivity(Intent(this@MainActivity, BackgroundSettingsActivity::class.java))
                     }
                 ))
 
-                // Row 4: Corner radius customization
-                val initialRadius = prefs.getFloat("album_corner_radius", 48f).toInt()
-                lateinit var radiusRow: SettingsRow
-                radiusRow = SettingsRow(
+                // Row 4: Custom Lyrics Provider
+                addRow(SettingsRow(
                     this@MainActivity,
-                    CustomIconDrawable.IconType.CORNER,
-                    "Album Corner Radius",
-                    "Modify corners from sharp to circular",
-                    TrailingType.VALUE,
-                    "${initialRadius}dp",
+                    CustomIconDrawable.IconType.LIST_MUSIC,
+                    "Custom Lyrics Provider",
+                    "Configure custom local/remote API override",
+                    TrailingType.CHEVRON,
                     onClick = {
-                        val currentRadius = prefs.getFloat("album_corner_radius", 48f).toInt()
-                        showCustomEditDialog("Set Corner Radius", currentRadius.toString(), 0f, 120f, false, "dp") { newVal ->
-                            val radiusVal = newVal.toInt()
-                            prefs.edit().putFloat("album_corner_radius", radiusVal.toFloat()).apply()
-                            radiusRow.updateValue("${radiusVal}dp")
-                        }
+                        startActivity(Intent(this@MainActivity, EnhancedLyricsActivity::class.java))
                     }
-                )
-                addRow(radiusRow)
+                ))
 
                 // Row 5: Preferred Media Player (conditional)
-                val showPlayerSelection = isSpotifyInstalled() && isTidalInstalled()
+                val showPlayerSelection = listOf(isSpotifyInstalled(), isTidalInstalled(), isKdeConnectInstalled()).count { it } >= 2
                 if (showPlayerSelection) {
                     val currentPref = prefs.getString("preferred_media_player", "default") ?: "default"
                     val displayValue = when (currentPref) {
                         "spotify" -> "Spotify"
                         "tidal" -> "Tidal"
+                        "kdeconnect" -> "KDE Connect"
                         else -> "Default"
                     }
                     lateinit var playerRow: SettingsRow
@@ -629,19 +645,21 @@ class MainActivity : AppCompatActivity() {
                         displayValue,
                         onClick = {
                             val activePref = prefs.getString("preferred_media_player", "default") ?: "default"
+                            val options = mutableListOf(Pair("Default", "default"))
+                            if (isSpotifyInstalled()) options.add(Pair("Spotify", "spotify"))
+                            if (isTidalInstalled()) options.add(Pair("Tidal", "tidal"))
+                            if (isKdeConnectInstalled()) options.add(Pair("KDE Connect", "kdeconnect"))
+                            
                             showOptionPickerDialog(
                                 "Preferred Media Player",
-                                listOf(
-                                    Pair("Default", "default"),
-                                    Pair("Spotify", "spotify"),
-                                    Pair("Tidal", "tidal")
-                                ),
+                                options,
                                 activePref
                             ) { selectedVal ->
                                 prefs.edit().putString("preferred_media_player", selectedVal).apply()
                                 val newDisplayValue = when (selectedVal) {
                                     "spotify" -> "Spotify"
                                     "tidal" -> "Tidal"
+                                    "kdeconnect" -> "KDE Connect"
                                     else -> "Default"
                                 }
                                 playerRow.updateValue(newDisplayValue)
@@ -677,25 +695,6 @@ class MainActivity : AppCompatActivity() {
                 )
                 addRow(offsetRow)
 
-                // Row 2: Animation speed
-                val initialSpeed = prefs.getFloat("bg_speed", 1.0f)
-                lateinit var speedRow: SettingsRow
-                speedRow = SettingsRow(
-                    this@MainActivity,
-                    CustomIconDrawable.IconType.GAUGE,
-                    "Background Speed",
-                    "Control velocity of background liquid",
-                    TrailingType.VALUE,
-                    String.format("%.1fx", initialSpeed),
-                    onClick = {
-                        val currentSpeed = prefs.getFloat("bg_speed", 1.0f)
-                        showCustomEditDialog("Set Fluid Speed", String.format("%.1f", currentSpeed), 0.1f, 10.0f, true, "x") { newVal ->
-                            prefs.edit().putFloat("bg_speed", newVal).apply()
-                            speedRow.updateValue(String.format("%.1fx", newVal))
-                        }
-                    }
-                )
-                addRow(speedRow)
             }
             rootLayout.addView(card2)
 
@@ -762,7 +761,7 @@ class MainActivity : AppCompatActivity() {
                     this@MainActivity,
                     CustomIconDrawable.IconType.FILE_STACK,
                     "Version",
-                    "1.4.0",
+                    "1.5.0",
                     TrailingType.NONE,
                     onClick = {}
                 ))
@@ -882,12 +881,17 @@ class MainActivity : AppCompatActivity() {
             val controllers = mediaSessionManager.getActiveSessions(componentName)
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
             val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
-            val active = controllers.find { 
-                val pkg = it.packageName.lowercase()
-                when (preferred) {
-                    "spotify" -> pkg.contains("spotify")
-                    "tidal" -> pkg.contains("tidal")
-                    else -> pkg.contains("spotify") || pkg.contains("tidal")
+            val active = if (preferred == "default") {
+                controllers.firstOrNull()
+            } else {
+                controllers.find { 
+                    val pkg = it.packageName.lowercase()
+                    when (preferred) {
+                        "spotify" -> pkg.contains("spotify")
+                        "tidal" -> pkg.contains("tidal")
+                        "kdeconnect" -> pkg.contains("kdeconnect")
+                        else -> false
+                    }
                 }
             }
             if (active != null) {
@@ -1194,17 +1198,22 @@ class MainActivity : AppCompatActivity() {
 
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
-        val active = controllers.find { 
-            val pkg = it.packageName.lowercase()
-            when (preferred) {
-                "spotify" -> pkg.contains("spotify")
-                "tidal" -> pkg.contains("tidal")
-                else -> pkg.contains("spotify") || pkg.contains("tidal")
+        val active = if (preferred == "default") {
+            controllers.firstOrNull()
+        } else {
+            controllers.find { 
+                val pkg = it.packageName.lowercase()
+                when (preferred) {
+                    "spotify" -> pkg.contains("spotify")
+                    "tidal" -> pkg.contains("tidal")
+                    "kdeconnect" -> pkg.contains("kdeconnect")
+                    else -> false
+                }
             }
         }
 
         if (active == null) {
-            Toast.makeText(this, "No active Spotify or Tidal session found", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No active Spotify, Tidal or KDE Connect session found", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1231,15 +1240,23 @@ class MainActivity : AppCompatActivity() {
                 val sb = StringBuilder()
                 for (line in lines) {
                     if (line.isInstrumental && line.content == "♪") continue
-                    val totalSeconds = line.startTime / 1000
-                    val minutes = totalSeconds / 60
-                    val seconds = totalSeconds % 60
-                    val milliseconds = line.startTime % 1000
-                    val centiseconds = milliseconds / 10
-                    val minStr = String.format("%02d", minutes)
-                    val secStr = String.format("%02d", seconds)
-                    val csStr = String.format("%02d", centiseconds)
-                    sb.append("[$minStr:$secStr.$csStr] ${line.content}\n")
+                    val lineTimeStr = LyricsManager.formatTime(line.startTime)
+                    val words = line.words
+                    val hasRealWords = words != null && words.isNotEmpty() && words.any { !it.isEstimated }
+                    if (hasRealWords && words != null) {
+                        val lineSb = StringBuilder()
+                        lineSb.append("[$lineTimeStr]")
+                        for (index in words.indices) {
+                            val word = words[index]
+                            lineSb.append("<${LyricsManager.formatTime(word.startTime)}>${word.text}")
+                            if (index == words.size - 1) {
+                                lineSb.append("<${LyricsManager.formatTime(word.endTime)}>")
+                            }
+                        }
+                        sb.append(lineSb.toString()).append("\n")
+                    } else {
+                        sb.append("[$lineTimeStr] ${line.content}\n")
+                    }
                 }
                 existingLrc = sb.toString().trim()
             } catch (e: Exception) {
@@ -1253,7 +1270,7 @@ class MainActivity : AppCompatActivity() {
                 if (missFile.exists()) missFile.delete()
                 Toast.makeText(this, "Override cleared!", Toast.LENGTH_SHORT).show()
             } else {
-                val parsed = parseLrcText(newLrc)
+                val parsed = LyricsManager.parseLrcText(newLrc)
                 if (parsed == null) {
                     Toast.makeText(this, "Invalid LRC format. No lines parsed.", Toast.LENGTH_SHORT).show()
                     return@showLyricsEditDialog
@@ -1397,50 +1414,7 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun parseLrcText(lrcText: String): List<LyricLine>? {
-        val rawLines = mutableListOf<LyricLine>()
-        val regex = Regex("\\[(\\d+):(\\d+)\\.(\\d+)\\](.*)")
-        
-        lrcText.lines().forEach { line ->
-            val match = regex.find(line)
-            if (match != null) {
-                val min = match.groupValues[1].toLongOrNull() ?: 0L
-                val sec = match.groupValues[2].toLongOrNull() ?: 0L
-                val ms = match.groupValues[3].padEnd(3, '0').take(3).toLongOrNull() ?: 0L
-                var content = match.groupValues[4].trim()
-                
-                val isMarker = content.contains("♪") || 
-                             content.contains("(Instrumental)", true) || 
-                             content.contains("[Instrumental]", true)
-                
-                if (isMarker) content = "♪"
-                
-                val startTime = (min * 60 + sec) * 1000 + ms
-                val finalContent = if (content.isEmpty()) "♪" else content
-                rawLines.add(LyricLine(startTime, 0, finalContent, finalContent == "♪"))
-            }
-        }
-        if (rawLines.isEmpty()) return null
-        
-        val songDurationMs = rawLines.last().startTime + 10000
-        val processedLines = mutableListOf<LyricLine>()
-        for (i in 0 until rawLines.size) {
-            val currentRaw = rawLines[i]
-            val nextRaw = if (i < rawLines.size - 1) rawLines[i + 1] else null
-            val estimatedDuration = if (currentRaw.isInstrumental) {
-                nextRaw?.let { it.startTime - currentRaw.startTime } ?: (songDurationMs - currentRaw.startTime)
-            } else {
-                (currentRaw.content.length * 100L + 500L).coerceIn(2000L, 8000L)
-            }
-            var endTime = nextRaw?.startTime?.let { Math.min(currentRaw.startTime + estimatedDuration, it - 200L) } 
-                          ?: (currentRaw.startTime + estimatedDuration)
-            if (nextRaw == null) {
-                endTime = songDurationMs
-            }
-            processedLines.add(currentRaw.copy(endTime = endTime))
-        }
-        return processedLines
-    }
+
 
     private fun dpToPx(dp: Float): Int {
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, resources.displayMetrics).toInt()
@@ -1452,6 +1426,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun isTidalInstalled(): Boolean {
         return isPackageInstalled("com.aspiro.tidal")
+    }
+
+    private fun isKdeConnectInstalled(): Boolean {
+        return isPackageInstalled("org.kde.kdeconnect_tp")
     }
 
     private fun isPackageInstalled(packageName: String): Boolean {
@@ -1514,6 +1492,7 @@ class MainActivity : AppCompatActivity() {
             val iconType = when (value) {
                 "spotify" -> CustomIconDrawable.IconType.SPOTIFY
                 "tidal" -> CustomIconDrawable.IconType.TIDAL
+                "kdeconnect" -> CustomIconDrawable.IconType.KDECONNECT
                 else -> CustomIconDrawable.IconType.LIST_MUSIC
             }
 

@@ -69,12 +69,17 @@ class MediaObserver(
         val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
 
-        val newController = controllers?.find { 
-            val pkg = it.packageName.lowercase()
-            when (preferred) {
-                "spotify" -> pkg.contains("spotify")
-                "tidal" -> pkg.contains("tidal")
-                else -> pkg.contains("spotify") || pkg.contains("tidal")
+        val newController = if (preferred == "default") {
+            controllers?.firstOrNull()
+        } else {
+            controllers?.find { 
+                val pkg = it.packageName.lowercase()
+                when (preferred) {
+                    "spotify" -> pkg.contains("spotify")
+                    "tidal" -> pkg.contains("tidal")
+                    "kdeconnect" -> pkg.contains("kdeconnect")
+                    else -> false
+                }
             }
         }
 
@@ -94,5 +99,9 @@ class MediaObserver(
         
         val timeDiff = SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
         return state.position + (timeDiff * state.playbackSpeed).toLong()
+    }
+
+    fun getPlaybackState(): PlaybackState? {
+        return activeController?.playbackState
     }
 }
