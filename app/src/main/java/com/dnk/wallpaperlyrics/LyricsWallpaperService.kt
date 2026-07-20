@@ -1,8 +1,6 @@
 package com.dnk.wallpaperlyrics
 
 import android.graphics.*
-import android.graphics.RenderEffect
-import android.graphics.Paint
 import android.app.WallpaperColors
 import android.content.Context
 import android.content.Intent
@@ -12,29 +10,18 @@ import android.content.SharedPreferences
 import android.media.MediaMetadata
 import android.media.session.PlaybackState
 import android.os.Build
+import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
-import androidx.palette.graphics.Palette
-import androidx.core.graphics.ColorUtils
-import kotlin.math.sin
-import kotlin.math.cos
 import androidx.core.content.res.ResourcesCompat
 import android.util.Log
 import android.text.StaticLayout
 import android.text.Layout
 import android.text.TextPaint
+import android.graphics.text.LineBreaker
 import android.view.Choreographer
 import android.graphics.RuntimeShader
-import android.graphics.text.LineBreaker
 import kotlinx.coroutines.*
-import kotlin.math.sqrt
-
-data class AuroraPalette(
-    val accent: Int,
-    val base: Int,
-    val mid: Int,
-    val highlight: Int
-)
 
 class LyricsWallpaperService : WallpaperService() {
 
@@ -87,6 +74,7 @@ class LyricsWallpaperService : WallpaperService() {
             uniform float u_scale;
             uniform float2 u_seed;
             uniform float2 u_seed_next;
+            uniform float u_static_bg;
 
             float hash(float3 p) {
                 float3 p3 = fract(p * 0.1031);
@@ -130,31 +118,37 @@ class LyricsWallpaperService : WallpaperService() {
                 float2 center = uv - 0.5;
                 float centerWeight = 1.0 - smoothstep(0.0, 0.7, length(center));
 
-                // Eval warp for current texture
-                float t = u_time * 0.05;
-                float2 uvSeeded = uv + u_seed;
-                float n1 = snoise(uvSeeded * 0.22 + float2(t, t * 0.7));
-                float n2 = snoise(uvSeeded * 0.22 + float2(-t * 0.8, t * 0.5) + float2(50.0, 50.0));
-                float n3 = snoise(uvSeeded * 0.25 + float2(t * 1.2, -t) + float2(100.0, 0.0));
-                float n4 = snoise(uvSeeded * 0.25 + float2(-t, t * 1.1) + float2(0.0, 100.0));
-                float2 warp = float2(
-                    n1 * 0.82 + n3 * 0.18,
-                    n2 * 0.82 + n4 * 0.18
-                ) * centerWeight;
+                float2 warp = float2(0.0, 0.0);
+                if (u_static_bg == 0.0) {
+                    // Eval warp for current texture
+                    float t = u_time * 0.05;
+                    float2 uvSeeded = uv + u_seed;
+                    float n1 = snoise(uvSeeded * 0.22 + float2(t, t * 0.7));
+                    float n2 = snoise(uvSeeded * 0.22 + float2(-t * 0.8, t * 0.5) + float2(50.0, 50.0));
+                    float n3 = snoise(uvSeeded * 0.25 + float2(t * 1.2, -t) + float2(100.0, 0.0));
+                    float n4 = snoise(uvSeeded * 0.25 + float2(-t, t * 1.1) + float2(0.0, 100.0));
+                    warp = float2(
+                        n1 * 0.82 + n3 * 0.18,
+                        n2 * 0.82 + n4 * 0.18
+                    ) * centerWeight;
+                }
                 float2 warpedUV = clamp(uv + warp * u_intensity, 0.0, 1.0);
                 half4 colorCurrent = u_texture.eval(warpedUV * u_resolution);
  
-                // Eval warp for next texture
-                float tNext = u_time_next * 0.05;
-                float2 uvSeededNext = uv + u_seed_next;
-                float nn1 = snoise(uvSeededNext * 0.22 + float2(tNext, tNext * 0.7));
-                float nn2 = snoise(uvSeededNext * 0.22 + float2(-tNext * 0.8, tNext * 0.5) + float2(50.0, 50.0));
-                float nn3 = snoise(uvSeededNext * 0.25 + float2(tNext * 1.2, -tNext) + float2(100.0, 0.0));
-                float nn4 = snoise(uvSeededNext * 0.25 + float2(-tNext, tNext * 1.1) + float2(0.0, 100.0));
-                float2 warpNext = float2(
-                    nn1 * 0.82 + nn3 * 0.18,
-                    nn2 * 0.82 + nn4 * 0.18
-                ) * centerWeight;
+                float2 warpNext = float2(0.0, 0.0);
+                if (u_static_bg == 0.0) {
+                    // Eval warp for next texture
+                    float tNext = u_time_next * 0.05;
+                    float2 uvSeededNext = uv + u_seed_next;
+                    float nn1 = snoise(uvSeededNext * 0.22 + float2(tNext, tNext * 0.7));
+                    float nn2 = snoise(uvSeededNext * 0.22 + float2(-tNext * 0.8, tNext * 0.5) + float2(50.0, 50.0));
+                    float nn3 = snoise(uvSeededNext * 0.25 + float2(tNext * 1.2, -tNext) + float2(100.0, 0.0));
+                    float nn4 = snoise(uvSeededNext * 0.25 + float2(-tNext, tNext * 1.1) + float2(0.0, 100.0));
+                    warpNext = float2(
+                        nn1 * 0.82 + nn3 * 0.18,
+                        nn2 * 0.82 + nn4 * 0.18
+                    ) * centerWeight;
+                }
                 float2 warpedUVNext = clamp(uv + warpNext * u_intensity, 0.0, 1.0);
                 half4 colorNext = u_texture_next.eval(warpedUVNext * u_resolution);
 
@@ -172,7 +166,7 @@ class LyricsWallpaperService : WallpaperService() {
                 float3 warmColor = color.rgb * float3(1.22, 1.05, 0.80);
                 color.rgb = clamp(mix(color.rgb, warmColor, warmth), 0.0, 1.0);
 
-                float noiseVal = hash(float3(fragCoord, floor(u_time * 60.0)));
+                float noiseVal = hash(float3(fragCoord, floor((u_static_bg == 1.0 ? 0.0 : u_time) * 60.0)));
                 color.rgb += (noiseVal - 0.5) * u_dithering;
 
                 color.rgb *= 0.75; // Sightly less aggressive dimming for better vibrancy
@@ -197,6 +191,8 @@ class LyricsWallpaperService : WallpaperService() {
         private var prefBgSpeed = 1.0f
         private var prefSyncOffset = 0
         private var prefAlbumCornerRadius = 48f
+        private var prefMetadataOnlyMode = false
+        private var prefStaticBg = false
 
         private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             when (key) {
@@ -205,6 +201,38 @@ class LyricsWallpaperService : WallpaperService() {
                 "sync_offset" -> prefSyncOffset = prefs.getInt("sync_offset", 0)
                 "album_corner_radius" -> prefAlbumCornerRadius = prefs.getFloat("album_corner_radius", 48f)
                 "preferred_media_player" -> mediaObserver.refresh()
+                "metadata_only_mode" -> {
+                    prefMetadataOnlyMode = prefs.getBoolean("metadata_only_mode", false)
+                    if (prefMetadataOnlyMode) {
+                        currentLyrics = null
+                        lyricBitmaps?.forEach { it.recycle() }
+                        lyricBitmaps = null
+                        lyricLayouts = null
+                        lineOffsets = null
+                    } else {
+                        val title = currentTitle
+                        val artist = currentArtist
+                        if (!title.isNullOrBlank()) {
+                            engineScope.launch {
+                                lyricsSearchExhausted = false
+                                currentLyrics = null
+                                lyricBitmaps?.forEach { it.recycle() }
+                                lyricBitmaps = null
+                                lyricLayouts = null
+                                lineOffsets = null
+                                lyricsManager.fetchLyrics(title, artist ?: "", currentDurationMs) { lines, definitive ->
+                                    if (currentTitle == title) {
+                                        currentLyrics = lines
+                                        if (lines == null && definitive) lyricsSearchExhausted = true
+                                        if (lines != null) showToast("Lyrics synced!")
+                                        else if (definitive) showToast("Lyrics unavailable")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                "static_bg" -> prefStaticBg = prefs.getBoolean("static_bg", false)
             }
         }
 
@@ -213,6 +241,8 @@ class LyricsWallpaperService : WallpaperService() {
             prefBgSpeed = prefs.getFloat("bg_speed", 1.0f)
             prefSyncOffset = prefs.getInt("sync_offset", 0)
             prefAlbumCornerRadius = prefs.getFloat("album_corner_radius", 48f)
+            prefMetadataOnlyMode = prefs.getBoolean("metadata_only_mode", false)
+            prefStaticBg = prefs.getBoolean("static_bg", false)
         }
 
         @Volatile
@@ -327,7 +357,6 @@ class LyricsWallpaperService : WallpaperService() {
             isAntiAlias = true
             letterSpacing = -0.02f
             alpha = 230
-            setShadowLayer(10f, 0f, 0f, Color.argb(80, 0, 0, 0))
         }
 
         private val inactivePaint = TextPaint().apply {
@@ -352,10 +381,54 @@ class LyricsWallpaperService : WallpaperService() {
         private var isScreenOff = !(this@LyricsWallpaperService.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive
         private var lastWakeTime = 0L
 
+        private var lastKnownPlaybackPosition = 0L
+        private var lastUpdateTime = 0L
+        private var lastStateSyncTime = 0L
+
+        private fun getExtrapolatedPosition(): Long {
+            if (!isPlaying) {
+                return lastKnownPlaybackPosition
+            }
+            val timeDiff = SystemClock.elapsedRealtime() - lastUpdateTime
+            val pos = lastKnownPlaybackPosition + timeDiff
+            return if (currentDurationMs > 0) {
+                pos.coerceAtMost(currentDurationMs)
+            } else {
+                pos
+            }
+        }
+
+        private fun syncPlaybackState() {
+            val state = mediaObserver.getPlaybackState()
+            isPlaying = state?.state == PlaybackState.STATE_PLAYING
+            if (state != null) {
+                lastKnownPlaybackPosition = state.position
+                lastUpdateTime = if (state.lastPositionUpdateTime > 0L) state.lastPositionUpdateTime else SystemClock.elapsedRealtime()
+            }
+        }
+
+        private fun schedulePlaybackStateSync() {
+            engineScope.launch(Dispatchers.IO) {
+                val state = mediaObserver.getPlaybackState()
+                withContext(Dispatchers.Main) {
+                    isPlaying = state?.state == PlaybackState.STATE_PLAYING
+                    if (state != null) {
+                        val prevPos = lastKnownPlaybackPosition
+                        lastKnownPlaybackPosition = state.position
+                        lastUpdateTime = if (state.lastPositionUpdateTime > 0L) state.lastPositionUpdateTime else SystemClock.elapsedRealtime()
+                        
+                        if (Math.abs(lastKnownPlaybackPosition - prevPos) > 2000L) {
+                            snapScrollToPosition()
+                        }
+                    }
+                }
+            }
+        }
+
         private fun snapScrollToPosition() {
             val lines = currentLyrics ?: return
             val offsets = lineOffsets ?: return
-            val position = mediaObserver.getCurrentPosition()
+            val position = getExtrapolatedPosition()
             val userOffset = prefSyncOffset.toLong()
             val totalOffset = userOffset + detectedBluetoothLatency
             val leadTime = 50L
@@ -473,10 +546,10 @@ class LyricsWallpaperService : WallpaperService() {
             updateBluetoothLatency()
 
             // Initialize background with the default idle mesh (Very Blurred - 2 passes)
-            val idleMesh = createIdleMesh(targetColors)
-            val preprocessed = preprocessArt(idleMesh, Color.BLACK, 0f)
-            val firstPass = blurBitmap(preprocessed, 20)
-            currentBgArt = blurBitmap(firstPass, 20)
+            val idleMesh = AuroraRenderer.createIdleMesh(targetColors)
+            val preprocessed = AuroraRenderer.preprocessArt(idleMesh, Color.BLACK, 0f)
+            val firstPass = AuroraRenderer.blurBitmap(preprocessed, 20)
+            currentBgArt = AuroraRenderer.blurBitmap(firstPass, 20)
             idleMesh.recycle()
             preprocessed.recycle()
             firstPass.recycle()
@@ -522,11 +595,12 @@ class LyricsWallpaperService : WallpaperService() {
                 // Snap viewAlpha to the correct target immediately to prevent transitions/fading on app return
                 val now = System.currentTimeMillis()
                 val timeSinceWake = now - lastWakeTime
-                val lines = currentLyrics
+                var lines = currentLyrics
                 val isMetadataState = (!isScreenOff && timeSinceWake in 1000..3000) || !isPlaying || lines.isNullOrEmpty() || (now - songStartTime < 3000)
                 targetViewAlpha = if (isMetadataState) 1.0f else 0.0f
                 viewAlpha = targetViewAlpha
 
+                syncPlaybackState()
                 snapScrollToPosition()
                 drawFrame(0f)
                 drawFrame(0f)
@@ -552,6 +626,7 @@ class LyricsWallpaperService : WallpaperService() {
             targetViewAlpha = if (isMetadataState) 1.0f else 0.0f
             viewAlpha = targetViewAlpha
 
+            syncPlaybackState()
             snapScrollToPosition()
             drawFrame(0f)
             drawFrame(0f)
@@ -601,6 +676,10 @@ class LyricsWallpaperService : WallpaperService() {
                     hasArtForCurrentTrack = false
                     songStartTime = System.currentTimeMillis()
                     
+                    // Reset extrapolation variables
+                    lastKnownPlaybackPosition = 0L
+                    lastUpdateTime = SystemClock.elapsedRealtime()
+
                     // Force a transition to metadata view even if paused
                     targetViewAlpha = 1.0f 
 
@@ -623,15 +702,20 @@ class LyricsWallpaperService : WallpaperService() {
                         hasArtForCurrentTrack = true
                     }
                     
-                    showToast("Fetching lyrics...")
-                    lyricsManager.fetchLyrics(title, artist ?: "", durationMs) { lines, definitive ->
-                        if (currentTitle == title) {
-                            currentLyrics = lines
-                            if (lines == null && definitive) lyricsSearchExhausted = true
-                            if (lines != null) showToast("Lyrics synced!")
-                            else if (definitive) showToast("Lyrics unavailable")
-                            // Transient failure stays quiet; the watchdog retries shortly.
+                    if (!prefMetadataOnlyMode) {
+                        showToast("Fetching lyrics...")
+                        lyricsManager.fetchLyrics(title, artist ?: "", durationMs) { lines, definitive ->
+                            if (currentTitle == title) {
+                                currentLyrics = lines
+                                if (lines == null && definitive) lyricsSearchExhausted = true
+                                if (lines != null) showToast("Lyrics synced!")
+                                else if (definitive) showToast("Lyrics unavailable")
+                                // Transient failure stays quiet; the watchdog retries shortly.
+                            }
                         }
+                    } else {
+                        currentLyrics = null
+                        lyricsSearchExhausted = true
                     }
                 }
 
@@ -683,14 +767,14 @@ class LyricsWallpaperService : WallpaperService() {
             albumArt = sourceBitmap
             engineScope.launch {
                 val palette = withContext(Dispatchers.Default) {
-                    extractPalette(sourceBitmap)
+                    AuroraRenderer.extractPalette(sourceBitmap)
                 }
 
                 // pre-process and blur the album cover for the dynamic background (Very Blurred - 2 passes)
                 val blurred = withContext(Dispatchers.Default) {
-                    val preprocessed = preprocessArt(sourceBitmap, palette.accent, 0.15f)
-                    val firstPass = blurBitmap(preprocessed, 20)
-                    val secondPass = blurBitmap(firstPass, 20)
+                    val preprocessed = AuroraRenderer.preprocessArt(sourceBitmap, palette.accent, 0.15f)
+                    val firstPass = AuroraRenderer.blurBitmap(preprocessed, 20)
+                    val secondPass = AuroraRenderer.blurBitmap(firstPass, 20)
                     preprocessed.recycle()
                     firstPass.recycle()
                     secondPass
@@ -713,105 +797,7 @@ class LyricsWallpaperService : WallpaperService() {
             }
         }
 
-        private fun extractPalette(sourceBitmap: Bitmap): AuroraPalette {
-            val scaledBitmap = Bitmap.createScaledBitmap(sourceBitmap, 128, 128, true)
-            
-            // 1. Edge-Weighted Base Extraction
-            val w = scaledBitmap.width - 1
-            val h = scaledBitmap.height - 1
-            val corners = listOf(
-                scaledBitmap.getPixel(0, 0),
-                scaledBitmap.getPixel(w, 0),
-                scaledBitmap.getPixel(0, h),
-                scaledBitmap.getPixel(w, h)
-            )
-            var base = determineConsensusColor(corners) ?: 0xFF0A0A0A.toInt()
 
-            // 2. Generate Palette
-            val p = Palette.from(scaledBitmap).generate()
-            val swatches = p.swatches
-            if (swatches.isEmpty()) return AuroraPalette(base, base, base, base)
-
-            val maxPopulation = swatches.maxOf { it.population }.toFloat()
-
-            // 3. Score Swatches by Perceptual Salience (The Fix)
-            val scoredSwatches = swatches.mapNotNull { swatch ->
-                val distance = calculateColorDistance(swatch.rgb, base)
-                
-                // Lower the strict gate to 30.0f so close-but-vibrant colors (like yellow on white) aren't killed
-                if (distance < 30.0f) return@mapNotNull null 
-
-                val popRatio = swatch.population / maxPopulation
-                val popWeight = Math.sqrt(popRatio.toDouble()).toFloat() // Compress population advantage
-                val saturation = swatch.hsl[1] // Index 1 is Saturation (0.0 to 1.0)
-                
-                // Base constant of 0.3f ensures colors aren't multiplied by 0 if desaturated
-                val score = popWeight * (saturation + 0.3f) * (distance / 441f) 
-                
-                Pair(swatch, score)
-            }.sortedByDescending { it.second } // Sort by highest Salience Score
-
-            // 4. Map the highest scoring colors
-            var accent = scoredSwatches.getOrNull(0)?.first?.rgb ?: shiftHue(base, 180f)
-            var mid = scoredSwatches.getOrNull(1)?.first?.rgb ?: shiftHue(base, 90f)
-            var highlight = scoredSwatches.getOrNull(2)?.first?.rgb ?: p.lightVibrantSwatch?.rgb ?: 0xFFFFFFFF.toInt()
-
-            // 5. Sort foreground by Luminance for smooth shader interpolation
-            val sortedForeground = listOf(accent, mid, highlight).sortedBy { luminance(it) }
-            
-            accent = sortedForeground[0]
-            mid = sortedForeground[1]
-            highlight = sortedForeground[2]
-
-            // Monochromatic guard for safety
-            if (isMonochromatic(accent, base, mid, highlight)) {
-                accent = 0xFF1A1A1A.toInt()
-                base = 0xFF0A0A0A.toInt()
-                mid = 0xFFEAEAEA.toInt()
-                highlight = 0xFFFFFFFF.toInt()
-            }
-
-            return AuroraPalette(accent, base, mid, highlight)
-        }
-
-        private fun determineConsensusColor(samples: List<Int>): Int? {
-            return samples.groupingBy { it }
-                .eachCount()
-                .maxByOrNull { it.value }
-                ?.key
-        }
-
-        private fun luminance(color: Int): Float {
-            val r = Color.red(color) / 255f
-            val g = Color.green(color) / 255f
-            val b = Color.blue(color) / 255f
-            return 0.2126f * r + 0.7152f * g + 0.0722f * b
-        }
-
-        private fun isMonochromatic(vararg colors: Int): Boolean {
-            val hsv = FloatArray(3)
-            var totalSaturation = 0f
-            for (color in colors) {
-                Color.colorToHSV(color, hsv)
-                totalSaturation += hsv[1]
-            }
-            return (totalSaturation / colors.size) < 0.08f
-        }
-
-        private fun calculateColorDistance(c1: Int, c2: Int): Float {
-            val rDiff = (Color.red(c1) - Color.red(c2)) / 255f
-            val gDiff = (Color.green(c1) - Color.green(c2)) / 255f
-            val bDiff = (Color.blue(c1) - Color.blue(c2)) / 255f
-            return sqrt(rDiff * rDiff + gDiff * gDiff + bDiff * bDiff) * 255f
-        }
-
-        private fun shiftHue(color: Int, degrees: Float): Int {
-            val hsv = FloatArray(3)
-            Color.colorToHSV(color, hsv)
-            hsv[0] = (hsv[0] + degrees) % 360f // Rotate around the color wheel
-            hsv[1] = hsv[1].coerceAtLeast(0.7f) // Guarantee saturation
-            return Color.HSVToColor(hsv)
-        }
 
         override fun onComputeColors(): WallpaperColors? {
             if (prefDynamicTheming && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -825,6 +811,10 @@ class LyricsWallpaperService : WallpaperService() {
 
         private fun onPlaybackStateChanged(state: PlaybackState?) {
             isPlaying = state?.state == PlaybackState.STATE_PLAYING
+            if (state != null) {
+                lastKnownPlaybackPosition = state.position
+                lastUpdateTime = if (state.lastPositionUpdateTime > 0L) state.lastPositionUpdateTime else SystemClock.elapsedRealtime()
+            }
         }
 
         private fun createPreviewAlbumArt(): Bitmap {
@@ -927,10 +917,10 @@ class LyricsWallpaperService : WallpaperService() {
             }
             
             engineScope.launch {
-                val idleMesh = createIdleMesh(targetColors)
-                val preprocessed = preprocessArt(idleMesh, Color.BLACK, 0f)
-                val firstPass = blurBitmap(preprocessed, 20)
-                val blurred = blurBitmap(firstPass, 20)
+                val idleMesh = AuroraRenderer.createIdleMesh(targetColors)
+                val preprocessed = AuroraRenderer.preprocessArt(idleMesh, Color.BLACK, 0f)
+                val firstPass = AuroraRenderer.blurBitmap(preprocessed, 20)
+                val blurred = AuroraRenderer.blurBitmap(firstPass, 20)
                 idleMesh.recycle()
                 preprocessed.recycle()
                 firstPass.recycle()
@@ -970,6 +960,12 @@ class LyricsWallpaperService : WallpaperService() {
                         }
                     }
 
+                    val nowMs = SystemClock.elapsedRealtime()
+                    if (nowMs - lastStateSyncTime >= 1000L) {
+                        lastStateSyncTime = nowMs
+                        schedulePlaybackStateSync()
+                    }
+
                     val speedMult = prefBgSpeed
                     val targetSpeed = if (isPlaying) speedMult else 0.0f
                     
@@ -1001,123 +997,29 @@ class LyricsWallpaperService : WallpaperService() {
                 currentColors = IntArray(targets.size) { Color.BLACK }
             }
             for (i in currentColors.indices) {
-                currentColors[i] = interpolateColor(currentColors[i], targets[i], lerpFactor)
+                currentColors[i] = AuroraRenderer.interpolateColor(currentColors[i], targets[i], lerpFactor)
             }
         }
 
-        private fun interpolateColor(from: Int, to: Int, fraction: Float): Int {
-            val a = (Color.alpha(from) + (Color.alpha(to) - Color.alpha(from)) * fraction).toInt()
-            val r = (Color.red(from) + (Color.red(to) - Color.red(from)) * fraction).toInt()
-            val g = (Color.green(from) + (Color.green(to) - Color.green(from)) * fraction).toInt()
-            val b = (Color.blue(from) + (Color.blue(to) - Color.blue(from)) * fraction).toInt()
-            return Color.argb(a, r, g, b)
-        }
         private fun drawAurora(canvas: Canvas) {
-            val width = canvas.width.toFloat()
-            val height = canvas.height.toFloat()
-            
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && runtimeShader != null) {
-                runtimeShader?.let { shader ->
-                    val currentBmp = currentBgArt
-                    if (currentBmp != null && !currentBmp.isRecycled) {
-                        val currentShader = BitmapShader(currentBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-                        
-                        // Center-crop zoom scaling (maintaining aspect ratio and zooming in 1.3x)
-                        val scaleX = width / currentBmp.width
-                        val scaleY = height / currentBmp.height
-                        val scale = Math.max(scaleX, scaleY) * 1.3f
-                        val dx = (width - currentBmp.width * scale) / 2f
-                        val dy = (height - currentBmp.height * scale) / 2f
-                        
-                        val matrix = Matrix().apply {
-                            setScale(scale, scale)
-                            postTranslate(dx, dy)
-                        }
-                        currentShader.setLocalMatrix(matrix)
-                        shader.setInputShader("u_texture", currentShader)
-                        
-                        val nextBmp = nextBgArt
-                        if (nextBmp != null && !nextBmp.isRecycled) {
-                            val nextShader = BitmapShader(nextBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-                            val nextMatrix = Matrix().apply {
-                                setScale(scale, scale)
-                                postTranslate(dx, dy)
-                            }
-                            nextShader.setLocalMatrix(nextMatrix)
-                            shader.setInputShader("u_texture_next", nextShader)
-                        } else {
-                            shader.setInputShader("u_texture_next", currentShader)
-                        }
-                    }
-
-                    shader.setFloatUniform("u_blend", blendProgress)
-                    shader.setFloatUniform("u_resolution", width, height)
-                    shader.setFloatUniform("u_time", accumulatedTime)
-                    shader.setFloatUniform("u_time_next", if (isTransitioning) nextAccumulatedTime else accumulatedTime)
-                    shader.setFloatUniform("u_seed", currentSeedX, currentSeedY)
-                    shader.setFloatUniform("u_seed_next", if (isTransitioning) nextSeedX else currentSeedX, if (isTransitioning) nextSeedY else currentSeedY)
-                    shader.setFloatUniform("u_intensity", 1.8f) // Bounded fluid warping strength
-                    shader.setFloatUniform("u_saturation", 2.8f) // Boost vibrancy
-                    shader.setFloatUniform("u_dithering", 0.008f)
-                    shader.setFloatUniform("u_scale", 1.0f)
-
-                    shaderPaint.shader = shader
-
-                    // Clear any RenderEffect/blur on the paint to keep warping sharp and organic
-                    if (android.os.Build.VERSION.SDK_INT >= 31) {
-                        try {
-                            val method = shaderPaint.javaClass.getMethod("setRenderEffect", android.graphics.RenderEffect::class.java)
-                            method.invoke(shaderPaint, null)
-                        } catch (e: Exception) {}
-                    }
-                    
-                    canvas.drawRect(0f, 0f, width, height, shaderPaint)
-                }
-            } else {
-                // Fallback for API < 33: Spicy Lyrics Mesh Gradient (Radial Blobs)
-                canvas.drawColor(Color.BLACK)
-
-                // Use accumulatedTime for fallback movement speed
-                val fallbackTime = accumulatedTime * 2.4f
-
-                for (index in currentColors.indices) {
-                    val paint = auroraPaints.getOrNull(index) ?: break
-                    val t = fallbackTime * 0.12f
-                    // Orbital movement matching the shader logic
-                    val phase = index * 1.5f
-                    val x = width * (0.5f + 0.4f * sin(t * (0.6f + index * 0.1f) + phase).toFloat())
-                    val y = height * (0.5f + 0.4f * cos(t * (0.5f + index * 0.15f) + phase + 1f).toFloat())
-                    
-                    // Large radius for deep, diffused blending
-                    val radius = width * 1.6f
-                    
-                    val color = currentColors[index]
-                    val transparentColor = Color.argb(0, Color.red(color), Color.green(color), Color.blue(color))
-                    
-                    // Dynamic softness for fallback path: restored to natural level
-                    var innerOffset = 0.15f
-                    val uvY = y / height
-                    val blurRegion = 0.22f
-                    if (uvY < blurRegion) {
-                        innerOffset += (blurRegion - uvY) * 0.8f 
-                    } else if (uvY > (1.0f - blurRegion)) {
-                        innerOffset += (uvY - (1.0f - blurRegion)) * 0.8f
-                    }
-
-                    val gradient = RadialGradient(
-                        x, y, radius,
-                        intArrayOf(color, transparentColor),
-                        floatArrayOf(innerOffset.coerceAtMost(0.85f), 0.96f), 
-                        Shader.TileMode.CLAMP
-                    )
-                    
-                    paint.shader = gradient
-                    canvas.drawCircle(x, y, radius, paint)
-                }
-            }
-            
-            // Subtle darkening overlay for text legibility
-            canvas.drawColor(Color.argb(80, 0, 0, 0))
+            AuroraRenderer.drawAurora(
+                canvas,
+                runtimeShader,
+                shaderPaint,
+                currentBgArt,
+                nextBgArt,
+                blendProgress,
+                isTransitioning,
+                accumulatedTime,
+                nextAccumulatedTime,
+                currentSeedX,
+                currentSeedY,
+                nextSeedX,
+                nextSeedY,
+                currentColors,
+                auroraPaints,
+                prefStaticBg
+            )
         }
 
         private fun drawLyrics(canvas: Canvas, dt: Float) {
@@ -1128,13 +1030,13 @@ class LyricsWallpaperService : WallpaperService() {
             val position = if (isPreview && currentTitle == "Wallpaper Lyrics") {
                 (System.currentTimeMillis() % 28000L) // Loop 28 seconds preview sequence
             } else {
-                mediaObserver.getCurrentPosition()
+                getExtrapolatedPosition()
             }
             val maxTextWidth = (width * 0.85f).toInt()
             val centerX = width / 2
             val centerY = height / 2
 
-            val lines = currentLyrics
+            var lines = currentLyrics
             val now = System.currentTimeMillis()
 
             // If we don't have lyrics and are still searching/fetching, keep resetting songStartTime
@@ -1147,7 +1049,7 @@ class LyricsWallpaperService : WallpaperService() {
 
             // Determine target state
             val timeSinceWake = now - lastWakeTime
-            val isMetadataState = (!isScreenOff && timeSinceWake in 1000..3000) || !isPlaying || lines.isNullOrEmpty() || (now - songStartTime < 3000)
+            val isMetadataState = prefMetadataOnlyMode || (!isScreenOff && timeSinceWake in 1000..3000) || !isPlaying || lines.isNullOrEmpty() || (now - songStartTime < 3000)
             targetViewAlpha = if (isMetadataState) 1.0f else 0.0f
 
             // State change transition (slowed by 1.5x to last longer)
@@ -1158,30 +1060,14 @@ class LyricsWallpaperService : WallpaperService() {
             }
 
             if (lines != null && (lyricLayouts == null || lyricBitmaps == null || lineOffsets == null)) {
-                val layouts = mutableListOf<StaticLayout>()
-                val bitmaps = mutableListOf<Bitmap>()
+                val (layouts, bitmaps, linesWithMeasuredWords) = LyricsRenderer.buildLyricLayouts(
+                    lines,
+                    activePaint,
+                    maxTextWidth
+                )
 
-                lines.forEach { line ->
-                    val isInstrumental = line.content == "♪"
-
-                    // Template paint for this specific line
-                    val linePaint = TextPaint(activePaint).apply {
-                        if (isInstrumental) textSize = 120f
-                        alpha = 255 // Render fully opaque into the bitmap so we can fade it later
-                        setShadowLayer(12f, 0f, 0f, Color.argb(80, 0, 0, 0)) // Bake the shadow
-                    }
-
-                    val layout = StaticLayout.Builder.obtain(line.content, 0, line.content.length, linePaint, maxTextWidth)
-                        .setAlignment(Layout.Alignment.ALIGN_CENTER)
-                        .setLineSpacing(0f, 1.15f)
-                        .build()
-                    layouts.add(layout)
-                    
-                    val bmp = Bitmap.createBitmap(layout.width, layout.height, Bitmap.Config.ARGB_8888)
-                    val bmpCanvas = Canvas(bmp)
-                    layout.draw(bmpCanvas)
-                    bitmaps.add(bmp)
-                }
+                currentLyrics = linesWithMeasuredWords
+                lines = linesWithMeasuredWords
 
                 lyricLayouts = layouts
                 lyricBitmaps = bitmaps
@@ -1203,7 +1089,7 @@ class LyricsWallpaperService : WallpaperService() {
             }
 
             // Watchdog logic... (only retry layer; disarmed once a miss is definitive)
-            if (currentLyrics == null && !lyricsSearchExhausted && !currentTitle.isNullOrBlank() && (now - songStartTime > 4000)) {
+            if (!prefMetadataOnlyMode && currentLyrics == null && !lyricsSearchExhausted && !currentTitle.isNullOrBlank() && (now - songStartTime > 4000)) {
                 if (now - lastWatchdogCheck > 5000) { 
                     lastWatchdogCheck = now
                     currentTitle?.let { title ->
@@ -1290,13 +1176,73 @@ class LyricsWallpaperService : WallpaperService() {
                         canvas.scale(scale, scale, centerX, lineCenterY)
 
                         // 230 was the original max alpha of the active text
-                        val targetAlpha = (0.35f + (0.55f * easedFactor)) * 230
-                        bmpPaint.alpha = targetAlpha.toInt()
+                        val targetAlpha = (0.35f + (0.65f * easedFactor)) * 230
+                        val isActive = i == currentIndex
+                        val isFadingOut = i < currentIndex && exitLinear < 1f
+                        
+                        if ((isActive || isFadingOut) && line.words != null && line.words.isNotEmpty()) {
+                            if (isActive) {
+                                // 1. Update progress of pre-created spans with artificial smoothing
+                                for (word in line.words) {
+                                    val span = word.spanRef as? WordGradientSpan ?: continue
+                                    
+                                    val startT = if (word.fullStartTime == 0L) word.startTime else word.fullStartTime
+                                    val endT = if (word.fullEndTime == 0L) word.endTime else word.fullEndTime
+                                    
+                                    val fullWordLinearProgress = when {
+                                        adjustedPos >= endT -> 1f
+                                        adjustedPos <= startT -> 0f
+                                        else -> {
+                                            ((adjustedPos - startT).toFloat() / (endT - startT).toFloat()).coerceIn(0f, 1f)
+                                        }
+                                    }
+                                    
+                                    val fullWordEasedProgress = SyllableAnimator.getEasedProgress(fullWordLinearProgress, word.text)
+                                    
+                                    val startProp = word.partStartProp
+                                    val endProp = if (word.partEndProp == 0f) 1f else word.partEndProp
+                                    
+                                    val targetProgress = if (endProp > startProp) {
+                                        ((fullWordEasedProgress - startProp) / (endProp - startProp)).coerceIn(0f, 1f)
+                                    } else {
+                                        fullWordEasedProgress
+                                    }
+                                    
+                                    span.progress = targetProgress
+                                    
+                                    span.activeAlpha = 230
+                                    span.inactiveAlpha = 80
+                                }
+                            } else {
+                                // 2. Previously active line fading out!
+                                // All words are completed (progress = 1f), fade activeAlpha to 80 (gray)
+                                val fadeProgress = exitLinear.coerceIn(0f, 1f)
+                                val currentAlpha = (230 - (230 - 80) * fadeProgress).toInt()
+                                
+                                for (word in line.words) {
+                                    val span = word.spanRef as? WordGradientSpan ?: continue
+                                    span.progress = 1f
+                                    span.activeAlpha = currentAlpha
+                                    span.inactiveAlpha = 80
+                                }
+                            }
+                            
+                            // Configure default paint parameters (NO SHADOW!)
+                            layout.paint.shader = null
+                            layout.paint.color = Color.argb(80, 255, 255, 255)
+                            layout.paint.alpha = 255
 
-                        canvas.translate(centerX - bmp.width / 2f, lineCenterY - (bmp.height / 2f))
-                        canvas.drawBitmap(bmp, 0f, 0f, bmpPaint)
+                            // Draw layout exactly once
+                            canvas.translate(centerX - layout.width / 2f, lineCenterY - (layout.height / 2f))
+                            layout.draw(canvas)
+                        } else {
+                            // Inactive line, draw pre-rendered bitmap
+                            bmpPaint.alpha = targetAlpha.toInt()
+                            canvas.translate(centerX - bmp.width / 2f, lineCenterY - (bmp.height / 2f))
+                            canvas.drawBitmap(bmp, 0f, 0f, bmpPaint)
+                        }
 
-                        if (line.isInstrumental && position in line.startTime..line.endTime) {
+                        if (line.isInstrumental && position in line.startTime..line.endTime && i < lines.size - 1) {
                             val progress = (position - line.startTime).toFloat() / (line.endTime - line.startTime)
                             drawInstrumentalProgress(canvas, layout, progress, position, line)
                         }
@@ -1325,48 +1271,17 @@ class LyricsWallpaperService : WallpaperService() {
 
         private fun drawFadeGradients(canvas: Canvas, width: Float, height: Float, alpha: Float) {
             if (alpha <= 0f) return
-            
-            val fadeHeight = height * 0.25f
-            
-            // Re-create shaders only if dimensions changed
             if (width != lastFadeWidth || height != lastFadeHeight) {
                 lastFadeWidth = width
                 lastFadeHeight = height
-                
-                val topColors = intArrayOf(
-                    Color.argb(255, 0, 0, 0),
-                    Color.argb(131, 0, 0, 0),
-                    Color.argb(55, 0, 0, 0),
-                    Color.argb(16, 0, 0, 0),
-                    Color.argb(2, 0, 0, 0),
-                    Color.argb(0, 0, 0, 0)
-                )
-                val bottomColors = intArrayOf(
-                    Color.argb(0, 0, 0, 0),
-                    Color.argb(2, 0, 0, 0),
-                    Color.argb(16, 0, 0, 0),
-                    Color.argb(55, 0, 0, 0),
-                    Color.argb(131, 0, 0, 0),
-                    Color.argb(255, 0, 0, 0)
-                )
-                val positions = floatArrayOf(0.0f, 0.2f, 0.4f, 0.6f, 0.8f, 1.0f)
-
-                topFadeShader = LinearGradient(0f, 0f, 0f, fadeHeight, 
-                    topColors, positions, Shader.TileMode.CLAMP)
-                    
-                bottomFadeShader = LinearGradient(0f, height - fadeHeight, 0f, height, 
-                    bottomColors, positions, Shader.TileMode.CLAMP)
+                val shaders = LyricsRenderer.createFadeShaders(height)
+                topFadeShader = shaders.first
+                bottomFadeShader = shaders.second
             }
-
-            fadePaint.alpha = (alpha * 255).toInt()
-
-            // Top fade
-            fadePaint.shader = topFadeShader
-            canvas.drawRect(0f, 0f, width, fadeHeight, fadePaint)
-
-            // Bottom fade
-            fadePaint.shader = bottomFadeShader
-            canvas.drawRect(0f, height - fadeHeight, width, height, fadePaint)
+            LyricsRenderer.drawFadeGradients(
+                canvas, width, height, alpha,
+                fadePaint, topFadeShader, bottomFadeShader
+            )
         }
 
         private fun drawMetadataLayouts(
@@ -1418,12 +1333,7 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private fun cleanTitle(title: String): String {
-            val regex = Regex("(?i)\\s*(?:\\(|\\[)?\\b(?:feat|ft)\\b\\.?.*")
-            var clean = title.replace(regex, "").trim()
-            if (clean.endsWith("(") || clean.endsWith("[")) {
-                clean = clean.substring(0, clean.length - 1).trim()
-            }
-            return clean
+            return LyricsRenderer.cleanTitle(title)
         }
 
         private fun drawMetadataWithAlbumArt(canvas: Canvas, width: Float, height: Float, dt: Float) {
@@ -1484,45 +1394,11 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private fun drawSimpleLayout(canvas: Canvas, layout: StaticLayout, x: Float, y: Float) {
-            canvas.save()
-            canvas.translate(x - layout.width / 2f, y - (layout.height / 2f))
-            layout.draw(canvas)
-            canvas.restore()
+            LyricsRenderer.drawSimpleLayout(canvas, layout, x, y)
         }
 
         private fun drawInstrumentalProgress(canvas: Canvas, layout: StaticLayout, progress: Float, position: Long, line: LyricLine) {
-            val dotCount = 3
-            val dotSpacing = 36f
-            val dotRadius = 7f
-            val totalWidth = (dotCount - 1) * dotSpacing
-            val startX = layout.width / 2f - totalWidth / 2f
-            val dotY = layout.height - 10f // Way tighter gap, pulling dots into the character's descent area
-            
-            // Snappy entry/exit fade (300ms)
-            val entryAlpha = ((position - line.startTime) / 300f).coerceIn(0f, 1f)
-            val exitAlpha = ((line.endTime - position) / 300f).coerceIn(0f, 1f)
-            val groupAlpha = Math.min(entryAlpha, exitAlpha)
-
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                style = Paint.Style.FILL
-            }
-            
-            for (i in 0 until dotCount) {
-                // Each dot has a specific point in time where it's fully "active"
-                val centerProgress = (i + 1).toFloat() / (dotCount + 1)
-                
-                // Calculate distance from this dot's peak focus (0.0 to 1.0)
-                val dist = Math.abs(progress - centerProgress) * (dotCount + 1)
-                val focus = (1.0f - dist).coerceIn(0.0f, 1.0f)
-                
-                // Smoothly interpolate alpha and scale
-                val alpha = (100 + (155 * focus)).toInt()
-                val scale = 1.0f + (0.4f * focus)
-                
-                paint.alpha = (alpha * groupAlpha).toInt()
-                canvas.drawCircle(startX + i * dotSpacing, dotY, dotRadius * scale, paint)
-            }
+            LyricsRenderer.drawInstrumentalProgress(canvas, layout, progress, position, line)
         }
 
         private fun showToast(message: String) {
@@ -1561,171 +1437,5 @@ class LyricsWallpaperService : WallpaperService() {
             }
         }
 
-        private fun createIdleMesh(colors: IntArray): Bitmap {
-            val w = 128
-            val h = 128
-            val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            val pixels = IntArray(w * h)
-            
-            val c00 = colors.getOrElse(0) { 0xFFFF0055.toInt() }
-            val c10 = colors.getOrElse(1) { 0xFF0A0B1A.toInt() }
-            val c01 = colors.getOrElse(2) { 0xFF7A22FF.toInt() }
-            val c11 = colors.getOrElse(3) { 0xFFD6C7FF.toInt() }
-            
-            for (y in 0 until h) {
-                val yf = y.toFloat() / (h - 1)
-                for (x in 0 until w) {
-                    val xf = x.toFloat() / (w - 1)
-                    
-                    val r = (Color.red(c00) * (1f - xf) * (1f - yf) +
-                             Color.red(c10) * xf * (1f - yf) +
-                             Color.red(c01) * (1f - xf) * yf +
-                             Color.red(c11) * xf * yf).toInt().coerceIn(0, 255)
-                             
-                    val g = (Color.green(c00) * (1f - xf) * (1f - yf) +
-                             Color.green(c10) * xf * (1f - yf) +
-                             Color.green(c01) * (1f - xf) * yf +
-                             Color.green(c11) * xf * yf).toInt().coerceIn(0, 255)
-                             
-                    val b = (Color.blue(c00) * (1f - xf) * (1f - yf) +
-                             Color.blue(c10) * xf * (1f - yf) +
-                             Color.blue(c01) * (1f - xf) * yf +
-                             Color.blue(c11) * xf * yf).toInt().coerceIn(0, 255)
-                             
-                    pixels[y * w + x] = 0xff000000.toInt() or (r shl 16) or (g shl 8) or b
-                }
-            }
-            bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
-            return bitmap
-        }
-
-        private fun preprocessArt(source: Bitmap, tintColor: Int, tintIntensity: Float): Bitmap {
-            val lowRes = Bitmap.createScaledBitmap(source, 128, 128, true)
-            val w = lowRes.width
-            val h = lowRes.height
-            val pixels = IntArray(w * h)
-            lowRes.getPixels(pixels, 0, w, 0, 0, w, h)
-
-            val tintR = Color.red(tintColor) / 255f
-            val tintG = Color.green(tintColor) / 255f
-            val tintB = Color.blue(tintColor) / 255f
-
-            for (i in pixels.indices) {
-                val color = pixels[i]
-                val r = ((color shr 16) and 0xff) / 255f
-                val g = ((color shr 8) and 0xff) / 255f
-                val b = (color and 0xff) / 255f
-
-                val luma = 0.299f * r + 0.587f * g + 0.114f * b
-                val x = (luma / 0.5f).coerceIn(0f, 1f)
-                val smooth = x * x * (3f - 2f * x)
-                val darkMask = 1.0f - smooth
-
-                val factor = darkMask * tintIntensity
-                val newR = (r + (tintR - r) * factor).coerceIn(0f, 1f)
-                val newG = (g + (tintG - g) * factor).coerceIn(0f, 1f)
-                val newB = (b + (tintB - b) * factor).coerceIn(0f, 1f)
-
-                pixels[i] = (0xff000000.toInt() or 
-                            ((newR * 255f).toInt() shl 16) or 
-                            ((newG * 255f).toInt() shl 8) or 
-                            (newB * 255f).toInt())
-            }
-
-            val tinted = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-            tinted.setPixels(pixels, 0, w, 0, 0, w, h)
-            lowRes.recycle()
-            return tinted
-        }
-
-        private fun blurBitmap(sentBitmap: Bitmap, radius: Int): Bitmap {
-            val bitmap = sentBitmap.copy(sentBitmap.config, true)
-            val w = bitmap.width
-            val h = bitmap.height
-            val pix = IntArray(w * h)
-            bitmap.getPixels(pix, 0, w, 0, 0, w, h)
-
-            val wm = w - 1
-            val hm = h - 1
-            val wh = w * h
-            val div = radius + radius + 1
-
-            val r = IntArray(wh)
-            val g = IntArray(wh)
-            val b = IntArray(wh)
-            var rsum: Int
-            var gsum: Int
-            var bsum: Int
-            var p: Int
-            var yp: Int
-            var yi: Int
-            var yw: Int
-
-            val vmin = IntArray(Math.max(w, h))
-
-            // Horizontal pass
-            yw = 0
-            yi = 0
-            for (y in 0 until h) {
-                rsum = 0
-                gsum = 0
-                bsum = 0
-                for (i in -radius..radius) {
-                    p = pix[yi + Math.min(wm, Math.max(i, 0))]
-                    rsum += (p shr 16) and 0xff
-                    gsum += (p shr 8) and 0xff
-                    bsum += p and 0xff
-                }
-                for (x in 0 until w) {
-                    r[yi] = rsum / div
-                    g[yi] = gsum / div
-                    b[yi] = bsum / div
-
-                    if (y == 0) {
-                        vmin[x] = Math.min(x + radius + 1, wm)
-                    }
-                    val p1 = pix[yw + vmin[x]]
-                    val p2 = pix[yw + Math.max(x - radius, 0)]
-
-                    rsum += ((p1 shr 16) and 0xff) - ((p2 shr 16) and 0xff)
-                    gsum += ((p1 shr 8) and 0xff) - ((p2 shr 8) and 0xff)
-                    bsum += (p1 and 0xff) - (p2 and 0xff)
-                    yi++
-                }
-                yw += w
-            }
-
-            // Vertical pass
-            for (x in 0 until w) {
-                rsum = 0
-                gsum = 0
-                bsum = 0
-                yp = -radius * w
-                for (i in -radius..radius) {
-                    yi = Math.max(0, yp) + x
-                    rsum += r[yi]
-                    gsum += g[yi]
-                    bsum += b[yi]
-                    yp += w
-                }
-                yi = x
-                for (y in 0 until h) {
-                    pix[yi] = (0xff000000.toInt() or ((rsum / div) shl 16) or ((gsum / div) shl 8) or (bsum / div))
-                    if (x == 0) {
-                        vmin[y] = Math.min(y + radius + 1, hm) * w
-                    }
-                    val p1 = x + vmin[y]
-                    val p2 = x + Math.max(0, y - radius) * w
-
-                    rsum += r[p1] - r[p2]
-                    gsum += g[p1] - g[p2]
-                    bsum += b[p1] - b[p2]
-                    yi += w
-                }
-            }
-
-            bitmap.setPixels(pix, 0, w, 0, 0, w, h)
-            return bitmap
-        }
     }
 }
