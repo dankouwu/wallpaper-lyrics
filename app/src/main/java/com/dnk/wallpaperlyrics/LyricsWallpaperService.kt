@@ -13,6 +13,10 @@ import android.os.Build
 import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import androidx.core.app.NotificationCompat
 import androidx.core.content.res.ResourcesCompat
 import android.util.Log
 import android.text.StaticLayout
@@ -190,9 +194,11 @@ class LyricsWallpaperService : WallpaperService() {
         private var prefDynamicTheming = false
         private var prefBgSpeed = 1.0f
         private var prefSyncOffset = 0
+        private var songSyncOffset = 0L
         private var prefAlbumCornerRadius = 48f
         private var prefMetadataOnlyMode = false
         private var prefStaticBg = false
+        private var prefPersistentNotification = false
 
         private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             when (key) {
@@ -233,6 +239,19 @@ class LyricsWallpaperService : WallpaperService() {
                     }
                 }
                 "static_bg" -> prefStaticBg = prefs.getBoolean("static_bg", false)
+                "persistent_notification" -> {
+                    prefPersistentNotification = prefs.getBoolean("persistent_notification", false)
+                    if (prefPersistentNotification) {
+                        showOrUpdateNotification(currentTitle, currentArtist)
+                    } else {
+                        cancelNotification()
+                    }
+                }
+                else -> {
+                    if (key != null && key.startsWith("song_delay_")) {
+                        updateSongSpecificDelay(prefs)
+                    }
+                }
             }
         }
 
@@ -243,6 +262,18 @@ class LyricsWallpaperService : WallpaperService() {
             prefAlbumCornerRadius = prefs.getFloat("album_corner_radius", 48f)
             prefMetadataOnlyMode = prefs.getBoolean("metadata_only_mode", false)
             prefStaticBg = prefs.getBoolean("static_bg", false)
+            prefPersistentNotification = prefs.getBoolean("persistent_notification", false)
+            updateSongSpecificDelay(prefs)
+        }
+
+        private fun updateSongSpecificDelay(prefs: SharedPreferences) {
+            val title = currentTitle
+            val artist = currentArtist
+            songSyncOffset = if (!title.isNullOrBlank()) {
+                prefs.getInt("song_delay_${title}_${artist}", 0).toLong()
+            } else {
+                0L
+            }
         }
 
         @Volatile
@@ -429,7 +460,7 @@ class LyricsWallpaperService : WallpaperService() {
             val lines = currentLyrics ?: return
             val offsets = lineOffsets ?: return
             val position = getExtrapolatedPosition()
-            val userOffset = prefSyncOffset.toLong()
+            val userOffset = prefSyncOffset.toLong() + songSyncOffset
             val totalOffset = userOffset + detectedBluetoothLatency
             val leadTime = 50L
             val adjustedPos = position - totalOffset + leadTime
@@ -556,11 +587,14 @@ class LyricsWallpaperService : WallpaperService() {
 
             if (isPreview) {
                 resetToIdleState()
+            } else {
+                showOrUpdateNotification(currentTitle, currentArtist)
             }
         }
 
         override fun onDestroy() {
             super.onDestroy()
+            cancelNotification()
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
             prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
             mediaObserver.stop()
@@ -670,6 +704,9 @@ class LyricsWallpaperService : WallpaperService() {
                     startMetadataTransition()
                     currentTitle = title
                     currentArtist = artist
+                    val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                    updateSongSpecificDelay(prefs)
+                    showOrUpdateNotification(title, artist)
                     currentDurationMs = durationMs
                     lyricsSearchExhausted = false
                     currentArtUri = null
@@ -933,6 +970,7 @@ class LyricsWallpaperService : WallpaperService() {
                     }
                 }
             }
+            showOrUpdateNotification(currentTitle, currentArtist)
         }
 
         private fun drawFrame(dt: Float) {
@@ -1082,7 +1120,7 @@ class LyricsWallpaperService : WallpaperService() {
                 lineOffsets = offsets
 
                 // Initialize scrollY to the active line position instantly to prevent rapid snap-scrolling on load!
-                val initialPos = position - (prefSyncOffset.toLong() + detectedBluetoothLatency) + 50L
+                val initialPos = position - (prefSyncOffset.toLong() + songSyncOffset + detectedBluetoothLatency) + 50L
                 var initialIndex = lines.indexOfLast { it.startTime <= initialPos }
                 if (initialIndex == -1) initialIndex = 0
                 scrollY = offsets[initialIndex]
@@ -1110,7 +1148,7 @@ class LyricsWallpaperService : WallpaperService() {
                 val layouts = lyricLayouts ?: return
                 val offsets = lineOffsets ?: return
 
-                val userOffset = prefSyncOffset.toLong()
+                val userOffset = prefSyncOffset.toLong() + songSyncOffset
                 val totalOffset = userOffset + detectedBluetoothLatency
                 val leadTime = 50L // -50ms proactive lead time
                 val adjustedPos = position - totalOffset + leadTime
@@ -1434,6 +1472,77 @@ class LyricsWallpaperService : WallpaperService() {
                 nextAccumulatedTime = timeOffset
                 nextSeedX = seedX
                 nextSeedY = seedY
+            }
+        }
+
+        private fun showOrUpdateNotification(title: String?, artist: String?) {
+            if (isPreview) return
+            try {
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    val channel = NotificationChannel(
+                        "wallpaper_lyrics_control",
+                        "Wallpaper Lyrics",
+                        NotificationManager.IMPORTANCE_LOW
+                    ).apply {
+                        description = "Playback status and control for lyrics refresh"
+                    }
+                    notificationManager.createNotificationChannel(channel)
+                }
+
+                val openAppIntent = Intent(this@LyricsWallpaperService, MainActivity::class.java).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+                val openAppPendingIntent = PendingIntent.getActivity(
+                    this@LyricsWallpaperService,
+                    0,
+                    openAppIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val refreshIntent = Intent("com.dnk.wallpaperlyrics.FORCE_RELOAD_LYRICS").apply {
+                    setPackage(packageName)
+                }
+                val refreshPendingIntent = PendingIntent.getBroadcast(
+                    this@LyricsWallpaperService,
+                    1,
+                    refreshIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val contentText = if (!title.isNullOrBlank()) {
+                    if (!artist.isNullOrBlank()) "$title — $artist" else title
+                } else {
+                    "No active song playing"
+                }
+
+                val notification = NotificationCompat.Builder(this@LyricsWallpaperService, "wallpaper_lyrics_control")
+                    .setSmallIcon(R.drawable.ic_notification)
+                    .setContentTitle("Wallpaper Lyrics")
+                    .setContentText(contentText)
+                    .setOngoing(true)
+                    .setContentIntent(openAppPendingIntent)
+                    .addAction(
+                        android.R.drawable.ic_menu_rotate,
+                        "Refresh Lyrics",
+                        refreshPendingIntent
+                    )
+                    .setPriority(NotificationCompat.PRIORITY_LOW)
+                    .build()
+
+                notificationManager.notify(1001, notification)
+            } catch (e: Exception) {
+                Log.e("Wallpaper", "Failed to update notification", e)
+            }
+        }
+
+        private fun cancelNotification() {
+            try {
+                val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                notificationManager.cancel(1001)
+            } catch (e: Exception) {
+                Log.e("Wallpaper", "Failed to cancel notification", e)
             }
         }
 
