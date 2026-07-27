@@ -29,6 +29,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var notificationRow: SettingsRow
     private lateinit var wallpaperRow: SettingsRow
+    private lateinit var songOffsetRow: SettingsRow
     private var palettePreview: ColorPalettePreviewView? = null
 
     enum class TrailingType { CHEVRON, SWITCH, VALUE, CHECK, NONE }
@@ -356,8 +357,8 @@ class MainActivity : AppCompatActivity() {
     ) : LinearLayout(context) {
 
         private var valueBadge: TextView? = null
-
-            private var trailingView: View? = null
+        private var rowSubtitleView: TextView? = null
+        private var trailingView: View? = null
 
         init {
             orientation = HORIZONTAL
@@ -396,15 +397,14 @@ class MainActivity : AppCompatActivity() {
                 typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
             }
             textLayout.addView(rowTitle)
-            if (subtitle.isNotEmpty()) {
-                val rowSubtitle = TextView(context).apply {
-                    text = subtitle
-                    textSize = 12f
-                    setTextColor(Color.parseColor("#8E8E93"))
-                    setPadding(0, 2, dpToPx(8f), 0)
-                }
-                textLayout.addView(rowSubtitle)
+            rowSubtitleView = TextView(context).apply {
+                text = subtitle
+                textSize = 12f
+                setTextColor(Color.parseColor("#8E8E93"))
+                setPadding(0, 2, dpToPx(8f), 0)
+                visibility = if (subtitle.isEmpty()) View.GONE else View.VISIBLE
             }
+            textLayout.addView(rowSubtitleView)
             addView(textLayout)
             setupTrailing()
         }
@@ -512,11 +512,24 @@ class MainActivity : AppCompatActivity() {
         fun updateValue(newValue: String) {
             valueBadge?.text = newValue
         }
+
+        fun updateSubtitle(newSubtitle: String) {
+            rowSubtitleView?.apply {
+                text = newSubtitle
+                visibility = if (newSubtitle.isEmpty()) View.GONE else View.VISIBLE
+            }
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
+            }
+        }
+
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
 
         try {
@@ -625,6 +638,20 @@ class MainActivity : AppCompatActivity() {
                     }
                 ))
 
+                // Row: Persistent Controls Switch
+                val persistentNotifRow = SettingsRow(
+                    this@MainActivity,
+                    CustomIconDrawable.IconType.BELL,
+                    "Persistent Controls",
+                    "Show control notification in status bar",
+                    TrailingType.SWITCH,
+                    initialVal = prefs.getBoolean("persistent_notification", false).toString(),
+                    onCheckedChange = { isChecked ->
+                        prefs.edit().putBoolean("persistent_notification", isChecked).apply()
+                    }
+                )
+                addRow(persistentNotifRow)
+
                 // Row 5: Preferred Media Player (conditional)
                 val showPlayerSelection = listOf(isSpotifyInstalled(), isTidalInstalled(), isKdeConnectInstalled()).count { it } >= 2
                 if (showPlayerSelection) {
@@ -695,6 +722,46 @@ class MainActivity : AppCompatActivity() {
                 )
                 addRow(offsetRow)
 
+                // Row 2: Song Specific Delay
+                val activeSong = getActiveSongMetadata()
+                val (initSubtitle, initVal) = if (activeSong != null) {
+                    val (title, artist) = activeSong
+                    val songOffset = prefs.getInt("song_delay_${title}_${artist}", 0)
+                    Pair("Offset for: $title - $artist", "${songOffset}ms")
+                } else {
+                    Pair("No active song playing", "0ms")
+                }
+                songOffsetRow = SettingsRow(
+                    this@MainActivity,
+                    CustomIconDrawable.IconType.CLOCK,
+                    "Song Specific Delay",
+                    initSubtitle,
+                    TrailingType.VALUE,
+                    initVal,
+                    onClick = {
+                        val active = getActiveSongMetadata()
+                        if (active == null) {
+                            Toast.makeText(this@MainActivity, "No active music session found", Toast.LENGTH_SHORT).show()
+                        } else {
+                            val (title, artist) = active
+                            val songKey = "song_delay_${title}_${artist}"
+                            val currentSongOffset = prefs.getInt(songKey, 0)
+                            showCustomEditDialog(
+                                "Set Delay for ${title}",
+                                currentSongOffset.toString(),
+                                -10000f,
+                                10000f,
+                                false,
+                                "ms"
+                            ) { newVal ->
+                                val offsetVal = newVal.toInt()
+                                prefs.edit().putInt(songKey, offsetVal).apply()
+                                songOffsetRow.updateValue("${offsetVal}ms")
+                            }
+                        }
+                    }
+                )
+                addRow(songOffsetRow)
             }
             rootLayout.addView(card2)
 
@@ -856,6 +923,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         if (::notificationRow.isInitialized) {
             if (isNotificationServiceEnabled()) {
                 notificationRow.setTrailing(TrailingType.CHECK)
@@ -870,7 +938,54 @@ class MainActivity : AppCompatActivity() {
                 wallpaperRow.setTrailing(TrailingType.CHEVRON)
             }
         }
+        if (::songOffsetRow.isInitialized) {
+            val activeSong = getActiveSongMetadata()
+            if (activeSong != null) {
+                val (title, artist) = activeSong
+                val songKey = "song_delay_${title}_${artist}"
+                val currentSongOffset = prefs.getInt(songKey, 0)
+                songOffsetRow.updateSubtitle("Offset for: $title - $artist")
+                songOffsetRow.updateValue("${currentSongOffset}ms")
+            } else {
+                songOffsetRow.updateSubtitle("No active song playing")
+                songOffsetRow.updateValue("0ms")
+            }
+        }
         palettePreview?.refreshColors()
+    }
+
+    private fun getActiveSongMetadata(): Pair<String, String>? {
+        try {
+            val componentName = ComponentName(this, NotificationService::class.java)
+            val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val controllers = mediaSessionManager.getActiveSessions(componentName)
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
+            val active = if (preferred == "default") {
+                controllers.firstOrNull()
+            } else {
+                controllers.find { 
+                    val pkg = it.packageName.lowercase()
+                    when (preferred) {
+                        "spotify" -> pkg.contains("spotify")
+                        "tidal" -> pkg.contains("tidal")
+                        "kdeconnect" -> pkg.contains("kdeconnect")
+                        else -> false
+                    }
+                }
+            }
+            if (active != null) {
+                val metadata = active.metadata
+                val title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
+                val artist = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_ARTIST)
+                if (!title.isNullOrBlank() && !artist.isNullOrBlank()) {
+                    return Pair(title.trim(), artist.trim())
+                }
+            }
+        } catch (e: Exception) {
+            // Ignore security/listener exception or any issues, return null
+        }
+        return null
     }
 
     private fun getCurrentAlbumColors(): List<Int> {
