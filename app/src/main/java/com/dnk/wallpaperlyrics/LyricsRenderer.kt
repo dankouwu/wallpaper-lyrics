@@ -17,6 +17,12 @@ import androidx.core.content.res.ResourcesCompat
  */
 object LyricsRenderer {
 
+    // Cached paint for instrumental countdown dots: created once, never re-allocated
+    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.FILL
+    }
+
     /**
      * Build lyric layouts, bitmaps, and measured word spans for all lines.
      * Returns a Triple of (layouts, bitmaps, updatedLines).
@@ -69,6 +75,17 @@ object LyricsRenderer {
                             word.endIndex,
                             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                         )
+                        addWordMotionSpan(
+                            spannedText,
+                            line.content,
+                            linePaint,
+                            word.startIndex,
+                            word.endIndex,
+                            word.startIndex,
+                            word.endIndex,
+                            word.endTime - word.startTime,
+                            span
+                        )
 
                         listOf(word.copy(
                             left = left,
@@ -100,6 +117,17 @@ object LyricsRenderer {
                                 partStart,
                                 partEnd,
                                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                            )
+                            addWordMotionSpan(
+                                spannedText,
+                                line.content,
+                                linePaint,
+                                word.startIndex,
+                                word.endIndex,
+                                partStart,
+                                partEnd,
+                                word.endTime - word.startTime,
+                                span
                             )
 
                             val duration = word.endTime - word.startTime
@@ -137,16 +165,128 @@ object LyricsRenderer {
                 .build()
             layouts.add(layout)
 
-            linesWithMeasuredWords.add(line.copy(words = measuredWords))
+            // Re-derive word geometry from the layout that is actually drawn
+            val updatedWords = measuredWords?.map { word ->
+                val lineNum = layout.getLineForOffset(word.startIndex)
+                val h1 = layout.getPrimaryHorizontal(word.startIndex)
+                val h2 = if (layout.getLineForOffset(word.endIndex) == lineNum) {
+                    layout.getPrimaryHorizontal(word.endIndex)
+                } else {
+                    layout.getLineRight(lineNum)
+                }
+                val left = Math.min(h1, h2)
+                val right = Math.max(h1, h2)
 
-            // Bake inactive bitmap from tempLayout (plain text, no spans — fully opaque white)
-            val bmp = Bitmap.createBitmap(tempLayout.width, tempLayout.height, Bitmap.Config.ARGB_8888)
+                (word.spanRef as? WordGradientSpan)?.let { span ->
+                    span.left = left
+                    span.right = right
+                }
+
+                word.copy(
+                    left = left,
+                    right = right,
+                    lineNum = lineNum
+                )
+            }
+
+            linesWithMeasuredWords.add(line.copy(words = updatedWords))
+
+            val spans = updatedWords?.mapNotNull { it.spanRef as? WordGradientSpan }
+            spans?.forEach { span ->
+                span.progress = 0f
+                span.motionProgress = 0f
+                span.inactiveAlpha = 255
+            }
+
+            // Bake inactive bitmap from layout (spanned layout with neutral opaque spans: fully opaque white)
+            val bmp = Bitmap.createBitmap(layout.width, layout.height, Bitmap.Config.ARGB_8888)
             val bmpCanvas = Canvas(bmp)
-            tempLayout.draw(bmpCanvas)
+            layout.draw(bmpCanvas)
             bitmaps.add(bmp)
+
+            spans?.forEach { span ->
+                span.inactiveAlpha = 80
+            }
         }
 
         return Triple(layouts, bitmaps, linesWithMeasuredWords)
+    }
+
+    private fun addWordMotionSpan(
+        text: SpannableStringBuilder,
+        content: String,
+        paint: TextPaint,
+        wordStart: Int,
+        wordEnd: Int,
+        partStart: Int,
+        partEnd: Int,
+        wordDurationMs: Long,
+        wordSpan: WordGradientSpan
+    ) {
+        var codePointCount = 0
+        var offset = wordStart
+        while (offset < wordEnd) {
+            val nextOffset = offset + Character.charCount(Character.codePointAt(content, offset))
+            if (nextOffset > wordEnd) break
+            codePointCount++
+            offset = nextOffset
+        }
+        if (codePointCount == 0) return
+
+        var partCodePointCount = 0
+        offset = wordStart
+        while (offset < wordEnd) {
+            val nextOffset = offset + Character.charCount(Character.codePointAt(content, offset))
+            if (nextOffset > wordEnd) break
+            if (offset >= partStart && nextOffset <= partEnd) partCodePointCount++
+            offset = nextOffset
+        }
+        if (partCodePointCount == 0) return
+
+        val codePointStarts = IntArray(partCodePointCount)
+        val codePointEnds = IntArray(partCodePointCount)
+        val codePointIndices = IntArray(partCodePointCount)
+        val relativeXs = FloatArray(partCodePointCount)
+        val measuredAdvance = Math.round(paint.measureText(content, partStart, partEnd))
+        var relativeX = 0f
+        var partCodePointIndex = 0
+        var codePointIndex = 0
+        offset = wordStart
+        while (offset < wordEnd) {
+            val nextOffset = offset + Character.charCount(Character.codePointAt(content, offset))
+            if (nextOffset > wordEnd) break
+            if (offset >= partStart && nextOffset <= partEnd) {
+                codePointStarts[partCodePointIndex] = offset
+                codePointEnds[partCodePointIndex] = nextOffset
+                codePointIndices[partCodePointIndex] = codePointIndex
+                relativeXs[partCodePointIndex] = relativeX
+                relativeX += paint.measureText(content, offset, nextOffset)
+                partCodePointIndex++
+            }
+            codePointIndex++
+            offset = nextOffset
+        }
+
+        if (relativeX > 0f) {
+            val advanceScale = measuredAdvance / relativeX
+            for (i in relativeXs.indices) relativeXs[i] *= advanceScale
+        }
+
+        text.setSpan(
+            WordMotionSpan(
+                wordSpan,
+                codePointStarts,
+                codePointEnds,
+                codePointIndices,
+                codePointCount,
+                SyllableAnimator.usesPerLetterMotion(wordDurationMs, codePointCount),
+                relativeXs,
+                measuredAdvance
+            ),
+            partStart,
+            partEnd,
+            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+        )
     }
 
     fun drawFadeGradients(
@@ -225,10 +365,7 @@ object LyricsRenderer {
         val exitAlpha = ((line.endTime - position) / 300f).coerceIn(0f, 1f)
         val groupAlpha = Math.min(entryAlpha, exitAlpha)
 
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            style = Paint.Style.FILL
-        }
+        val paint = dotPaint
 
         for (i in 0 until dotCount) {
             val centerProgress = (i + 1).toFloat() / (dotCount + 1)
