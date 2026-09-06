@@ -5,5 +5,21 @@ app/build/
 .idea/
 local.properties
 .DS_Store
-GEMINI.md
 extras/
+
+# Scratch notes and agent scaffolding. Local only, never in the repo.
+GEMINI.md
+AGENTS.md
+CLAUDE.md
+HANDOFF.md
+ORCHESTRATOR_INSTRUCTIONS.md
+WORKING_NOTES.md
+claude-changes.md
+problem.txt
+spicy_lyrics_analysis.md
+new-format.lrc
+.agents/
+drifting-bug-resources/
+
+# Debug capture fixtures. Local only.
+app/src/debug/assets/

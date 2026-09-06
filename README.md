@@ -1,68 +1,126 @@
 # Wallpaper Lyrics
 
-A high-performance Android live wallpaper that dynamically renders a gorgeous, animated fluid/aurora background based on current album art, overlaying smoothly animated, synchronized lyrics from the active media session (matching the Apple Music "Lyrics" aesthetic).
+An Android live wallpaper that shows the lyrics of whatever you are playing, in time with the music, over a background painted from the album art.
 
-## Core Mandates and System Config
+[![Build](https://github.com/dankouwu/wallpaper-lyrics/actions/workflows/build.yml/badge.svg)](https://github.com/dankouwu/wallpaper-lyrics/actions/workflows/build.yml)
+[![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](#install)
+[![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
-- **Performance:** Target native 60+ FPS using `Choreographer` frame callbacks and `Hardware Accelerated Canvas`.
-- **System Config:** Battery usage MUST be set to **"Unrestricted"** in system settings to prevent OS throttling of live background tasks and network calls.
-- **Media Support:** Monitors active media sessions for Spotify and Tidal. Spotify requires "Device Broadcast Status" to be enabled in settings.
-- **Privacy & Security:** Completely offline-first caching. No tracking, personal data collection, or sensitive API token leakage.
+<!--
+No screenshots committed yet. Capture with:
+  adb exec-out screencap -p > docs/screenshots/home.png
+Wanted: home screen with lyrics, the metadata view on wake, background settings,
+the idle screen. Add them here rather than shipping broken image tags.
+-->
 
-## Aesthetic Specifications (Apple Music Style)
+## What it is
 
-### Background Fluid Animation (Domain Warping AGSL)
-- **Domain Warp Shader (Android 13+):** Applies two octaves of 2D Simplex Noise. Large-scale noise has `0.22` frequency and medium-scale detail has `0.25` frequency (ensuring large, rounded fluid blobs with no thin, sharp streaks).
-- **Image Preprocessing:** Asynchronously downscales the album cover to $128 \times 128$ pixels, applies a luminance-based shadow mask tint, and box-blurs it on a background thread.
-- **Crossfade Transition:** Uses a dual-texture GPU shader crossfade over 1000ms. Current and next textures are warped independently using separate time parameters (`u_time` and `u_time_next`) to prevent animation stutters.
-- **Swirl Pre-Simulation:** On track change or service startup, the incoming track's animation timeline is initialized with a randomized offset ($5.0\text{f} + \text{random offset}$ up to $10000\text{f}$), ensuring the background starts immediately in a beautifully fluid, non-repeating state.
-- **Post-Processing:** Applies a vignette, $1.3\times$ base zoom (matrix cropped), $2.8\times$ saturation boost, a custom warmth filter (boosting red/green, dampening blue), and dynamic dithering to prevent gradient banding.
-- **Fallback (< Android 13 / API 33):** High-performance animated 4-color `RadialGradient` mesh layers with softened cores.
-- **Idle State:** A 4-color mesh gradient dynamically generated via bilinear interpolation of the default palette, sharing the same optimized shader pipeline.
+A wallpaper, not an app you sit in. The launcher icon opens settings and nothing else. Start something in Spotify, Tidal or KDE Connect, go back to the home screen, and the lyrics are already there and already scrolling.
 
-### Typography & Layout
-- **Font Face:** Uses **Inter** (Black and SemiBold) bundled as resources.
-- **Active Line:** Inter Black (Weight 900), Size 96f, 90% Opacity (alpha 230), -0.02f Letter Spacing (Tracking), and a subtle 10f radius shadow.
-- **Inactive Lines:** Inter Bold (Weight 700) + 1.5px stroke (faux-extra-bold), Size 96f, 35% Opacity, and a 0.95x scale-down.
-- **Artist Title:** 60f size, 50% Opacity.
-- **Unified Alpha Blending:** Uses `canvas.saveLayer` during state cross-fading for cohesive group alpha transitions, preventing text shadow artifacts.
-- **Fade-out Gradients:** Top and bottom 25% of the screen are overlaid with a multi-stop cubic `LinearGradient` (Black to Transparent decaying cubically) to eliminate visible hard edge lines where the gradient ends.
+Where the timing data allows it, words light up one at a time instead of whole lines. Musixmatch publishes per word timing for a good part of the catalogue. When a track has none, it falls back to line timing from LRCLIB, which is most tracks.
 
-### Screen-Wake Transition Sequence
-- **Wake Timeline:**
-  - `0 - 999 ms`: **Lyrics View** (enables immediate viewing of currently playing lyrics).
-  - `1000 - 3000 ms`: **Metadata View** (fades in the Album Art and Title/Artist metadata).
-  - `3000 ms+`: **Lyrics View** (transitions back to lyrics).
-- **Double-Buffer Snapping & Redraw:** Overrides `onSurfaceRedrawNeeded` and visibility changes to execute a synchronous scroll snap (`snapScrollToPosition()`) and force two consecutive frame draws (`drawFrame(0f)`). This immediately updates both buffers in the double-buffer queue, avoiding stale frame flashes when waking.
-- **Physical Wake Tracking:** Tracks `isScreenOff` via broadcast receivers (initialized via `PowerManager.isInteractive`). It intercepts transitions to the interactive state inside redraw and visibility callbacks to update `lastWakeTime`, preventing the animation from playing on normal homescreen app returns.
+## The background
 
-## Architecture Details
+The cover art is scaled to 512px, tinted along its own luminance, blurred, and handed to an AGSL shader that warps it with two octaves of simplex noise at 0.22 and 0.25 frequency. It ends up moving like liquid and holding the record's palette without ever looking like the record.
 
-### 1. `LyricsWallpaperService.kt`
-Handles native drawing lifecycle via Choreographer-aligned frame callbacks and AGSL shaders. It caches preference values locally and uses an `OnSharedPreferenceChangeListener` to avoid overhead inside the 60 FPS drawing loop.
+That path needs Android 13, which is where AGSL lands. Android 8 through 12 get animated radial gradient meshes built from a palette sampled off the same artwork. It is a visible downgrade, not a subtle one.
 
-### 2. `MediaObserver.kt`
-Monitors active controllers using `MediaSessionManager`. Offloads blocking `getActiveSessions()` calls to a background thread to prevent UI thread latency on wakes. Playback position tracking calculates elapsed time using `SystemClock.elapsedRealtime()` relative to the last metadata update for millisecond-perfect lyric sync.
+## What else it does
 
-### 3. `LyricsManager.kt`
-Fetches lyrics asynchronously from LRCLIB. Implements a **Dynamic Gap Heuristic** that dynamically calculates instrumental countdown lengths (visualized as a 3-dot countdown) based on line density and track characteristics. Lyrics are stored locally in a file-based JSON cache.
+- Waking the screen shows the lyrics first, then fades in the album art with the title and artist, then goes back to the lyrics.
+- Sync offset from -1000 ms to +1000 ms, plus per song offsets that stick to the track, plus Bluetooth output latency measured and subtracted automatically.
+- Lyrics you can edit by hand. Paste LRC for the current track when every source has it wrong, or purge the cache and refetch.
+- A custom lyrics endpoint, tried ahead of Musixmatch and LRCLIB, if you run your own.
+- An idle screen with its own title and four color palette for when nothing is playing.
+- Static mode, which keeps the blurred artwork and drops the animation when you want the battery back.
+- Optional playback controls in the status bar, and optional Material You highlight colors.
 
-## Configuration
+Lyrics land in a file cache, and a miss is remembered for 24 hours so an instrumental stops hitting the network every time it comes round.
 
-- **Sync Offset:** Precision control from -1000ms to +1000ms with bi-directional slider and manual numeric input.
-- **Auto Bluetooth Delay:** Toggle to enable automatic real-time Bluetooth latency detection and alignment.
-- **Background Speed:** Configurable fluid motion multiplier from 0.1x up to 10.0x with manual input support.
-- **Dynamic Theming:** Optional support for Material You system-wide color synchronization.
-- **Cache Management:** Built-in lyrics cache utility with a confirmation-protected clear function.
+## Install
 
-## Build and Deploy
+Release APKs are on the [Releases](https://github.com/dankouwu/wallpaper-lyrics/releases) page.
 
-Ensure `ANDROID_HOME` and `JAVA_HOME` (JDK 17+) are correctly set in your environment.
+```bash
+adb install -r wallpaper-lyrics-v1.5.0.apk
+```
+
+Then open the app, tap **Activate Live Wallpaper**, and pick **Lyrics Wallpaper** in the system picker.
+
+> [!WARNING]
+> Builds are signed with the Android debug key. That is fine for sideloading and it is the only way this ships, but the signature is not stable across builds, so an update may want an uninstall first. Releases before 1.5.0 were debug builds and are not worth installing.
+
+## Setup
+
+Three system settings decide whether this works at all.
+
+> [!IMPORTANT]
+> **Notification access.** Playback position and track metadata come through a `NotificationListenerService`. Without the grant there is no track, so there are no lyrics. The settings screen links straight to it.
+
+> [!WARNING]
+> **Spotify.** Turn on *Device Broadcast Status* inside Spotify's own settings. Spotify withholds most media session metadata until you do, and the wallpaper sees an empty session.
+
+> [!TIP]
+> **Battery.** Set Wallpaper Lyrics to **Unrestricted**. Android throttles background work hard, and a throttled wallpaper drops frames and stops fetching lyrics halfway through a track.
+
+## How it works
+
+```mermaid
+flowchart TD
+    A[Spotify / Tidal / KDE Connect] -->|MediaSessionManager| B[MediaObserver]
+    B -->|title, artist, duration, position| C[TrackQuery]
+    C -->|cleaned candidates| D[LyricsManager]
+
+    D --> E{Custom endpoint set?}
+    E -->|yes| F[Custom API]
+    E -->|no| G[Musixmatch richsync]
+    F -->|miss| G
+    G -->|no richsync| H[Musixmatch subtitle]
+    H -->|miss| I[LRCLIB search]
+    G --> J[(File cache)]
+    H --> J
+    I --> J
+
+    J --> K[LyricsWallpaperService]
+    K -->|Choreographer callbacks| L[AuroraRenderer]
+    K --> M[LyricsRenderer + SyllableAnimator]
+    L -->|Android 13+| N[AGSL domain warp]
+    L -->|older| O[Radial gradient mesh]
+    N --> P((Wallpaper surface))
+    O --> P
+    M --> P
+```
+
+Two details carry most of the sync quality. Position is extrapolated with `SystemClock.elapsedRealtime()` against the last metadata update, so lyrics keep moving between session callbacks instead of stepping once a second. And `TrackQuery` strips what players put in titles, the `(Official Video)` and `[Remastered 2011]` of it, then scores each candidate against the track duration before accepting a match, because a title and artist that match perfectly with a duration 30 seconds off is usually a live version.
+
+## Build
+
+JDK 17 and an Android SDK with API 34.
 
 ```bash
 export ANDROID_HOME=~/Android/Sdk
 export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
-gradle assembleDebug
+
+./gradlew assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
+./gradlew testDebugUnitTest
 ```
 
-The resulting APK will be located at `app/build/outputs/apk/debug/app-debug.apk`.
+The unit tests cover the parts with no Android in them: LRC parsing, query cleanup and scoring, transition and frame timing, layout maths. Shader output and the wallpaper lifecycle are not covered and need a device.
+
+> [!NOTE]
+> Gradle refuses to configure if `ANDROID_HOME` and `ANDROID_SDK_ROOT` are both set to different paths. Unset one.
+
+## Known limitations
+
+- Word level timing depends on Musixmatch richsync coverage. Plenty of tracks only have line timing, and some have nothing.
+- The fluid background needs Android 13. Below that it is gradient meshes.
+- Only Spotify, Tidal and KDE Connect sessions are picked up. Other players are ignored even when they publish a session.
+- Both lyrics sources are third party and unofficial. They go down, they rate limit, and they hand back the wrong track often enough that manual LRC editing exists.
+- Debug signed, so sideload only.
+- No screenshots in the repo yet.
+
+## License
+
+[Apache 2.0](LICENSE). Copyright 2026 Daniel Hrehor.
+
+Lyrics come from [LRCLIB](https://lrclib.net) and Musixmatch. Neither is affiliated with this project.

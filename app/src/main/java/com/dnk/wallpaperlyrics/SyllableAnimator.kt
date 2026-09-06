@@ -1,15 +1,29 @@
 package com.dnk.wallpaperlyrics
 
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections
+import java.util.LinkedHashMap
 
 object SyllableAnimator {
+
+    private const val LETTER_MOTION_MINIMUM_MS = 150L
+    const val WORD_OVERLAP_MS = 50L
+    const val WORD_MIN_ANIMATION_MS = 200L
+    const val BASE_GLIDE_MS = 200f
+    const val REFERENCE_DISTANCE_PX = 158f
 
     class SyllableInfo(
         val syllableCount: Int,
         val bounds: FloatArray // size syllableCount + 1, from 0f to 1f
     )
 
-    private val cache = ConcurrentHashMap<String, SyllableInfo>()
+    /** A listening session rarely goes past a few hundred distinct words. */
+    private const val MAX_CACHE_ENTRIES = 512
+    private val cache: MutableMap<String, SyllableInfo> = Collections.synchronizedMap(
+        object : LinkedHashMap<String, SyllableInfo>(MAX_CACHE_ENTRIES, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, SyllableInfo>?): Boolean =
+                size > MAX_CACHE_ENTRIES
+        }
+    )
 
     private fun isVowel(c: Char, index: Int): Boolean {
         val lc = c.lowercaseChar()
@@ -144,6 +158,19 @@ object SyllableAnimator {
     }
 
     // Easing curves
+    fun easeOutGlide(x: Float): Float {
+        if (x <= 0f) return 0f
+        if (x >= 1f) return 1f
+        val inv = 1f - x
+        return 1f - Math.pow(inv.toDouble(), 1.5).toFloat()
+    }
+
+    fun glideDurationMs(distancePx: Float): Float {
+        if (distancePx <= 0f || distancePx.isNaN()) return BASE_GLIDE_MS
+        val factor = Math.sqrt((distancePx / REFERENCE_DISTANCE_PX).toDouble()).toFloat()
+        return (BASE_GLIDE_MS * factor).coerceIn(BASE_GLIDE_MS, BASE_GLIDE_MS * 1.6f)
+    }
+
     fun easeOutExpo(x: Float): Float {
         if (x <= 0f) return 0f
         if (x >= 1f) return 1f
@@ -164,15 +191,14 @@ object SyllableAnimator {
         }
     }
 
-    fun easeSyllable(x: Float): Float {
-        // A custom fast-slow-fast curve to mimic natural pronunciation:
-        // quick consonants at the start/end, and lingering vowels in the middle.
-        // We use a cubic function centered at 0.5: f(x) = 4 * (x - 0.5)^3 + 0.5
-        // and blend it with a linear component (15% linear / 85% cubic) to ensure
-        // a smooth, non-zero speed while keeping the transition highly eased and dramatic.
-        val cx = x - 0.5f
-        val cubic = 4f * cx * cx * cx + 0.5f
-        return 0.15f * x + 0.85f * cubic
+    const val SYLLABLE_EASE_POWER = 2.2f
+    const val SYLLABLE_LINEAR_BLEND = 0.25f
+
+    fun easeSyllableOut(x: Float): Float {
+        if (x <= 0f) return 0f
+        if (x >= 1f) return 1f
+        val decay = 1f - Math.pow((1f - x).toDouble(), SYLLABLE_EASE_POWER.toDouble()).toFloat()
+        return SYLLABLE_LINEAR_BLEND * x + (1f - SYLLABLE_LINEAR_BLEND) * decay
     }
 
     /**
@@ -187,40 +213,78 @@ object SyllableAnimator {
         val n = info.syllableCount
 
         if (n <= 1) {
-            // Single syllable: use easeSyllable for a smooth transition
-            return easeSyllable(p)
+            return easeSyllableOut(p)
         }
 
         // Multi-syllable word
         val r = info.bounds
-        val t = FloatArray(n + 1)
-        t[0] = 0f
-        t[n] = 1f
-        for (i in 1 until n) {
-            // Blend equal time intervals (70%) and character length proportions (30%)
-            t[i] = 0.7f * (i.toFloat() / n) + 0.3f * r[i]
-        }
-
-        // Find which syllable we are currently in
+        var tStart = 0f
+        var tEnd = 1f
         var syllableIdx = 0
+
         for (i in 0 until n) {
-            if (p >= t[i] && p <= t[i + 1]) {
+            tEnd = if (i + 1 < n) {
+                0.7f * ((i + 1).toFloat() / n) + 0.3f * r[i + 1]
+            } else {
+                1f
+            }
+            if (p <= tEnd || i == n - 1) {
                 syllableIdx = i
                 break
             }
+            tStart = tEnd
         }
 
-        val tStart = t[syllableIdx]
-        val tEnd = t[syllableIdx + 1]
         val rStart = r[syllableIdx]
         val rEnd = r[syllableIdx + 1]
-
-        // Local progress within the current syllable (0.0 to 1.0)
         val u = if (tEnd > tStart) (p - tStart) / (tEnd - tStart) else 0f
-        val uEased = easeSyllable(u)
+        val uEased = easeSyllableOut(u)
 
-        // Map back to the word's character space bounds
         return rStart + uEased * (rEnd - rStart)
     }
-}
 
+    fun getWordMotionScale(linearProgress: Float): Float {
+        val progress = linearProgress.coerceIn(0f, 1f)
+        return 1f + 0.04f * Math.sin(Math.PI * progress).toFloat()
+    }
+
+    fun usesPerLetterMotion(durationMs: Long, codePointCount: Int): Boolean =
+        codePointCount > 0 && durationMs >= codePointCount.toLong() * LETTER_MOTION_MINIMUM_MS
+
+    fun getWholeWordLift(linearProgress: Float, textSize: Float): Float {
+        val progress = linearProgress.coerceIn(0f, 1f)
+        return textSize * 0.06f * Math.sin(Math.PI * progress).toFloat()
+    }
+
+    fun getLetterLift(
+        linearProgress: Float,
+        codePointIndex: Int,
+        codePointCount: Int,
+        textSize: Float
+    ): Float {
+        val progress = linearProgress.coerceIn(0f, 1f)
+        if (progress <= 0f || progress >= 1f || codePointIndex !in 0 until codePointCount) return 0f
+
+        val start = codePointIndex.toFloat() / codePointCount
+        if (progress <= start) return 0f
+
+        val localProgress = (progress - start) / (1f - start)
+        return textSize * 0.06f * Math.sin(Math.PI * localProgress).toFloat()
+    }
+
+    /**
+     * Extends a word animation window to at least [WORD_MIN_ANIMATION_MS] or its original duration plus
+     * [WORD_OVERLAP_MS], clamped to [lineEndMs] so the final word of a line completes before the line
+     * goes inactive, and bounded below by [endMs].
+     */
+    fun getExtendedWordEnd(startMs: Long, endMs: Long, lineEndMs: Long): Long {
+        val duration = endMs - startMs
+        val animated = if (duration <= 0L) {
+            WORD_MIN_ANIMATION_MS
+        } else {
+            Math.max(duration + WORD_OVERLAP_MS, WORD_MIN_ANIMATION_MS)
+        }
+        val clamped = Math.min(startMs + animated, lineEndMs)
+        return Math.max(endMs, clamped)
+    }
+}

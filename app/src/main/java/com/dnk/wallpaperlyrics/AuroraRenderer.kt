@@ -9,9 +9,11 @@ import androidx.palette.graphics.Palette
 
 /**
  * Handles all aurora background rendering, color extraction, and image preprocessing.
- * Operates on state passed in from the engine — no internal mutable state.
+ * All state is passed in from the engine so nothing here is mutable or shared.
  */
 object AuroraRenderer {
+
+    const val BACKGROUND_WORK_RESOLUTION = 512
 
     fun drawAurora(
         canvas: Canvas,
@@ -34,65 +36,77 @@ object AuroraRenderer {
         val width = canvas.width.toFloat()
         val height = canvas.height.toFloat()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && runtimeShader != null) {
-            runtimeShader.let { shader ->
-                val currentBmp = currentBgArt
-                if (currentBmp != null && !currentBmp.isRecycled) {
-                    val currentShader = BitmapShader(currentBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+            && runtimeShader != null
+            && currentBgArt != null
+            && !currentBgArt.isRecycled
+        ) {
+            val shader = runtimeShader
+            val currentBmp = currentBgArt
+            val currentShader = BitmapShader(currentBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            currentShader.setFilterMode(BitmapShader.FILTER_MODE_LINEAR)
 
-                    val scaleX = width / currentBmp.width
-                    val scaleY = height / currentBmp.height
-                    val scale = Math.max(scaleX, scaleY) * 1.3f
-                    val dx = (width - currentBmp.width * scale) / 2f
-                    val dy = (height - currentBmp.height * scale) / 2f
+            val scaleX = width / currentBmp.width
+            val scaleY = height / currentBmp.height
+            val scale = Math.max(scaleX, scaleY) * 1.3f
+            val dx = (width - currentBmp.width * scale) / 2f
+            val dy = (height - currentBmp.height * scale) / 2f
 
-                    val matrix = Matrix().apply {
-                        setScale(scale, scale)
-                        postTranslate(dx, dy)
-                    }
-                    currentShader.setLocalMatrix(matrix)
-                    shader.setInputShader("u_texture", currentShader)
-
-                    val nextBmp = nextBgArt
-                    if (nextBmp != null && !nextBmp.isRecycled) {
-                        val nextShader = BitmapShader(nextBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
-                        val nextMatrix = Matrix().apply {
-                            setScale(scale, scale)
-                            postTranslate(dx, dy)
-                        }
-                        nextShader.setLocalMatrix(nextMatrix)
-                        shader.setInputShader("u_texture_next", nextShader)
-                    } else {
-                        shader.setInputShader("u_texture_next", currentShader)
-                    }
-                }
-
-                shader.setFloatUniform("u_blend", blendProgress)
-                shader.setFloatUniform("u_resolution", width, height)
-                shader.setFloatUniform("u_time", accumulatedTime)
-                shader.setFloatUniform("u_time_next", if (isTransitioning) nextAccumulatedTime else accumulatedTime)
-                shader.setFloatUniform("u_seed", currentSeedX, currentSeedY)
-                shader.setFloatUniform("u_seed_next", if (isTransitioning) nextSeedX else currentSeedX, if (isTransitioning) nextSeedY else currentSeedY)
-                shader.setFloatUniform("u_intensity", 1.8f)
-                shader.setFloatUniform("u_saturation", 2.8f)
-                shader.setFloatUniform("u_dithering", 0.008f)
-                shader.setFloatUniform("u_scale", 1.0f)
-                shader.setFloatUniform("u_static_bg", if (staticBg) 1.0f else 0.0f)
-
-                shaderPaint.shader = shader
-
-                if (android.os.Build.VERSION.SDK_INT >= 31) {
-                    try {
-                        val method = shaderPaint.javaClass.getMethod("setRenderEffect", android.graphics.RenderEffect::class.java)
-                        method.invoke(shaderPaint, null)
-                    } catch (e: Exception) {}
-                }
-
-                canvas.drawRect(0f, 0f, width, height, shaderPaint)
+            val matrix = Matrix().apply {
+                setScale(scale, scale)
+                postTranslate(dx, dy)
             }
+            currentShader.setLocalMatrix(matrix)
+            shader.setInputShader("u_texture", currentShader)
+
+            val nextBmp = nextBgArt
+            if (nextBmp != null && !nextBmp.isRecycled) {
+                val nextShader = BitmapShader(nextBmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+                nextShader.setFilterMode(BitmapShader.FILTER_MODE_LINEAR)
+                val nextMatrix = Matrix().apply {
+                    setScale(scale, scale)
+                    postTranslate(dx, dy)
+                }
+                nextShader.setLocalMatrix(nextMatrix)
+                shader.setInputShader("u_texture_next", nextShader)
+            } else {
+                shader.setInputShader("u_texture_next", currentShader)
+            }
+
+            shader.setFloatUniform("u_tex_scale", scale)
+            shader.setFloatUniform("u_tex_offset", dx, dy)
+            shader.setFloatUniform("u_blend", blendProgress)
+            shader.setFloatUniform("u_resolution", width, height)
+            shader.setFloatUniform("u_time", accumulatedTime)
+            shader.setFloatUniform("u_time_next", if (isTransitioning) nextAccumulatedTime else accumulatedTime)
+            shader.setFloatUniform("u_seed", currentSeedX, currentSeedY)
+            shader.setFloatUniform("u_seed_next", if (isTransitioning) nextSeedX else currentSeedX, if (isTransitioning) nextSeedY else currentSeedY)
+            shader.setFloatUniform("u_intensity", 1.8f)
+            shader.setFloatUniform("u_saturation", 2.8f)
+            // Dither is applied as the final operation immediately before 8-bit quantization with no
+            // downstream gain stages. Per-channel triangular noise over (-1, 1) scaled by 0.5 with
+            // u_dithering = 0.0118f gives 0.0118 * 0.5 * 255 = 1.5 LSB peak amplitude, breaking shallow
+            // gradient contours across independent color channels.
+            shader.setFloatUniform("u_dithering", 0.0118f)
+            shader.setFloatUniform("u_scale", 1.0f)
+            shader.setFloatUniform("u_static_bg", if (staticBg) 1.0f else 0.0f)
+
+            shaderPaint.shader = shader
+
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                try {
+                    val method = shaderPaint.javaClass.getMethod("setRenderEffect", android.graphics.RenderEffect::class.java)
+                    method.invoke(shaderPaint, null)
+                } catch (e: Exception) {}
+            }
+
+            canvas.drawRect(0f, 0f, width, height, shaderPaint)
         } else {
             // Fallback for API < 33: Spicy Lyrics Mesh Gradient (Radial Blobs)
-            canvas.drawColor(Color.BLACK)
+            // Tint the black base with the palette's base color so dark patches
+            // between blobs blend into the scene instead of looking like holes.
+            val tintedBase = AuroraRenderer.tintBlack(base = currentColors.getOrElse(1) { 0xFF0A0A0A.toInt() })
+            canvas.drawColor(tintedBase)
 
             val fallbackTime = if (staticBg) 0f else accumulatedTime * 2.4f
 
@@ -195,7 +209,7 @@ object AuroraRenderer {
     }
 
     fun preprocessArt(source: Bitmap, tintColor: Int, tintIntensity: Float): Bitmap {
-        val lowRes = Bitmap.createScaledBitmap(source, 128, 128, true)
+        val lowRes = Bitmap.createScaledBitmap(source, BACKGROUND_WORK_RESOLUTION, BACKGROUND_WORK_RESOLUTION, true)
         val w = lowRes.width
         val h = lowRes.height
         val pixels = IntArray(w * h)
@@ -222,9 +236,9 @@ object AuroraRenderer {
             val newB = (b + (tintB - b) * factor).coerceIn(0f, 1f)
 
             pixels[i] = (0xff000000.toInt() or
-                        ((newR * 255f).toInt() shl 16) or
-                        ((newG * 255f).toInt() shl 8) or
-                        (newB * 255f).toInt())
+                        (Math.round(newR * 255f).coerceIn(0, 255) shl 16) or
+                        (Math.round(newG * 255f).coerceIn(0, 255) shl 8) or
+                        Math.round(newB * 255f).coerceIn(0, 255))
         }
 
         val tinted = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -234,8 +248,8 @@ object AuroraRenderer {
     }
 
     fun createIdleMesh(colors: IntArray): Bitmap {
-        val w = 128
-        val h = 128
+        val w = BACKGROUND_WORK_RESOLUTION
+        val h = BACKGROUND_WORK_RESOLUTION
         val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val pixels = IntArray(w * h)
 
@@ -249,20 +263,20 @@ object AuroraRenderer {
             for (x in 0 until w) {
                 val xf = x.toFloat() / (w - 1)
 
-                val r = (Color.red(c00) * (1f - xf) * (1f - yf) +
+                val r = Math.round(Color.red(c00) * (1f - xf) * (1f - yf) +
                          Color.red(c10) * xf * (1f - yf) +
                          Color.red(c01) * (1f - xf) * yf +
-                         Color.red(c11) * xf * yf).toInt().coerceIn(0, 255)
+                         Color.red(c11) * xf * yf).coerceIn(0, 255)
 
-                val g = (Color.green(c00) * (1f - xf) * (1f - yf) +
+                val g = Math.round(Color.green(c00) * (1f - xf) * (1f - yf) +
                          Color.green(c10) * xf * (1f - yf) +
                          Color.green(c01) * (1f - xf) * yf +
-                         Color.green(c11) * xf * yf).toInt().coerceIn(0, 255)
+                         Color.green(c11) * xf * yf).coerceIn(0, 255)
 
-                val b = (Color.blue(c00) * (1f - xf) * (1f - yf) +
+                val b = Math.round(Color.blue(c00) * (1f - xf) * (1f - yf) +
                          Color.blue(c10) * xf * (1f - yf) +
                          Color.blue(c01) * (1f - xf) * yf +
-                         Color.blue(c11) * xf * yf).toInt().coerceIn(0, 255)
+                         Color.blue(c11) * xf * yf).coerceIn(0, 255)
 
                 pixels[y * w + x] = 0xff000000.toInt() or (r shl 16) or (g shl 8) or b
             }
@@ -310,9 +324,9 @@ object AuroraRenderer {
                 bsum += p and 0xff
             }
             for (x in 0 until w) {
-                r[yi] = rsum / div
-                g[yi] = gsum / div
-                b[yi] = bsum / div
+                r[yi] = (rsum + div / 2) / div
+                g[yi] = (gsum + div / 2) / div
+                b[yi] = (bsum + div / 2) / div
 
                 if (y == 0) {
                     vmin[x] = Math.min(x + radius + 1, wm)
@@ -343,7 +357,7 @@ object AuroraRenderer {
             }
             yi = x
             for (y in 0 until h) {
-                pix[yi] = (0xff000000.toInt() or ((rsum / div) shl 16) or ((gsum / div) shl 8) or (bsum / div))
+                pix[yi] = (0xff000000.toInt() or (((rsum + div / 2) / div) shl 16) or (((gsum + div / 2) / div) shl 8) or ((bsum + div / 2) / div))
                 if (x == 0) {
                     vmin[y] = Math.min(y + radius + 1, hm) * w
                 }
@@ -398,5 +412,13 @@ object AuroraRenderer {
         hsv[0] = (hsv[0] + degrees) % 360f
         hsv[1] = hsv[1].coerceAtLeast(0.7f)
         return Color.HSVToColor(hsv)
+    }
+
+    /** Tints a black background with a base color so dark patches blend into the scene. */
+    fun tintBlack(base: Int): Int {
+        val r = (Color.red(base) * 0.15f).toInt().coerceIn(0, 255)
+        val g = (Color.green(base) * 0.15f).toInt().coerceIn(0, 255)
+        val b = (Color.blue(base) * 0.15f).toInt().coerceIn(0, 255)
+        return Color.argb(255, r, g, b)
     }
 }

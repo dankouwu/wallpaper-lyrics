@@ -8,6 +8,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.io.File
 import java.io.IOException
 import java.net.URLEncoder
+import java.security.MessageDigest
 
 data class LyricWord(
     val startTime: Long,
@@ -58,8 +59,15 @@ class LyricsManager(private val context: Context) {
     private val gson = Gson()
     private val cacheDir = File(context.cacheDir, "lyrics_cache").apply { mkdirs() }
 
+    /** SHA-256 hex digest. hashCode() collides often enough to cross cache entries. */
+    private fun sha256(input: String): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        return digest.digest(input.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
+
     fun deleteCacheFor(title: String, artist: String) {
-        val cacheKey = "${title}_${artist}".hashCode().toString()
+        val cacheKey = sha256("${title}_$artist")
         val cacheFile = File(cacheDir, "$cacheKey.json")
         val missFile = File(cacheDir, "$cacheKey.miss")
         try {
@@ -224,42 +232,6 @@ class LyricsManager(private val context: Context) {
             // Sort by start time to ensure chronological order
             rawLines.sortBy { it.startTime }
 
-            // Resolve overlapping start times
-            for (i in 1 until rawLines.size) {
-                val prev = rawLines[i - 1]
-                val curr = rawLines[i]
-                
-                // Determine the end time/vocal end time of the previous line
-                val prevEnd = if (prev.words != null && prev.words.isNotEmpty()) {
-                    prev.words.maxOf { Math.max(it.startTime, it.endTime) }
-                } else {
-                    val minDur = (prev.content.length * 100L + 500L).coerceIn(1500L, 4000L)
-                    prev.startTime + minDur
-                }
-                
-                val minGap = 100L // 100ms minimum gap between lines
-                val requiredStart = prevEnd + minGap
-                
-                if (curr.startTime < requiredStart) {
-                    val delta = requiredStart - curr.startTime
-                    val newStartTime = requiredStart
-                    
-                    val shiftedWords = curr.words?.map { word ->
-                        word.copy(
-                            startTime = word.startTime + delta,
-                            endTime = if (word.endTime > 0L) word.endTime + delta else 0L,
-                            fullStartTime = if (word.fullStartTime > 0L) word.fullStartTime + delta else 0L,
-                            fullEndTime = if (word.fullEndTime > 0L) word.fullEndTime + delta else 0L
-                        )
-                    }
-                    
-                    rawLines[i] = curr.copy(
-                        startTime = newStartTime,
-                        words = shiftedWords
-                    )
-                }
-            }
-            
             val songDurationMs = durationMs ?: (rawLines.last().startTime + 10000)
             val lineDensity = rawLines.size.toFloat() / (songDurationMs / 1000f)
             
@@ -458,7 +430,7 @@ class LyricsManager(private val context: Context) {
      * failures (offline, 429, 5xx) where the caller's watchdog may retry later.
      */
     fun fetchLyrics(title: String, artist: String, durationMs: Long, callback: (List<LyricLine>?, Boolean) -> Unit) {
-        val cacheKey = "${title}_${artist}".hashCode().toString()
+        val cacheKey = sha256("${title}_$artist")
         val cacheFile = File(cacheDir, "$cacheKey.json")
         val missFile = File(cacheDir, "$cacheKey.miss")
 

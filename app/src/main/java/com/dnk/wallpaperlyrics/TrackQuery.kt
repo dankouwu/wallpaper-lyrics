@@ -7,8 +7,9 @@ import kotlin.math.max
 data class QueryCandidate(val title: String, val artist: String)
 
 /**
- * Pure metadata sanitization and LRCLIB candidate scoring.
- * No Android dependencies so it stays unit-testable on the JVM.
+ * Cleans up what the player reports and scores LRCLIB results against it.
+ * Player metadata is messy, so this is where the matching rules live and where
+ * they can be tested against real world titles.
  */
 object TrackQuery {
     // Single "balanced" dial: raise for stricter matching, lower for aggressive.
@@ -71,9 +72,9 @@ object TrackQuery {
     }
 
     /**
-     * 0.0–1.0 match score for one LRCLIB search result against what is playing.
+     * 0.0 to 1.0 match score for one LRCLIB search result against what is playing.
      * Hard rejects (returns 0.0): title similarity < 0.4, or both durations known
-     * and differing by >= 15s — a perfect title+artist match with the wrong duration
+     * and differing by >= 15s. A perfect title+artist match with the wrong duration
      * would otherwise score 0.70 and pass the 0.65 threshold.
      * Pass null (never 0.0) for an unknown duration so it scores neutral.
      */
