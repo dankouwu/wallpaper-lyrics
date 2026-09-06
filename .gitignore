@@ -5,6 +5,15 @@ app/build/
 .idea/
 local.properties
 .DS_Store
+extras/
+
+# Scratch notes and local scaffolding. Never in the repo.
 /*.md
 !/README.md
-extras/
+/*.txt
+/*.lrc
+/.agents/
+/drifting-bug-resources/
+
+# Debug capture fixtures. Local only.
+app/src/debug/assets/
