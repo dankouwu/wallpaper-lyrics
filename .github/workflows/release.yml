@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Unit tests
+        run: ./gradlew testDebugUnitTest
+
+      # The release buildType signs with the debug key on purpose: this app is
+      # sideload only. CI generates a fresh debug keystore per run, so the
+      # signature is not stable across releases and users may need to uninstall
+      # before updating. Wire a real keystore through secrets to fix that.
+      - name: Assemble release APK
+        run: ./gradlew assembleRelease
+
+      - name: Rename APK
+        run: |
+          mv app/build/outputs/apk/release/app-release.apk \
+             wallpaper-lyrics-${{ github.ref_name }}.apk
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: wallpaper-lyrics-${{ github.ref_name }}.apk
+          generate_release_notes: true
