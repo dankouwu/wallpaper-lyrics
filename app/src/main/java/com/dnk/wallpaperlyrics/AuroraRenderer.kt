@@ -81,8 +81,8 @@ object AuroraRenderer {
             shader.setFloatUniform("u_time_next", if (isTransitioning) nextAccumulatedTime else accumulatedTime)
             shader.setFloatUniform("u_seed", currentSeedX, currentSeedY)
             shader.setFloatUniform("u_seed_next", if (isTransitioning) nextSeedX else currentSeedX, if (isTransitioning) nextSeedY else currentSeedY)
-            shader.setFloatUniform("u_intensity", 1.8f)
-            shader.setFloatUniform("u_saturation", 2.8f)
+            shader.setFloatUniform("u_intensity", 1.0f)
+            shader.setFloatUniform("u_saturation", 1.5f)
             // Dither is applied as the final operation immediately before 8-bit quantization with no
             // downstream gain stages. Per-channel triangular noise over (-1, 1) scaled by 0.5 with
             // u_dithering = 0.0118f gives 0.0118 * 0.5 * 255 = 1.5 LSB peak amplitude, breaking shallow
@@ -144,7 +144,7 @@ object AuroraRenderer {
         }
 
         // Subtle darkening overlay for text legibility
-        canvas.drawColor(Color.argb(80, 0, 0, 0))
+        canvas.drawColor(Color.argb(46, 0, 0, 0))
     }
 
     fun extractPalette(sourceBitmap: Bitmap): AuroraPalette {
