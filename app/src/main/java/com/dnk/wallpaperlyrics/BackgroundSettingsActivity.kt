@@ -700,7 +700,9 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     LS.dpToPx(this@BackgroundSettingsActivity, 48f)
                 ).apply {
                     topMargin = LS.dpToPx(this@BackgroundSettingsActivity, 12f)
-                    bottomMargin = LS.dpToPx(this@BackgroundSettingsActivity, 4f)
+                    // Slider is 48dp for the touch target but draws a 4dp track, so the labels
+                    // are pulled up into the slack rather than the view being shrunk
+                    bottomMargin = LS.dpToPx(this@BackgroundSettingsActivity, -12f)
                 }
                 val parsedInitial = initialVal.toFloatOrNull()?.coerceIn(minVal, maxVal) ?: minVal
                 progress = (((parsedInitial - minVal) / (maxVal - minVal)) * 1000f).toInt()
