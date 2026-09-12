@@ -49,12 +49,12 @@ class EnhancedLyricsActivity : AppCompatActivity() {
             val backButton = android.widget.ImageView(this).apply {
                 val arrowDrawable = LS.CustomIconDrawable(this@EnhancedLyricsActivity, LS.IconType.ARROW_LEFT)
                 setImageDrawable(arrowDrawable)
-                val size = LS.dpToPx(this@EnhancedLyricsActivity, 32f)
+                val size = LS.dpToPx(this@EnhancedLyricsActivity, 48f)
                 layoutParams = android.widget.RelativeLayout.LayoutParams(size, size).apply {
                     addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT)
                     addRule(android.widget.RelativeLayout.CENTER_VERTICAL)
                 }
-                setPadding(LS.dpToPx(this@EnhancedLyricsActivity, 4f), LS.dpToPx(this@EnhancedLyricsActivity, 4f), LS.dpToPx(this@EnhancedLyricsActivity, 4f), LS.dpToPx(this@EnhancedLyricsActivity, 4f))
+                setPadding(LS.dpToPx(this@EnhancedLyricsActivity, 12f), LS.dpToPx(this@EnhancedLyricsActivity, 12f), LS.dpToPx(this@EnhancedLyricsActivity, 12f), LS.dpToPx(this@EnhancedLyricsActivity, 12f))
                 isClickable = true
                 val outVal = TypedValue()
                 theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
@@ -95,39 +95,44 @@ class EnhancedLyricsActivity : AppCompatActivity() {
 
             addSectionHeader("Custom Provider Overrides")
             val card1 = LS.SettingsCard(this).apply {
+                lateinit var endpointRow: LS.SettingsRow
+                lateinit var formatRow: LS.SettingsRow
+                lateinit var timeoutRow: LS.SettingsRow
+
                 addRow(LS.SettingsRow(
                     this@EnhancedLyricsActivity,
                     LS.IconType.LIST_MUSIC,
                     "Enable Custom Provider",
-                    "Query custom API override before falling back to syncedlyrics",
+                    "Try your own server first, then fall back to LRCLIB and Musixmatch",
                     LS.TrailingType.SWITCH,
                     prefs.getBoolean("custom_lyrics_enabled", false).toString(),
                     onCheckedChange = { checked ->
                         prefs.edit().putBoolean("custom_lyrics_enabled", checked).apply()
+                        endpointRow.setRowEnabled(checked)
+                        formatRow.setRowEnabled(checked)
+                        timeoutRow.setRowEnabled(checked)
                     }
                 ))
 
-                val initialEndpoint = prefs.getString("custom_lyrics_endpoint", "http://10.0.2.2:8000/api/lyrics") ?: "http://10.0.2.2:8000/api/lyrics"
-                lateinit var endpointRow: LS.SettingsRow
+                val initialEndpoint = prefs.getString("custom_lyrics_endpoint", "") ?: ""
                 endpointRow = LS.SettingsRow(
                     this@EnhancedLyricsActivity,
                     LS.IconType.LINK,
                     "API Endpoint URL",
-                    "REST URL endpoint for custom lyrics fetching",
+                    "Address of your own lyrics server",
                     LS.TrailingType.VALUE,
-                    initialEndpoint,
+                    if (initialEndpoint.isEmpty()) "Not set" else initialEndpoint,
                     onClick = {
-                        val currentEndpoint = prefs.getString("custom_lyrics_endpoint", "http://10.0.2.2:8000/api/lyrics") ?: "http://10.0.2.2:8000/api/lyrics"
+                        val currentEndpoint = prefs.getString("custom_lyrics_endpoint", "") ?: ""
                         showCustomEditDialog("API Endpoint", currentEndpoint, isNumber = false, isFloat = false, 0f, 0f, "") { newVal ->
                             prefs.edit().putString("custom_lyrics_endpoint", newVal).apply()
-                            endpointRow.updateValue(newVal)
+                            endpointRow.updateValue(if (newVal.isEmpty()) "Not set" else newVal)
                         }
                     }
                 )
                 addRow(endpointRow)
 
                 val initialFormat = prefs.getString("custom_lyrics_format", "LRC") ?: "LRC"
-                lateinit var formatRow: LS.SettingsRow
                 formatRow = LS.SettingsRow(
                     this@EnhancedLyricsActivity,
                     LS.IconType.BRACES,
@@ -149,25 +154,29 @@ class EnhancedLyricsActivity : AppCompatActivity() {
                 )
                 addRow(formatRow)
 
-                val initialTimeout = prefs.getFloat("custom_lyrics_timeout", 60f)
-                lateinit var timeoutRow: LS.SettingsRow
+                val initialTimeout = prefs.getFloat("custom_lyrics_timeout", 5f)
                 timeoutRow = LS.SettingsRow(
                     this@EnhancedLyricsActivity,
                     LS.IconType.TIMER,
                     "Request Timeout",
-                    "Maximum execution timeout waiting for response",
+                    "How long to wait before giving up",
                     LS.TrailingType.VALUE,
                     "${initialTimeout.toInt()}s",
                     onClick = {
-                        val currentTimeout = prefs.getFloat("custom_lyrics_timeout", 60f)
+                        val currentTimeout = prefs.getFloat("custom_lyrics_timeout", 5f)
                         showCustomEditDialog("API Timeout", currentTimeout.toInt().toString(), isNumber = true, isFloat = false, 5f, 300f, "seconds") { newVal ->
-                            val secVal = newVal.toFloatOrNull() ?: 60f
+                            val secVal = newVal.toFloatOrNull() ?: 5f
                             prefs.edit().putFloat("custom_lyrics_timeout", secVal).apply()
                             timeoutRow.updateValue("${secVal.toInt()}s")
                         }
                     }
                 )
                 addRow(timeoutRow)
+
+                val isCustomEnabled = prefs.getBoolean("custom_lyrics_enabled", false)
+                endpointRow.setRowEnabled(isCustomEnabled)
+                formatRow.setRowEnabled(isCustomEnabled)
+                timeoutRow.setRowEnabled(isCustomEnabled)
             }
             rootLayout.addView(card1)
 

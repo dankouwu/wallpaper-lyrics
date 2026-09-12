@@ -26,6 +26,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var notificationRow: LS.SettingsRow
     private lateinit var wallpaperRow: LS.SettingsRow
+    private lateinit var batteryRow: LS.SettingsRow
     private lateinit var songOffsetRow: LS.SettingsRow
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -80,7 +81,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             // CARD 1: General Settings
-            addSectionHeader("General")
+            addSectionHeader("Setup")
             val card1 = LS.SettingsCard(this).apply {
                 notificationRow = LS.SettingsRow(
                     this@MainActivity,
@@ -117,6 +118,22 @@ class MainActivity : AppCompatActivity() {
                 )
                 addRow(wallpaperRow)
 
+                batteryRow = LS.SettingsRow(
+                    this@MainActivity,
+                    LS.IconType.GAUGE,
+                    "Battery Unrestricted",
+                    "Required so the wallpaper is not throttled",
+                    LS.TrailingType.CHEVRON,
+                    onClick = {
+                        try {
+                            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                        } catch (e: Exception) {
+                            Toast.makeText(this@MainActivity, "Could not open battery settings", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                addRow(batteryRow)
+
                 addRow(LS.SettingsRow(
                     this@MainActivity,
                     LS.IconType.SLIDERS,
@@ -152,7 +169,19 @@ class MainActivity : AppCompatActivity() {
                 )
                 addRow(persistentNotifRow)
 
-                val showPlayerSelection = listOf(isSpotifyInstalled(), isTidalInstalled(), isKdeConnectInstalled()).count { it } >= 2
+                addRow(LS.SettingsRow(
+                    this@MainActivity,
+                    LS.IconType.INFO,
+                    "Status Messages",
+                    "Toast when lyrics are fetched or missing",
+                    LS.TrailingType.SWITCH,
+                    initialVal = prefs.getBoolean(LS.KEY_STATUS_TOASTS, true).toString(),
+                    onCheckedChange = { isChecked ->
+                        prefs.edit().putBoolean(LS.KEY_STATUS_TOASTS, isChecked).apply()
+                    }
+                ))
+
+                val showPlayerSelection = listOf(isSpotifyInstalled(), isTidalInstalled(), isKdeConnectInstalled()).count { it } >= 1
                 if (showPlayerSelection) {
                     val currentPref = prefs.getString("preferred_media_player", "default") ?: "default"
                     val displayValue = when (currentPref) {
@@ -211,7 +240,7 @@ class MainActivity : AppCompatActivity() {
                     "${initialOffset}ms",
                     onClick = {
                         val currentOffset = prefs.getInt("sync_offset", 0)
-                        showCustomEditDialog("Set Sync Offset", currentOffset.toString(), -1000f, 1000f, false, "ms") { newVal ->
+                        showCustomEditDialog("Set Sync Offset", currentOffset.toString(), -1000f, 1000f, false, "ms", hint = "Negative shows lyrics earlier. Positive delays them.") { newVal ->
                             val offsetVal = newVal.toInt()
                             prefs.edit().putInt("sync_offset", offsetVal).apply()
                             offsetRow.updateValue("${offsetVal}ms")
@@ -410,21 +439,39 @@ class MainActivity : AppCompatActivity() {
         return info != null && info.packageName == packageName
     }
 
+    private fun isBatteryUnrestricted(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
     override fun onResume() {
         super.onResume()
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         if (::notificationRow.isInitialized) {
             if (isNotificationServiceEnabled()) {
                 notificationRow.setTrailing(LS.TrailingType.CHECK)
+                notificationRow.updateSubtitle("Granted")
             } else {
                 notificationRow.setTrailing(LS.TrailingType.CHEVRON)
+                notificationRow.updateSubtitle("Required to read music session details")
             }
         }
         if (::wallpaperRow.isInitialized) {
             if (isWallpaperActive()) {
                 wallpaperRow.setTrailing(LS.TrailingType.CHECK)
+                wallpaperRow.updateSubtitle("Active")
             } else {
                 wallpaperRow.setTrailing(LS.TrailingType.CHEVRON)
+                wallpaperRow.updateSubtitle("Choose this wallpaper in picker menu")
+            }
+        }
+        if (::batteryRow.isInitialized) {
+            if (isBatteryUnrestricted()) {
+                batteryRow.setTrailing(LS.TrailingType.CHECK)
+                batteryRow.updateSubtitle("Unrestricted")
+            } else {
+                batteryRow.setTrailing(LS.TrailingType.CHEVRON)
+                batteryRow.updateSubtitle("Required so the wallpaper is not throttled")
             }
         }
         if (::songOffsetRow.isInitialized) {
@@ -449,19 +496,18 @@ class MainActivity : AppCompatActivity() {
             val controllers = mediaSessionManager.getActiveSessions(componentName)
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
             val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
-            val active = if (preferred == "default") {
-                controllers.firstOrNull()
-            } else {
-                controllers.find {
-                    val pkg = it.packageName.lowercase()
-                    when (preferred) {
-                        "spotify" -> pkg.contains("spotify")
-                        "tidal" -> pkg.contains("tidal")
-                        "kdeconnect" -> pkg.contains("kdeconnect")
-                        else -> false
-                    }
-                }
+            val candidates = controllers.map { controller ->
+                val meta = controller.metadata
+                val title = meta?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
+                val state = controller.playbackState?.state ?: MediaSessionChoice.STATE_NONE
+                MediaSessionChoice.Candidate(
+                    packageName = controller.packageName,
+                    hasUsableMetadata = !title.isNullOrBlank(),
+                    playbackState = state
+                ) to controller
             }
+            val chosen = MediaSessionChoice.choose(candidates.map { it.first }, preferred)
+            val active = candidates.firstOrNull { it.first == chosen }?.second
             if (active != null) {
                 val metadata = active.metadata
                 val title = metadata?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
@@ -483,6 +529,7 @@ class MainActivity : AppCompatActivity() {
         maxVal: Float,
         isFloat: Boolean,
         unit: String,
+        hint: String = "",
         onValueSaved: (Float) -> Unit
     ) {
         val dialog = android.app.Dialog(this).apply {
@@ -508,6 +555,36 @@ class MainActivity : AppCompatActivity() {
         }
         container.addView(titleText)
 
+        val rangeText = TextView(this).apply {
+            text = if (isFloat) "$minVal to $maxVal" else "${minVal.toInt()} to ${maxVal.toInt()}"
+            setTextColor(Color.parseColor("#8E8E93"))
+            textSize = 13f
+        }
+        container.addView(rangeText)
+
+        val seekBar = android.widget.SeekBar(this).apply {
+            max = 1000
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LS.dpToPx(this@MainActivity, 48f)
+            ).apply {
+                topMargin = LS.dpToPx(this@MainActivity, 12f)
+                bottomMargin = LS.dpToPx(this@MainActivity, 12f)
+            }
+            val parsedInitial = initialVal.toFloatOrNull()?.coerceIn(minVal, maxVal) ?: minVal
+            progress = (((parsedInitial - minVal) / (maxVal - minVal)) * 1000f).toInt()
+        }
+        container.addView(seekBar)
+
+        if (hint.isNotEmpty()) {
+            val hintText = TextView(this).apply {
+                text = hint
+                setTextColor(Color.parseColor("#8E8E93"))
+                textSize = 12f
+            }
+            container.addView(hintText)
+        }
+
         val inputEdit = EditText(this).apply {
             setText(initialVal)
             inputType = if (isFloat) {
@@ -515,6 +592,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
             }
+            showSoftInputOnFocus = false
             setTextColor(Color.WHITE)
             textSize = 18f
             setPadding(LS.dpToPx(this@MainActivity, 16f), LS.dpToPx(this@MainActivity, 12f), LS.dpToPx(this@MainActivity, 16f), LS.dpToPx(this@MainActivity, 12f))
@@ -528,8 +606,51 @@ class MainActivity : AppCompatActivity() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 textCursorDrawable = android.graphics.drawable.ColorDrawable(Color.parseColor("#b7b7b7"))
             }
+
+            setOnClickListener {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                imm?.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }
         }
         container.addView(inputEdit)
+
+        var syncing = false
+
+        seekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser && !syncing) {
+                    syncing = true
+                    val value = minVal + (maxVal - minVal) * (progress / 1000f)
+                    val formatted = if (isFloat) {
+                        String.format("%.1f", value)
+                    } else {
+                        value.toInt().toString()
+                    }
+                    inputEdit.setText(formatted)
+                    inputEdit.setSelection(inputEdit.text.length)
+                    syncing = false
+                }
+            }
+
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+        })
+
+        inputEdit.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) {
+                if (!syncing) {
+                    syncing = true
+                    val parsed = s?.toString()?.toFloatOrNull()
+                    if (parsed != null && parsed in minVal..maxVal) {
+                        val progress = (((parsed - minVal) / (maxVal - minVal)) * 1000f).toInt()
+                        seekBar.progress = progress
+                    }
+                    syncing = false
+                }
+            }
+        })
 
         val buttonLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -568,11 +689,10 @@ class MainActivity : AppCompatActivity() {
 
         dialog.setOnShowListener {
             inputEdit.requestFocus()
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            imm.showSoftInput(inputEdit, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
         }
 
         dialog.window?.apply {
+            setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
             setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
             setLayout(
                 (resources.displayMetrics.widthPixels * 0.85f).toInt(),
@@ -732,19 +852,18 @@ class MainActivity : AppCompatActivity() {
 
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
-        val active = if (preferred == "default") {
-            controllers.firstOrNull()
-        } else {
-            controllers.find {
-                val pkg = it.packageName.lowercase()
-                when (preferred) {
-                    "spotify" -> pkg.contains("spotify")
-                    "tidal" -> pkg.contains("tidal")
-                    "kdeconnect" -> pkg.contains("kdeconnect")
-                    else -> false
-                }
-            }
+        val candidates = controllers.map { controller ->
+            val meta = controller.metadata
+            val title = meta?.getString(android.media.MediaMetadata.METADATA_KEY_TITLE)
+            val state = controller.playbackState?.state ?: MediaSessionChoice.STATE_NONE
+            MediaSessionChoice.Candidate(
+                packageName = controller.packageName,
+                hasUsableMetadata = !title.isNullOrBlank(),
+                playbackState = state
+            ) to controller
         }
+        val chosen = MediaSessionChoice.choose(candidates.map { it.first }, preferred)
+        val active = candidates.firstOrNull { it.first == chosen }?.second
 
         if (active == null) {
             Toast.makeText(this, "No active Spotify, Tidal or KDE Connect session found", Toast.LENGTH_SHORT).show()
