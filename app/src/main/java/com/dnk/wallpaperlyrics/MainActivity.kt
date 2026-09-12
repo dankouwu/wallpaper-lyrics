@@ -555,27 +555,6 @@ class MainActivity : AppCompatActivity() {
         }
         container.addView(titleText)
 
-        val rangeText = TextView(this).apply {
-            text = if (isFloat) "$minVal to $maxVal" else "${minVal.toInt()} to ${maxVal.toInt()}"
-            setTextColor(Color.parseColor("#8E8E93"))
-            textSize = 13f
-        }
-        container.addView(rangeText)
-
-        val seekBar = LS.SettingsSlider(this).apply {
-            max = 1000
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LS.dpToPx(this@MainActivity, 48f)
-            ).apply {
-                topMargin = LS.dpToPx(this@MainActivity, 12f)
-                bottomMargin = LS.dpToPx(this@MainActivity, 12f)
-            }
-            val parsedInitial = initialVal.toFloatOrNull()?.coerceIn(minVal, maxVal) ?: minVal
-            progress = (((parsedInitial - minVal) / (maxVal - minVal)) * 1000f).toInt()
-        }
-        container.addView(seekBar)
-
         if (hint.isNotEmpty()) {
             val hintText = TextView(this).apply {
                 text = hint
@@ -584,6 +563,51 @@ class MainActivity : AppCompatActivity() {
             }
             container.addView(hintText)
         }
+
+        val seekBar = LS.SettingsSlider(this).apply {
+            max = 1000
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LS.dpToPx(this@MainActivity, 48f)
+            ).apply {
+                topMargin = LS.dpToPx(this@MainActivity, 12f)
+                bottomMargin = LS.dpToPx(this@MainActivity, 4f)
+            }
+            val parsedInitial = initialVal.toFloatOrNull()?.coerceIn(minVal, maxVal) ?: minVal
+            progress = (((parsedInitial - minVal) / (maxVal - minVal)) * 1000f).toInt()
+        }
+        container.addView(seekBar)
+
+        val rangeRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = LS.dpToPx(this@MainActivity, 16f)
+            }
+            setPadding(LS.dpToPx(this@MainActivity, 10f), 0, LS.dpToPx(this@MainActivity, 10f), 0)
+        }
+
+        val minText = TextView(this).apply {
+            text = if (isFloat) "$minVal" else "${minVal.toInt()}"
+            setTextColor(Color.parseColor("#8E8E93"))
+            textSize = 13f
+            gravity = Gravity.START
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        rangeRow.addView(minText)
+
+        val maxText = TextView(this).apply {
+            text = if (isFloat) "$maxVal" else "${maxVal.toInt()}"
+            setTextColor(Color.parseColor("#8E8E93"))
+            textSize = 13f
+            gravity = Gravity.END
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        rangeRow.addView(maxText)
+
+        container.addView(rangeRow)
 
         val inputEdit = EditText(this).apply {
             setText(initialVal)
