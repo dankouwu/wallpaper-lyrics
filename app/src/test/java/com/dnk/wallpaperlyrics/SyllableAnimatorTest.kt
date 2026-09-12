@@ -260,13 +260,13 @@ class SyllableAnimatorTest {
     @Test
     fun motionWordEndExtendsBeyondSweepForStandardWordWithDistantLineEnd() {
         val motionEnd = SyllableAnimator.getMotionWordEnd(1000L, 1300L, 5000L)
-        assertEquals(1450L, motionEnd)
+        assertEquals(1472L, motionEnd)
     }
 
     @Test
     fun motionWordEndIsNeverBeforeSweepEndAcrossDegenerateWordShapes() {
-        assertEquals(1300L, SyllableAnimator.getMotionWordEnd(1000L, 1000L, 2000L))
-        assertEquals(1500L, SyllableAnimator.getMotionWordEnd(1200L, 1000L, 2000L))
+        assertEquals(1320L, SyllableAnimator.getMotionWordEnd(1000L, 1000L, 2000L))
+        assertEquals(1520L, SyllableAnimator.getMotionWordEnd(1200L, 1000L, 2000L))
         assertEquals(1300L, SyllableAnimator.getMotionWordEnd(1000L, 1300L, 1200L))
         assertTrue(SyllableAnimator.getMotionWordEnd(1000L, 1000L, 2000L) >= SyllableAnimator.getExtendedWordEnd(1000L, 1000L, 2000L))
         assertTrue(SyllableAnimator.getMotionWordEnd(1200L, 1000L, 2000L) >= SyllableAnimator.getExtendedWordEnd(1200L, 1000L, 2000L))
@@ -288,7 +288,29 @@ class SyllableAnimatorTest {
     @Test
     fun motionWordEndAppliesTrailOnTopOfMinimumAnimationDurationFloor() {
         val motionEnd = SyllableAnimator.getMotionWordEnd(1000L, 1100L, 5000L)
-        assertEquals(1300L, motionEnd)
+        assertEquals(1320L, motionEnd)
+    }
+
+    @Test
+    fun motionWordEndBindsTrailCapForLongWord() {
+        val motionEnd = SyllableAnimator.getMotionWordEnd(1000L, 2000L, 9000L)
+        assertEquals(2300L, motionEnd)
+    }
+
+    @Test
+    fun motionWordEndBindsTrailFloorForZeroLengthWord() {
+        val motionEnd = SyllableAnimator.getMotionWordEnd(1000L, 1000L, 5000L)
+        assertEquals(1320L, motionEnd)
+    }
+
+    @Test
+    fun motionWordEndTrailGrowsWithWordDuration() {
+        val distantLineEnd = 10000L
+        val shortTrail = SyllableAnimator.getMotionWordEnd(1000L, 1300L, distantLineEnd) -
+            SyllableAnimator.getExtendedWordEnd(1000L, 1300L, distantLineEnd)
+        val longTrail = SyllableAnimator.getMotionWordEnd(1000L, 2000L, distantLineEnd) -
+            SyllableAnimator.getExtendedWordEnd(1000L, 2000L, distantLineEnd)
+        assertTrue(longTrail > shortTrail)
     }
 
     @Test
