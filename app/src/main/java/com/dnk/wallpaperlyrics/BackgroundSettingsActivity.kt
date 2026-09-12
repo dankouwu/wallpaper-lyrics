@@ -4,8 +4,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.ComponentName
 import android.net.Uri
+import android.media.MediaMetadata
+import android.media.session.MediaController
 import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.provider.Settings
 import android.widget.LinearLayout
 import android.view.Gravity
 import androidx.appcompat.app.AppCompatActivity
@@ -23,6 +29,7 @@ import com.dnk.wallpaperlyrics.LyricsSettings as LS
 class BackgroundSettingsActivity : AppCompatActivity() {
 
     private var palettePreview: ColorPalettePreviewView? = null
+    private var previewView: BackgroundPreviewView? = null
 
     inner class ColorPalettePreviewView(context: Context) : LinearLayout(context) {
         init {
@@ -87,12 +94,12 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             val backButton = android.widget.ImageView(this).apply {
                 val arrowDrawable = LS.CustomIconDrawable(this@BackgroundSettingsActivity, LS.IconType.ARROW_LEFT)
                 setImageDrawable(arrowDrawable)
-                val size = LS.dpToPx(this@BackgroundSettingsActivity, 32f)
+                val size = LS.dpToPx(this@BackgroundSettingsActivity, 48f)
                 layoutParams = android.widget.RelativeLayout.LayoutParams(size, size).apply {
                     addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT)
                     addRule(android.widget.RelativeLayout.CENTER_VERTICAL)
                 }
-                setPadding(LS.dpToPx(this@BackgroundSettingsActivity, 4f), LS.dpToPx(this@BackgroundSettingsActivity, 4f), LS.dpToPx(this@BackgroundSettingsActivity, 4f), LS.dpToPx(this@BackgroundSettingsActivity, 4f))
+                setPadding(LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 12f))
                 isClickable = true
                 val outVal = TypedValue()
                 theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
@@ -120,6 +127,33 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             headerLayout.addView(titleView)
             rootLayout.addView(headerLayout)
 
+            val bgPreview = BackgroundPreviewView(this@BackgroundSettingsActivity).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LS.dpToPx(this@BackgroundSettingsActivity, 200f)
+                ).apply {
+                    bottomMargin = LS.dpToPx(this@BackgroundSettingsActivity, 20f)
+                }
+                val initialRadius = prefs.getFloat("album_corner_radius", 48f)
+                val initialSpeed = prefs.getFloat("bg_speed", 1.0f)
+                val initialStatic = prefs.getBoolean("static_bg", false)
+                val initialAccent = prefs.getInt(IdleScreenSettings.KEY_IDLE_ACCENT, IdleScreenSettings.DEFAULT_ACCENT)
+                val initialBase = prefs.getInt(IdleScreenSettings.KEY_IDLE_BASE, IdleScreenSettings.DEFAULT_BASE)
+                val initialMid = prefs.getInt(IdleScreenSettings.KEY_IDLE_MID, IdleScreenSettings.DEFAULT_MID)
+                val initialHighlight = prefs.getInt(IdleScreenSettings.KEY_IDLE_HIGHLIGHT, IdleScreenSettings.DEFAULT_HIGHLIGHT)
+                initSettings(
+                    initialRadius,
+                    initialSpeed,
+                    initialStatic,
+                    initialAccent,
+                    initialBase,
+                    initialMid,
+                    initialHighlight
+                )
+            }
+            previewView = bgPreview
+            rootLayout.addView(bgPreview)
+
             fun addSectionHeader(title: String) {
                 val header = TextView(this).apply {
                     text = title
@@ -136,8 +170,8 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 val dynRow = LS.SettingsRow(
                     this@BackgroundSettingsActivity,
                     LS.IconType.PALETTE,
-                    "Dynamic Theming",
-                    "Sync highlights with Material You palette",
+                    "Album Colours On System Theme",
+                    "Recolour Quick Settings and the launcher to match the current album art",
                     LS.TrailingType.SWITCH,
                     prefs.getBoolean("dynamic_theming", false).toString(),
                     onCheckedChange = { checked ->
@@ -168,10 +202,25 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     "${initialRadius}dp",
                     onClick = {
                         val currentRadius = prefs.getFloat("album_corner_radius", 48f).toInt()
-                        showCustomEditDialog("Set Corner Radius", currentRadius.toString(), 0f, 120f, false, "dp") { newVal ->
+                        showCustomEditDialog(
+                            "Set Corner Radius",
+                            currentRadius.toString(),
+                            0f,
+                            120f,
+                            false,
+                            "dp",
+                            onValuePreview = { previewRadius ->
+                                previewView?.setCornerRadius(previewRadius)
+                            },
+                            onDismissWithoutSave = {
+                                val savedRadius = prefs.getFloat("album_corner_radius", 48f)
+                                previewView?.setCornerRadius(savedRadius)
+                            }
+                        ) { newVal ->
                             val radiusVal = newVal.toInt()
                             prefs.edit().putFloat("album_corner_radius", radiusVal.toFloat()).apply()
                             radiusRow.updateValue("${radiusVal}dp")
+                            previewView?.setCornerRadius(radiusVal.toFloat())
                         }
                     }
                 )
@@ -186,6 +235,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     prefs.getBoolean("static_bg", false).toString(),
                     onCheckedChange = { checked ->
                         prefs.edit().putBoolean("static_bg", checked).apply()
+                        previewView?.setStaticBg(checked)
                     }
                 ))
             }
@@ -204,9 +254,24 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     String.format("%.1fx", initialSpeed),
                     onClick = {
                         val currentSpeed = prefs.getFloat("bg_speed", 1.0f)
-                        showCustomEditDialog("Set Fluid Speed", String.format("%.1f", currentSpeed), 0.1f, 10.0f, true, "x") { newVal ->
+                        showCustomEditDialog(
+                            "Set Fluid Speed",
+                            String.format("%.1f", currentSpeed),
+                            0.1f,
+                            10.0f,
+                            true,
+                            "x",
+                            onValuePreview = { previewSpeed ->
+                                previewView?.setSpeed(previewSpeed)
+                            },
+                            onDismissWithoutSave = {
+                                val savedSpeed = prefs.getFloat("bg_speed", 1.0f)
+                                previewView?.setSpeed(savedSpeed)
+                            }
+                        ) { newVal ->
                             prefs.edit().putFloat("bg_speed", newVal).apply()
                             speedRow.updateValue(String.format("%.1fx", newVal))
+                            previewView?.setSpeed(newVal)
                         }
                     }
                 )
@@ -267,6 +332,15 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 )
                 addRow(idleTextRow)
 
+                fun reloadPreviewColors() {
+                    val accent = prefs.getInt(IdleScreenSettings.KEY_IDLE_ACCENT, IdleScreenSettings.DEFAULT_ACCENT)
+                    val base = prefs.getInt(IdleScreenSettings.KEY_IDLE_BASE, IdleScreenSettings.DEFAULT_BASE)
+                    val mid = prefs.getInt(IdleScreenSettings.KEY_IDLE_MID, IdleScreenSettings.DEFAULT_MID)
+                    val highlight = prefs.getInt(IdleScreenSettings.KEY_IDLE_HIGHLIGHT, IdleScreenSettings.DEFAULT_HIGHLIGHT)
+                    previewView?.setIdleColors(accent, base, mid, highlight)
+                    previewView?.forceIdleMode()
+                }
+
                 fun addColorRow(
                     title: String,
                     key: String,
@@ -288,6 +362,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                                 prefs.edit().putInt(key, newColor).apply()
                                 colorRow.updateValue(IdleScreenSettings.formatHexColor(newColor))
                                 (swatch.background as? GradientDrawable)?.setColor(newColor)
+                                reloadPreviewColors()
                             }
                         }
                     )
@@ -326,6 +401,8 @@ class BackgroundSettingsActivity : AppCompatActivity() {
 
                         highlightRow.updateValue(IdleScreenSettings.formatHexColor(IdleScreenSettings.DEFAULT_HIGHLIGHT))
                         (highlightSwatch.background as? GradientDrawable)?.setColor(IdleScreenSettings.DEFAULT_HIGHLIGHT)
+
+                        reloadPreviewColors()
                     }
                 )
                 addRow(resetRow)
@@ -342,9 +419,163 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         }
     }
 
+    private var activeMediaController: MediaController? = null
+    private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
+    private val mediaHandler = Handler(Looper.getMainLooper())
+    // Playback state is cached so periodic position updates do not trigger session queries.
+    private var lastPlaybackState: Int? = null
+
+    private val mediaControllerCallback = object : MediaController.Callback() {
+        override fun onMetadataChanged(metadata: MediaMetadata?) {
+            previewView?.updateSong(hasNotificationAccess = true, metadata = metadata)
+        }
+
+        override fun onPlaybackStateChanged(state: PlaybackState?) {
+            val currentState = state?.state ?: PlaybackState.STATE_NONE
+            if (currentState == lastPlaybackState) return
+            lastPlaybackState = currentState
+            refreshMediaSession()
+        }
+
+        override fun onSessionDestroyed() {
+            refreshMediaSession()
+        }
+    }
+
+    private fun hasNotificationAccess(): Boolean {
+        val cn = ComponentName(this, NotificationService::class.java)
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        return flat != null && flat.contains(cn.flattenToString())
+    }
+
+    private fun startSessionObserver() {
+        if (!hasNotificationAccess()) {
+            previewView?.updateSong(hasNotificationAccess = false, metadata = null)
+            return
+        }
+
+        val componentName = ComponentName(this, NotificationService::class.java)
+        val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager ?: return
+
+        if (activeSessionsListener == null) {
+            activeSessionsListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
+                selectController(controllers)
+            }
+        }
+        try {
+            mediaSessionManager.addOnActiveSessionsChangedListener(
+                activeSessionsListener!!,
+                componentName,
+                mediaHandler
+            )
+        } catch (e: SecurityException) {
+            previewView?.updateSong(hasNotificationAccess = false, metadata = null)
+            return
+        } catch (e: Exception) {}
+
+        refreshMediaSession()
+    }
+
+    private fun refreshMediaSession() {
+        if (!hasNotificationAccess()) {
+            previewView?.updateSong(hasNotificationAccess = false, metadata = null)
+            return
+        }
+        val componentName = ComponentName(this, NotificationService::class.java)
+        val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
+        if (mediaSessionManager == null) {
+            previewView?.updateSong(hasNotificationAccess = true, metadata = null)
+            return
+        }
+
+        // Binder call getActiveSessions throws SecurityException without access and must stay off main thread.
+        kotlin.concurrent.thread(start = true) {
+            try {
+                val controllers = mediaSessionManager.getActiveSessions(componentName)
+                mediaHandler.post {
+                    if (!isFinishing && !isDestroyed) {
+                        selectController(controllers)
+                    }
+                }
+            } catch (e: SecurityException) {
+                mediaHandler.post {
+                    previewView?.updateSong(hasNotificationAccess = false, metadata = null)
+                }
+            } catch (e: Exception) {
+                mediaHandler.post {
+                    previewView?.updateSong(hasNotificationAccess = true, metadata = null)
+                }
+            }
+        }
+    }
+
+    private fun selectController(controllers: List<MediaController>?) {
+        val controllersList = controllers ?: emptyList()
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
+
+        val candidates = controllersList.map { controller ->
+            val meta = controller.metadata
+            val title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE)
+            val state = controller.playbackState?.state ?: PlaybackState.STATE_NONE
+            MediaSessionChoice.Candidate(
+                packageName = controller.packageName,
+                hasUsableMetadata = !title.isNullOrBlank(),
+                playbackState = state,
+                isCurrent = controller.sessionToken == activeMediaController?.sessionToken
+            )
+        }
+        val chosen = MediaSessionChoice.choose(candidates, preferred)
+        val chosenIndex = if (chosen != null) candidates.indexOfFirst { it === chosen } else -1
+        val newController = if (chosenIndex >= 0) controllersList.getOrNull(chosenIndex) else null
+
+        if (newController?.sessionToken != activeMediaController?.sessionToken) {
+            try {
+                activeMediaController?.unregisterCallback(mediaControllerCallback)
+            } catch (e: Exception) {}
+            activeMediaController = newController
+            lastPlaybackState = newController?.playbackState?.state
+            try {
+                newController?.registerCallback(mediaControllerCallback, mediaHandler)
+            } catch (e: Exception) {}
+        }
+
+        previewView?.updateSong(hasNotificationAccess = true, metadata = newController?.metadata)
+    }
+
+    private fun stopSessionObserver() {
+        val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
+        activeSessionsListener?.let {
+            try {
+                mediaSessionManager?.removeOnActiveSessionsChangedListener(it)
+            } catch (e: Exception) {}
+        }
+        activeSessionsListener = null
+
+        try {
+            activeMediaController?.unregisterCallback(mediaControllerCallback)
+        } catch (e: Exception) {}
+        activeMediaController = null
+        lastPlaybackState = null
+    }
+
     override fun onResume() {
         super.onResume()
         palettePreview?.refreshColors()
+        previewView?.onResume()
+        startSessionObserver()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        stopSessionObserver()
+        previewView?.onPause()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopSessionObserver()
+        previewView?.release()
     }
 
     private fun getCurrentAlbumColors(): List<Int> {
@@ -415,11 +646,23 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         title: String,
         initialVal: String,
         inputType: Int,
+        minVal: Float? = null,
+        maxVal: Float? = null,
+        isFloat: Boolean = false,
+        hint: String = "",
+        onValuePreview: ((Float) -> Unit)? = null,
+        onDismissWithoutSave: (() -> Unit)? = null,
         onSave: (String) -> Unit
     ) {
+        var isSaved = false
         val dialog = android.app.Dialog(this).apply {
             requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
             setCancelable(true)
+            setOnDismissListener {
+                if (!isSaved) {
+                    onDismissWithoutSave?.invoke()
+                }
+            }
         }
 
         val container = LinearLayout(this).apply {
@@ -440,9 +683,45 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         }
         container.addView(titleText)
 
+        val seekBar = if (minVal != null && maxVal != null) {
+            val rangeText = TextView(this).apply {
+                text = if (isFloat) "$minVal to $maxVal" else "${minVal.toInt()} to ${maxVal.toInt()}"
+                setTextColor(Color.parseColor("#8E8E93"))
+                textSize = 13f
+            }
+            container.addView(rangeText)
+
+            val bar = android.widget.SeekBar(this).apply {
+                max = 1000
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LS.dpToPx(this@BackgroundSettingsActivity, 48f)
+                ).apply {
+                    topMargin = LS.dpToPx(this@BackgroundSettingsActivity, 12f)
+                    bottomMargin = LS.dpToPx(this@BackgroundSettingsActivity, 12f)
+                }
+                val parsedInitial = initialVal.toFloatOrNull()?.coerceIn(minVal, maxVal) ?: minVal
+                progress = (((parsedInitial - minVal) / (maxVal - minVal)) * 1000f).toInt()
+            }
+            container.addView(bar)
+
+            if (hint.isNotEmpty()) {
+                val hintText = TextView(this).apply {
+                    text = hint
+                    setTextColor(Color.parseColor("#8E8E93"))
+                    textSize = 12f
+                }
+                container.addView(hintText)
+            }
+            bar
+        } else {
+            null
+        }
+
         val inputEdit = EditText(this).apply {
             setText(initialVal)
             this.inputType = inputType
+            showSoftInputOnFocus = false
             setTextColor(Color.WHITE)
             textSize = 18f
             setPadding(LS.dpToPx(this@BackgroundSettingsActivity, 16f), LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 16f), LS.dpToPx(this@BackgroundSettingsActivity, 12f))
@@ -456,8 +735,55 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 textCursorDrawable = android.graphics.drawable.ColorDrawable(Color.parseColor("#b7b7b7"))
             }
+
+            setOnClickListener {
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager
+                imm?.showSoftInput(this, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+            }
         }
         container.addView(inputEdit)
+
+        if (seekBar != null && minVal != null && maxVal != null) {
+            var syncing = false
+
+            seekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser && !syncing) {
+                        syncing = true
+                        val value = minVal + (maxVal - minVal) * (progress / 1000f)
+                        val formatted = if (isFloat) {
+                            String.format("%.1f", value)
+                        } else {
+                            value.toInt().toString()
+                        }
+                        inputEdit.setText(formatted)
+                        inputEdit.setSelection(inputEdit.text.length)
+                        onValuePreview?.invoke(value)
+                        syncing = false
+                    }
+                }
+
+                override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
+            })
+
+            inputEdit.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: android.text.Editable?) {
+                    if (!syncing) {
+                        syncing = true
+                        val parsed = s?.toString()?.toFloatOrNull()
+                        if (parsed != null && parsed in minVal..maxVal) {
+                            val progress = (((parsed - minVal) / (maxVal - minVal)) * 1000f).toInt()
+                            seekBar.progress = progress
+                            onValuePreview?.invoke(parsed)
+                        }
+                        syncing = false
+                    }
+                }
+            })
+        }
 
         val buttonLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -480,6 +806,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             transformationMethod = null
             background = null
             setOnClickListener {
+                isSaved = true
                 onSave(inputEdit.text.toString())
                 dialog.dismiss()
             }
@@ -491,11 +818,10 @@ class BackgroundSettingsActivity : AppCompatActivity() {
 
         dialog.setOnShowListener {
             inputEdit.requestFocus()
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-            imm.showSoftInput(inputEdit, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
         }
 
         dialog.window?.apply {
+            setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
             setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
             setLayout(
                 (resources.displayMetrics.widthPixels * 0.85f).toInt(),
@@ -513,6 +839,9 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         maxVal: Float,
         isFloat: Boolean,
         unit: String,
+        hint: String = "",
+        onValuePreview: ((Float) -> Unit)? = null,
+        onDismissWithoutSave: (() -> Unit)? = null,
         onValueSaved: (Float) -> Unit
     ) {
         val displayTitle = if (unit.isNotEmpty()) "$title ($unit)" else title
@@ -521,7 +850,17 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         } else {
             InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_SIGNED
         }
-        showBaseInputDialog(displayTitle, initialVal, inputType) { textStr ->
+        showBaseInputDialog(
+            displayTitle,
+            initialVal,
+            inputType,
+            minVal,
+            maxVal,
+            isFloat,
+            hint,
+            onValuePreview = onValuePreview,
+            onDismissWithoutSave = onDismissWithoutSave
+        ) { textStr ->
             val floatVal = textStr.toFloatOrNull()
             if (floatVal != null) {
                 val clamped = floatVal.coerceIn(minVal, maxVal)
@@ -582,13 +921,13 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         val closeButton = android.widget.ImageView(this).apply {
             val arrowDrawable = LS.CustomIconDrawable(this@BackgroundSettingsActivity, LS.IconType.ARROW_LEFT)
             setImageDrawable(arrowDrawable)
-            val size = LS.dpToPx(this@BackgroundSettingsActivity, 32f)
+            val size = LS.dpToPx(this@BackgroundSettingsActivity, 48f)
             layoutParams = LinearLayout.LayoutParams(size, size)
             setPadding(
-                LS.dpToPx(this@BackgroundSettingsActivity, 4f),
-                LS.dpToPx(this@BackgroundSettingsActivity, 4f),
-                LS.dpToPx(this@BackgroundSettingsActivity, 4f),
-                LS.dpToPx(this@BackgroundSettingsActivity, 4f)
+                LS.dpToPx(this@BackgroundSettingsActivity, 12f),
+                LS.dpToPx(this@BackgroundSettingsActivity, 12f),
+                LS.dpToPx(this@BackgroundSettingsActivity, 12f),
+                LS.dpToPx(this@BackgroundSettingsActivity, 12f)
             )
             isClickable = true
             val outVal = TypedValue()
