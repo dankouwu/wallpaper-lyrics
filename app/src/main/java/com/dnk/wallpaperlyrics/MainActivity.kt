@@ -551,7 +551,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 18f
             setTextColor(Color.WHITE)
             setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-            setPadding(0, 0, 0, LS.dpToPx(this@MainActivity, 16f))
+            setPadding(0, 0, 0, LS.dpToPx(this@MainActivity, 8f))
         }
         container.addView(titleText)
 
@@ -570,6 +570,10 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LS.dpToPx(this@MainActivity, 48f)
             ).apply {
+                // The slider insets its track by the thumb radius, so the view is widened
+                // by the same amount to bring the track back out to the content edge.
+                marginStart = LS.dpToPx(this@MainActivity, -10f)
+                marginEnd = LS.dpToPx(this@MainActivity, -10f)
                 topMargin = LS.dpToPx(this@MainActivity, 12f)
                 // Slider is 48dp for the touch target but draws a 4dp track, so the labels
                 // are pulled up into the slack rather than the view being shrunk
@@ -588,7 +592,7 @@ class MainActivity : AppCompatActivity() {
             ).apply {
                 bottomMargin = LS.dpToPx(this@MainActivity, 16f)
             }
-            setPadding(LS.dpToPx(this@MainActivity, 10f), 0, LS.dpToPx(this@MainActivity, 10f), 0)
+            setPadding(0, 0, 0, 0)
         }
 
         val minText = TextView(this).apply {
