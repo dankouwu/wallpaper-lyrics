@@ -17,6 +17,9 @@ object AuroraRenderer {
 
     const val BACKGROUND_WORK_RESOLUTION = 512
     const val BACKGROUND_CHROMA_BOOST = 4.5f
+    private const val BACKGROUND_DEPTH = 0.23f
+    private const val DEPTH_GATE_LOW = 0.55f
+    private const val DEPTH_GATE_HIGH = 0.85f
 
     fun drawAurora(
         canvas: Canvas,
@@ -463,44 +466,29 @@ object AuroraRenderer {
 
         val hueA = a / chroma
         val hueB = b / chroma
-        val targetChroma = chroma * boost
 
-        // In sRGB, no realisable colour exceeds chroma 0.45 at any lightness level.
-        var lo = 0f
-        var hi = 0.45f
-        for (i in 0 until 12) {
-            val mid = (lo + hi) * 0.5f
-            val testA = mid * hueA
-            val testB = mid * hueB
-
-            val testL_ = L + 0.3963377774f * testA + 0.2158037573f * testB
-            val testM_ = L - 0.1055613458f * testA - 0.0638541728f * testB
-            val testS_ = L - 0.0894841775f * testA - 1.2914855480f * testB
-
-            val testL = testL_ * testL_ * testL_
-            val testM = testM_ * testM_ * testM_
-            val testS = testS_ * testS_ * testS_
-
-            val rTest = +4.0767416621f * testL - 3.3077115913f * testM + 0.2309699292f * testS
-            val gTest = -1.2684380046f * testL + 2.6097574011f * testM - 0.3413193965f * testS
-            val bTest = -0.0041960863f * testL - 0.7034186147f * testM + 1.7076147010f * testS
-
-            if (rTest in -0.0001f..1.0001f && gTest in -0.0001f..1.0001f && bTest in -0.0001f..1.0001f) {
-                lo = mid
-            } else {
-                hi = mid
-            }
+        val ceilingAtSource = maxChromaAt(L, hueA, hueB)
+        val depthLightness: Float
+        val ceiling: Float
+        if (ceilingAtSource < 1e-6f) {
+            depthLightness = L
+            ceiling = ceilingAtSource
+        } else {
+            val sourceRatio = chroma / ceilingAtSource
+            val depthGate = smoothstep(DEPTH_GATE_LOW, DEPTH_GATE_HIGH, sourceRatio)
+            depthLightness = L * (1f - BACKGROUND_DEPTH * depthGate)
+            ceiling = if (depthGate == 0f) ceilingAtSource else maxChromaAt(depthLightness, hueA, hueB)
         }
-        val maxChroma = lo
+
         // The 0.98 ceiling matches saturated album art while avoiding gamut boundary clipping.
-        val finalChroma = min(targetChroma, maxChroma * 0.98f)
+        val finalChroma = min(chroma * boost, ceiling * 0.98f)
 
         val finalA = finalChroma * hueA
         val finalB = finalChroma * hueB
 
-        val finalL_ = L + 0.3963377774f * finalA + 0.2158037573f * finalB
-        val finalM_ = L - 0.1055613458f * finalA - 0.0638541728f * finalB
-        val finalS_ = L - 0.0894841775f * finalA - 1.2914855480f * finalB
+        val finalL_ = depthLightness + 0.3963377774f * finalA + 0.2158037573f * finalB
+        val finalM_ = depthLightness - 0.1055613458f * finalA - 0.0638541728f * finalB
+        val finalS_ = depthLightness - 0.0894841775f * finalA - 1.2914855480f * finalB
 
         val finalL = finalL_ * finalL_ * finalL_
         val finalM = finalM_ * finalM_ * finalM_
@@ -535,5 +523,40 @@ object AuroraRenderer {
         } else {
             1.055f * Math.pow(clamped.toDouble(), 1.0 / 2.4).toFloat() - 0.055f
         }
+    }
+
+    private fun smoothstep(edge0: Float, edge1: Float, x: Float): Float {
+        val t = ((x - edge0) / (edge1 - edge0)).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
+    }
+
+    private fun maxChromaAt(lightness: Float, hueA: Float, hueB: Float): Float {
+        // In sRGB, no realisable colour exceeds chroma 0.45 at any lightness level.
+        var lo = 0f
+        var hi = 0.45f
+        for (i in 0 until 12) {
+            val mid = (lo + hi) * 0.5f
+            val testA = mid * hueA
+            val testB = mid * hueB
+
+            val testL_ = lightness + 0.3963377774f * testA + 0.2158037573f * testB
+            val testM_ = lightness - 0.1055613458f * testA - 0.0638541728f * testB
+            val testS_ = lightness - 0.0894841775f * testA - 1.2914855480f * testB
+
+            val testL = testL_ * testL_ * testL_
+            val testM = testM_ * testM_ * testM_
+            val testS = testS_ * testS_ * testS_
+
+            val rTest = +4.0767416621f * testL - 3.3077115913f * testM + 0.2309699292f * testS
+            val gTest = -1.2684380046f * testL + 2.6097574011f * testM - 0.3413193965f * testS
+            val bTest = -0.0041960863f * testL - 0.7034186147f * testM + 1.7076147010f * testS
+
+            if (rTest in -0.0001f..1.0001f && gTest in -0.0001f..1.0001f && bTest in -0.0001f..1.0001f) {
+                lo = mid
+            } else {
+                hi = mid
+            }
+        }
+        return lo
     }
 }
