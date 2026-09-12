@@ -18,7 +18,7 @@
         android:label="Wallpaper Lyrics"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar">
+        android:theme="@style/Theme.WallpaperLyrics">
 
         <service
             android:name=".LyricsWallpaperService"
