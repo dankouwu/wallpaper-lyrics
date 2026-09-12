@@ -4,15 +4,18 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.widget.SwitchCompat
+import kotlin.math.roundToInt
 
 /**
  * Rows, cards and icons shared by MainActivity, BackgroundSettingsActivity and
@@ -430,6 +433,139 @@ object LyricsSettings {
             isEnabled = enabled
             isClickable = enabled
             alpha = if (enabled) 1f else 0.4f
+        }
+    }
+
+    class SettingsSlider(context: Context) : View(context) {
+
+        var max: Int = 1000
+            set(value) {
+                val clamped = value.coerceAtLeast(1)
+                if (field != clamped) {
+                    field = clamped
+                    if (currentProgress > clamped) {
+                        updateProgress(clamped, fromUser = false)
+                    } else {
+                        invalidate()
+                    }
+                }
+            }
+
+        private var currentProgress: Int = 0
+
+        var progress: Int
+            get() = currentProgress
+            set(value) {
+                updateProgress(value, fromUser = false)
+            }
+
+        var onProgressChanged: ((progress: Int, fromUser: Boolean) -> Unit)? = null
+
+        private val trackHeight = dpToPx(context, 4f).toFloat()
+        private val thumbRadius = dpToPx(context, 10f).toFloat()
+
+        private val trackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = Color.parseColor("#48484A")
+        }
+
+        private val activeTrackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = Color.parseColor("#FFFFFF")
+        }
+
+        private val thumbPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = Color.parseColor("#FFFFFF")
+        }
+
+        private val trackRect = RectF()
+        private val activeTrackRect = RectF()
+
+        private fun updateProgress(value: Int, fromUser: Boolean) {
+            val clamped = value.coerceIn(0, max)
+            if (currentProgress != clamped) {
+                currentProgress = clamped
+                invalidate()
+                onProgressChanged?.invoke(currentProgress, fromUser)
+            }
+        }
+
+        private fun updateProgressFromTouch(x: Float) {
+            val trackStart = paddingLeft + thumbRadius
+            val trackEnd = width - paddingRight - thumbRadius
+            val trackWidth = trackEnd - trackStart
+            if (trackWidth > 0f) {
+                val ratio = ((x - trackStart) / trackWidth).coerceIn(0f, 1f)
+                val newProgress = (ratio * max).roundToInt()
+                updateProgress(newProgress, fromUser = true)
+            }
+        }
+
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            val defaultHeight = maxOf(dpToPx(context, 48f), suggestedMinimumHeight)
+            val width = getDefaultSize(suggestedMinimumWidth, widthMeasureSpec)
+            val height = resolveSize(defaultHeight, heightMeasureSpec)
+            setMeasuredDimension(width, height)
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+
+            val trackStart = paddingLeft + thumbRadius
+            val trackEnd = width - paddingRight - thumbRadius
+            val trackWidth = trackEnd - trackStart
+            if (trackWidth <= 0f) return
+
+            val centerY = height / 2f
+            val cornerRadius = trackHeight / 2f
+            val trackTop = centerY - cornerRadius
+            val trackBottom = centerY + cornerRadius
+
+            trackRect.set(trackStart, trackTop, trackEnd, trackBottom)
+            canvas.drawRoundRect(trackRect, cornerRadius, cornerRadius, trackPaint)
+
+            val ratio = currentProgress.toFloat() / max.toFloat()
+            val thumbX = trackStart + ratio * trackWidth
+
+            if (thumbX > trackStart) {
+                activeTrackRect.set(trackStart, trackTop, thumbX, trackBottom)
+                canvas.drawRoundRect(activeTrackRect, cornerRadius, cornerRadius, activeTrackPaint)
+            }
+
+            canvas.drawCircle(thumbX, centerY, thumbRadius, thumbPaint)
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (!isEnabled) return false
+
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    updateProgressFromTouch(event.x)
+                    return true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    updateProgressFromTouch(event.x)
+                    return true
+                }
+                MotionEvent.ACTION_UP -> {
+                    updateProgressFromTouch(event.x)
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    performClick()
+                    return true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    parent?.requestDisallowInterceptTouchEvent(false)
+                    return true
+                }
+            }
+            return super.onTouchEvent(event)
+        }
+
+        override fun performClick(): Boolean {
+            super.performClick()
+            return true
         }
     }
 }

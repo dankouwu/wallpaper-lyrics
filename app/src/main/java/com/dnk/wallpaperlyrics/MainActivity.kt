@@ -562,7 +562,7 @@ class MainActivity : AppCompatActivity() {
         }
         container.addView(rangeText)
 
-        val seekBar = android.widget.SeekBar(this).apply {
+        val seekBar = LS.SettingsSlider(this).apply {
             max = 1000
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -616,25 +616,20 @@ class MainActivity : AppCompatActivity() {
 
         var syncing = false
 
-        seekBar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                if (fromUser && !syncing) {
-                    syncing = true
-                    val value = minVal + (maxVal - minVal) * (progress / 1000f)
-                    val formatted = if (isFloat) {
-                        String.format("%.1f", value)
-                    } else {
-                        value.toInt().toString()
-                    }
-                    inputEdit.setText(formatted)
-                    inputEdit.setSelection(inputEdit.text.length)
-                    syncing = false
+        seekBar.onProgressChanged = { progress, fromUser ->
+            if (fromUser && !syncing) {
+                syncing = true
+                val value = minVal + (maxVal - minVal) * (progress / 1000f)
+                val formatted = if (isFloat) {
+                    String.format("%.1f", value)
+                } else {
+                    value.toInt().toString()
                 }
+                inputEdit.setText(formatted)
+                inputEdit.setSelection(inputEdit.text.length)
+                syncing = false
             }
-
-            override fun onStartTrackingTouch(sb: android.widget.SeekBar?) {}
-            override fun onStopTrackingTouch(sb: android.widget.SeekBar?) {}
-        })
+        }
 
         inputEdit.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
