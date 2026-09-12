@@ -7,6 +7,7 @@ object SyllableAnimator {
 
     private const val LETTER_MOTION_MINIMUM_MS = 150L
     const val WORD_OVERLAP_MS = 50L
+    const val WORD_MOTION_OVERLAP_MS = 100L
     const val WORD_MIN_ANIMATION_MS = 200L
     const val BASE_GLIDE_MS = 200f
     const val REFERENCE_DISTANCE_PX = 158f
@@ -286,5 +287,15 @@ object SyllableAnimator {
         }
         val clamped = Math.min(startMs + animated, lineEndMs)
         return Math.max(endMs, clamped)
+    }
+
+    /**
+     * Extends a word motion window beyond its sweep end by [WORD_MOTION_OVERLAP_MS] so a word is still
+     * settling as the next one starts, clamped to [lineEndMs] so the last word of a line gets no trail
+     * because the line goes inactive at that point, and bounded below by the sweep end.
+     */
+    fun getMotionWordEnd(startMs: Long, endMs: Long, lineEndMs: Long): Long {
+        val sweepEnd = getExtendedWordEnd(startMs, endMs, lineEndMs)
+        return Math.max(sweepEnd, Math.min(sweepEnd + WORD_MOTION_OVERLAP_MS, lineEndMs))
     }
 }
