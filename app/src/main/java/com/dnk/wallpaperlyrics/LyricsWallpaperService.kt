@@ -78,7 +78,6 @@ class LyricsWallpaperService : WallpaperService() {
             uniform float u_time;
             uniform float u_time_next;
             uniform float u_intensity;
-            uniform float u_saturation;
             uniform float u_dithering;
             uniform float u_scale;
             uniform float2 u_seed;
@@ -179,9 +178,6 @@ class LyricsWallpaperService : WallpaperService() {
 
                 float vignette = 1.0 - dot(center, center) * 0.3;
                 color.rgb *= vignette;
-
-                float gray = dot(color.rgb, float3(0.299, 0.587, 0.114));
-                color.rgb = mix(float3(gray), color.rgb, u_saturation);
 
                 // u_time starts at a random offset up to 1000 and grows without bound, so an
                 // unwrapped frame index pushes ign past float precision and the dither collapses
@@ -1402,6 +1398,7 @@ class LyricsWallpaperService : WallpaperService() {
                     val secondPass = AuroraRenderer.blurBitmap(firstPass, 80)
                     preprocessed.recycle()
                     firstPass.recycle()
+                    AuroraRenderer.boostChroma(secondPass, AuroraRenderer.BACKGROUND_CHROMA_BOOST)
                     secondPass
                 }
                 

@@ -5,6 +5,8 @@ import android.os.Build
 import kotlin.math.sin
 import kotlin.math.cos
 import kotlin.math.sqrt
+import kotlin.math.hypot
+import kotlin.math.min
 import androidx.palette.graphics.Palette
 
 /**
@@ -14,6 +16,7 @@ import androidx.palette.graphics.Palette
 object AuroraRenderer {
 
     const val BACKGROUND_WORK_RESOLUTION = 512
+    const val BACKGROUND_CHROMA_BOOST = 3.5f
 
     fun drawAurora(
         canvas: Canvas,
@@ -82,7 +85,6 @@ object AuroraRenderer {
             shader.setFloatUniform("u_seed", currentSeedX, currentSeedY)
             shader.setFloatUniform("u_seed_next", if (isTransitioning) nextSeedX else currentSeedX, if (isTransitioning) nextSeedY else currentSeedY)
             shader.setFloatUniform("u_intensity", 1.0f)
-            shader.setFloatUniform("u_saturation", 1.5f)
             // Dither is applied as the final operation immediately before 8-bit quantization with no
             // downstream gain stages. Per-channel triangular noise over (-1, 1) scaled by 0.5 with
             // u_dithering = 0.0118f gives 0.0118 * 0.5 * 255 = 1.5 LSB peak amplitude, breaking shallow
@@ -420,5 +422,118 @@ object AuroraRenderer {
         val g = (Color.green(base) * 0.15f).toInt().coerceIn(0, 255)
         val b = (Color.blue(base) * 0.15f).toInt().coerceIn(0, 255)
         return Color.argb(255, r, g, b)
+    }
+
+    fun boostChromaColor(color: Int, boost: Float): Int {
+        val alpha = color and 0xFF000000.toInt()
+        val rByte = (color shr 16) and 0xFF
+        val gByte = (color shr 8) and 0xFF
+        val bByte = color and 0xFF
+
+        val rLin = srgbToLinear(rByte / 255f)
+        val gLin = srgbToLinear(gByte / 255f)
+        val bLin = srgbToLinear(bByte / 255f)
+
+        val l = 0.4122214708f * rLin + 0.5363325363f * gLin + 0.0514459929f * bLin
+        val m = 0.2119034982f * rLin + 0.6806995451f * gLin + 0.1073969566f * bLin
+        val s = 0.0883024619f * rLin + 0.2817188376f * gLin + 0.6299787005f * bLin
+
+        val l_ = Math.cbrt(l.toDouble()).toFloat()
+        val m_ = Math.cbrt(m.toDouble()).toFloat()
+        val s_ = Math.cbrt(s.toDouble()).toFloat()
+
+        val L = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_
+        val a = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_
+        val b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_
+
+        val chroma = hypot(a, b)
+        // Greys stay grey to prevent rounding noise from blowing out to arbitrary hues.
+        if (chroma < 0.001f) {
+            return color
+        }
+
+        val hueA = a / chroma
+        val hueB = b / chroma
+        val targetChroma = chroma * boost
+
+        // In sRGB, no realisable colour exceeds chroma 0.45 at any lightness level.
+        var lo = 0f
+        var hi = 0.45f
+        for (i in 0 until 12) {
+            val mid = (lo + hi) * 0.5f
+            val testA = mid * hueA
+            val testB = mid * hueB
+
+            val testL_ = L + 0.3963377774f * testA + 0.2158037573f * testB
+            val testM_ = L - 0.1055613458f * testA - 0.0638541728f * testB
+            val testS_ = L - 0.0894841775f * testA - 1.2914855480f * testB
+
+            val testL = testL_ * testL_ * testL_
+            val testM = testM_ * testM_ * testM_
+            val testS = testS_ * testS_ * testS_
+
+            val rTest = +4.0767416621f * testL - 3.3077115913f * testM + 0.2309699292f * testS
+            val gTest = -1.2684380046f * testL + 2.6097574011f * testM - 0.3413193965f * testS
+            val bTest = -0.0041960863f * testL - 0.7034186147f * testM + 1.7076147010f * testS
+
+            if (rTest in -0.0001f..1.0001f && gTest in -0.0001f..1.0001f && bTest in -0.0001f..1.0001f) {
+                lo = mid
+            } else {
+                hi = mid
+            }
+        }
+        val maxChroma = lo
+        // The 0.98 ceiling matches saturated album art while avoiding gamut boundary clipping.
+        val finalChroma = min(targetChroma, maxChroma * 0.98f)
+
+        val finalA = finalChroma * hueA
+        val finalB = finalChroma * hueB
+
+        val finalL_ = L + 0.3963377774f * finalA + 0.2158037573f * finalB
+        val finalM_ = L - 0.1055613458f * finalA - 0.0638541728f * finalB
+        val finalS_ = L - 0.0894841775f * finalA - 1.2914855480f * finalB
+
+        val finalL = finalL_ * finalL_ * finalL_
+        val finalM = finalM_ * finalM_ * finalM_
+        val finalS = finalS_ * finalS_ * finalS_
+
+        val rOutLin = +4.0767416621f * finalL - 3.3077115913f * finalM + 0.2309699292f * finalS
+        val gOutLin = -1.2684380046f * finalL + 2.6097574011f * finalM - 0.3413193965f * finalS
+        val bOutLin = -0.0041960863f * finalL - 0.7034186147f * finalM + 1.7076147010f * finalS
+
+        val outR = Math.round(linearToSrgb(rOutLin) * 255f).coerceIn(0, 255)
+        val outG = Math.round(linearToSrgb(gOutLin) * 255f).coerceIn(0, 255)
+        val outB = Math.round(linearToSrgb(bOutLin) * 255f).coerceIn(0, 255)
+
+        return alpha or (outR shl 16) or (outG shl 8) or outB
+    }
+
+    fun boostChroma(target: Bitmap, boost: Float) {
+        val w = target.width
+        val h = target.height
+        val pixels = IntArray(w * h)
+        target.getPixels(pixels, 0, w, 0, 0, w, h)
+        for (i in pixels.indices) {
+            pixels[i] = boostChromaColor(pixels[i], boost)
+        }
+        target.setPixels(pixels, 0, w, 0, 0, w, h)
+    }
+
+    private fun srgbToLinear(c: Float): Float {
+        val clamped = c.coerceIn(0f, 1f)
+        return if (clamped <= 0.04045f) {
+            clamped / 12.92f
+        } else {
+            Math.pow(((clamped + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
+        }
+    }
+
+    private fun linearToSrgb(c: Float): Float {
+        val clamped = c.coerceIn(0f, 1f)
+        return if (clamped <= 0.0031308f) {
+            12.92f * clamped
+        } else {
+            1.055f * Math.pow(clamped.toDouble(), 1.0 / 2.4).toFloat() - 0.055f
+        }
     }
 }

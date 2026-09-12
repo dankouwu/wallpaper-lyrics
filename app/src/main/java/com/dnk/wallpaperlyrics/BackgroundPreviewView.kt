@@ -387,6 +387,7 @@ class BackgroundPreviewView(context: Context) : View(context) {
 
                         val pass2 = AuroraRenderer.blurBitmap(pass1, 20)
                         pass1.recycle()
+                        AuroraRenderer.boostChroma(pass2, AuroraRenderer.BACKGROUND_CHROMA_BOOST)
 
                         blurredBg = pass2
                         CoverProcessResult(scaledCard, blurredBg, palette)
