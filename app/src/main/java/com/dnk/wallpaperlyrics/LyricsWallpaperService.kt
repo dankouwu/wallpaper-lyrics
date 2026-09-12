@@ -1834,8 +1834,9 @@ class LyricsWallpaperService : WallpaperService() {
                                         val startT = if (word.fullStartTime == 0L) word.startTime else word.fullStartTime
                                         val endT = if (word.fullEndTime == 0L) word.endTime else word.fullEndTime
                                         val effectiveEndT = SyllableAnimator.getExtendedWordEnd(startT, endT, line.endTime)
+                                        val motionEndT = SyllableAnimator.getMotionWordEnd(startT, endT, line.endTime)
 
-                                        val fullWordLinearProgress = when {
+                                        val sweepLinearProgress = when {
                                             wordGatePos >= effectiveEndT -> 1f
                                             wordGatePos <= startT -> 0f
                                             else -> {
@@ -1843,7 +1844,15 @@ class LyricsWallpaperService : WallpaperService() {
                                             }
                                         }
 
-                                        val fullWordEasedProgress = SyllableAnimator.getEasedProgress(fullWordLinearProgress, word.text)
+                                        val motionLinearProgress = when {
+                                            wordGatePos >= motionEndT -> 1f
+                                            wordGatePos <= startT -> 0f
+                                            else -> {
+                                                ((wordGatePos - startT).toFloat() / (motionEndT - startT).toFloat()).coerceIn(0f, 1f)
+                                            }
+                                        }
+
+                                        val fullWordEasedProgress = SyllableAnimator.getEasedProgress(sweepLinearProgress, word.text)
 
                                         val startProp = word.partStartProp
                                         val endProp = if (word.partEndProp == 0f) 1f else word.partEndProp
@@ -1855,8 +1864,8 @@ class LyricsWallpaperService : WallpaperService() {
                                         }
 
                                         span.progress = targetProgress
-                                        span.motionProgress = if (fullWordLinearProgress > 0f && fullWordLinearProgress < 1f) {
-                                            fullWordLinearProgress
+                                        span.motionProgress = if (motionLinearProgress > 0f && motionLinearProgress < 1f) {
+                                            motionLinearProgress
                                         } else {
                                             0f
                                         }

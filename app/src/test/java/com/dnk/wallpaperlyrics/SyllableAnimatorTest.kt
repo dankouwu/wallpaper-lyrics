@@ -258,6 +258,40 @@ class SyllableAnimatorTest {
     }
 
     @Test
+    fun motionWordEndExtendsBeyondSweepForStandardWordWithDistantLineEnd() {
+        val motionEnd = SyllableAnimator.getMotionWordEnd(1000L, 1300L, 5000L)
+        assertEquals(1450L, motionEnd)
+    }
+
+    @Test
+    fun motionWordEndIsNeverBeforeSweepEndAcrossDegenerateWordShapes() {
+        assertEquals(1300L, SyllableAnimator.getMotionWordEnd(1000L, 1000L, 2000L))
+        assertEquals(1500L, SyllableAnimator.getMotionWordEnd(1200L, 1000L, 2000L))
+        assertEquals(1300L, SyllableAnimator.getMotionWordEnd(1000L, 1300L, 1200L))
+        assertTrue(SyllableAnimator.getMotionWordEnd(1000L, 1000L, 2000L) >= SyllableAnimator.getExtendedWordEnd(1000L, 1000L, 2000L))
+        assertTrue(SyllableAnimator.getMotionWordEnd(1200L, 1000L, 2000L) >= SyllableAnimator.getExtendedWordEnd(1200L, 1000L, 2000L))
+        assertTrue(SyllableAnimator.getMotionWordEnd(1000L, 1300L, 1200L) >= SyllableAnimator.getExtendedWordEnd(1000L, 1300L, 1200L))
+    }
+
+    @Test
+    fun motionWordEndBindsLineEndClampWhenWordEndsAtLineEnd() {
+        val motionEnd = SyllableAnimator.getMotionWordEnd(1000L, 1300L, 1300L)
+        assertEquals(1300L, motionEnd)
+    }
+
+    @Test
+    fun motionWordEndBindsPartialClampWhenLineEndFallsWithinTrail() {
+        val motionEnd = SyllableAnimator.getMotionWordEnd(1000L, 1300L, 1400L)
+        assertEquals(1400L, motionEnd)
+    }
+
+    @Test
+    fun motionWordEndAppliesTrailOnTopOfMinimumAnimationDurationFloor() {
+        val motionEnd = SyllableAnimator.getMotionWordEnd(1000L, 1100L, 5000L)
+        assertEquals(1300L, motionEnd)
+    }
+
+    @Test
     fun testWordMotionSpanLayerBoundsCalculation() {
         val x = 100f
         val top = 50
