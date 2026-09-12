@@ -65,4 +65,46 @@ class MetadataArtLayoutTest {
         assertEquals(expectedWidth, MetadataArtLayout.fittedWidth(1080f, 2400f, aspect), 0.001f)
         assertTrue(MetadataArtLayout.fittedWidth(1080f, 2400f, aspect) < 1080f * 0.70f)
     }
+
+    private fun rows(height: Int, topBar: Int, bottomBar: Int) =
+        BooleanArray(height) { it < topBar || it >= height - bottomBar }
+
+    @Test
+    fun `isLetterboxDark accepts black and near black and rejects real artwork`() {
+        assertTrue(MetadataArtLayout.isLetterboxDark(0xFF000000.toInt()))
+        assertTrue(MetadataArtLayout.isLetterboxDark(0xFF0A0A0A.toInt()))
+        assertFalse(MetadataArtLayout.isLetterboxDark(0xFF303030.toInt()))
+        assertFalse(MetadataArtLayout.isLetterboxDark(0xFFFFFFFF.toInt()))
+    }
+
+    @Test
+    fun `contentRows trims the bars off a 16 by 9 picture in a square frame`() {
+        assertEquals(60..422, MetadataArtLayout.contentRows(rows(484, 60, 61)))
+    }
+
+    @Test
+    fun `contentRows keeps everything when there are no bars`() {
+        assertEquals(0..359, MetadataArtLayout.contentRows(rows(360, 0, 0)))
+    }
+
+    @Test
+    fun `contentRows keeps a dark band that does not touch an edge`() {
+        val withBand = BooleanArray(400) { it in 150..250 }
+        assertEquals(0..399, MetadataArtLayout.contentRows(withBand))
+    }
+
+    @Test
+    fun `contentRows refuses to trim more than the cap off an edge`() {
+        assertEquals(0..399, MetadataArtLayout.contentRows(rows(400, 200, 0)))
+    }
+
+    @Test
+    fun `contentRows keeps an all dark cover intact`() {
+        assertEquals(0..99, MetadataArtLayout.contentRows(BooleanArray(100) { true }))
+    }
+
+    @Test
+    fun `contentRows on an empty array is empty`() {
+        assertTrue(MetadataArtLayout.contentRows(BooleanArray(0)).isEmpty())
+    }
 }
