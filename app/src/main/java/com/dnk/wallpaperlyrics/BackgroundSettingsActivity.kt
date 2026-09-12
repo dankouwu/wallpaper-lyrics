@@ -668,6 +668,9 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(LS.dpToPx(this@BackgroundSettingsActivity, 24f), LS.dpToPx(this@BackgroundSettingsActivity, 24f), LS.dpToPx(this@BackgroundSettingsActivity, 24f), LS.dpToPx(this@BackgroundSettingsActivity, 20f))
+            // The slider is widened past this padding so its track lines up with the text,
+            // which puts half the thumb in the padding at either end of its travel.
+            clipToPadding = false
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#333333"))
                 cornerRadius = LS.dpToPx(this@BackgroundSettingsActivity, 16f).toFloat()
