@@ -205,7 +205,7 @@ object LyricsRenderer {
             bitmaps.add(bmp)
 
             spans?.forEach { span ->
-                span.inactiveAlpha = 80
+                span.inactiveAlpha = INACTIVE_LYRIC_ALPHA
             }
         }
 
