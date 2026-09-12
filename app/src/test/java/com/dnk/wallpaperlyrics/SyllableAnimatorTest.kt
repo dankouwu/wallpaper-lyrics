@@ -259,38 +259,46 @@ class SyllableAnimatorTest {
 
     @Test
     fun testWordMotionSpanLayerBoundsCalculation() {
-        val bounds = WordMotionSpan.computeLayerBoundsValues(
-            x = 100f,
-            top = 50,
-            bottom = 150,
-            measuredAdvance = 200,
-            textSize = 96f
-        )
-        // horizPad = 200 * 0.02f + 96f * 0.10f = 4f + 9.6f = 13.6f
-        // topPad = 96f * 0.15f = 14.4f
-        // bottomPad = 96f * 0.08f = 7.68f
-        assertEquals(86.4f, bounds[0], 0.001f) // left = 100 - 13.6
-        assertEquals(35.6f, bounds[1], 0.001f) // top = 50 - 14.4
-        assertEquals(313.6f, bounds[2], 0.001f) // right = 100 + 200 + 13.6
-        assertEquals(157.68f, bounds[3], 0.001f) // bottom = 150 + 7.68
+        val x = 100f
+        val top = 50
+        val bottom = 150
+        val measuredAdvance = 200
+        val textSize = 96f
+
+        val horizPad = WordMotionSpan.computeHorizontalPadding(measuredAdvance, textSize)
+        val topPad = WordMotionSpan.computeTopPadding(textSize)
+        val bottomPad = WordMotionSpan.computeBottomPadding(textSize)
+
+        assertEquals(13.6f, horizPad, 0.001f)
+        assertEquals(14.4f, topPad, 0.001f)
+        assertEquals(7.68f, bottomPad, 0.001f)
+
+        assertEquals(86.4f, x - horizPad, 0.001f)
+        assertEquals(35.6f, top.toFloat() - topPad, 0.001f)
+        assertEquals(313.6f, x + measuredAdvance.toFloat() + horizPad, 0.001f)
+        assertEquals(157.68f, bottom.toFloat() + bottomPad, 0.001f)
     }
 
     @Test
     fun testWordMotionSpanLayerBoundsZeroAdvance() {
-        val bounds = WordMotionSpan.computeLayerBoundsValues(
-            x = 0f,
-            top = 0,
-            bottom = 100,
-            measuredAdvance = 0,
-            textSize = 96f
-        )
-        // horizPad = 0 + 9.6f = 9.6f
-        // topPad = 14.4f
-        // bottomPad = 7.68f
-        assertEquals(-9.6f, bounds[0], 0.001f)
-        assertEquals(-14.4f, bounds[1], 0.001f)
-        assertEquals(9.6f, bounds[2], 0.001f)
-        assertEquals(107.68f, bounds[3], 0.001f)
+        val x = 0f
+        val top = 0
+        val bottom = 100
+        val measuredAdvance = 0
+        val textSize = 96f
+
+        val horizPad = WordMotionSpan.computeHorizontalPadding(measuredAdvance, textSize)
+        val topPad = WordMotionSpan.computeTopPadding(textSize)
+        val bottomPad = WordMotionSpan.computeBottomPadding(textSize)
+
+        assertEquals(9.6f, horizPad, 0.001f)
+        assertEquals(14.4f, topPad, 0.001f)
+        assertEquals(7.68f, bottomPad, 0.001f)
+
+        assertEquals(-9.6f, x - horizPad, 0.001f)
+        assertEquals(-14.4f, top.toFloat() - topPad, 0.001f)
+        assertEquals(9.6f, x + measuredAdvance.toFloat() + horizPad, 0.001f)
+        assertEquals(107.68f, bottom.toFloat() + bottomPad, 0.001f)
     }
 
     @Test

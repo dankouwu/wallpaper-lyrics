@@ -2,11 +2,13 @@ package com.dnk.wallpaperlyrics
 
 import android.graphics.*
 import android.app.WallpaperColors
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.provider.Settings
 import android.media.MediaMetadata
 import android.media.session.PlaybackState
 import android.os.Build
@@ -68,7 +70,7 @@ class LyricsWallpaperService : WallpaperService() {
             }
         """
 
-        private const val AURORA_SHADER = """
+        internal const val AURORA_SHADER = """
             uniform shader u_texture;
             uniform shader u_texture_next;
             uniform float u_blend;
@@ -333,7 +335,7 @@ class LyricsWallpaperService : WallpaperService() {
         private val choreographer = Choreographer.getInstance()
         private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
         private val engineScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-        private val frameDiagnostics = if (BuildConfig.DEBUG) FrameDiagnostics() else null
+        private val frameDiagnostics = if (BuildFlags.DEBUG) FrameDiagnostics() else null
 
         private var prefDynamicTheming = false
         private var prefBgSpeed = 1.0f
@@ -343,11 +345,13 @@ class LyricsWallpaperService : WallpaperService() {
         private var prefMetadataOnlyMode = false
         private var prefStaticBg = false
         private var prefPersistentNotification = false
+        private var prefStatusToasts = true
         private var prefIdleTitle = IdleScreenSettings.DEFAULT_IDLE_TITLE
         private var prefIdleAccent = IdleScreenSettings.DEFAULT_ACCENT
         private var prefIdleBase = IdleScreenSettings.DEFAULT_BASE
         private var prefIdleMid = IdleScreenSettings.DEFAULT_MID
         private var prefIdleHighlight = IdleScreenSettings.DEFAULT_HIGHLIGHT
+        private var notificationAccessGranted = false
 
         private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             when (key) {
@@ -388,6 +392,8 @@ class LyricsWallpaperService : WallpaperService() {
                     }
                 }
                 "static_bg" -> prefStaticBg = prefs.getBoolean("static_bg", false)
+                LyricsSettings.KEY_STATUS_TOASTS ->
+                    prefStatusToasts = prefs.getBoolean(LyricsSettings.KEY_STATUS_TOASTS, true)
                 "persistent_notification" -> {
                     prefPersistentNotification = prefs.getBoolean("persistent_notification", false)
                     updatePersistentNotificationPreference(prefPersistentNotification)
@@ -432,6 +438,7 @@ class LyricsWallpaperService : WallpaperService() {
             prefMetadataOnlyMode = prefs.getBoolean("metadata_only_mode", false)
             prefStaticBg = prefs.getBoolean("static_bg", false)
             prefPersistentNotification = prefs.getBoolean("persistent_notification", false)
+            prefStatusToasts = prefs.getBoolean(LyricsSettings.KEY_STATUS_TOASTS, true)
             prefIdleTitle = IdleScreenSettings.resolveIdleTitle(prefs.getString(IdleScreenSettings.KEY_IDLE_TITLE, null))
             prefIdleAccent = prefs.getInt(IdleScreenSettings.KEY_IDLE_ACCENT, IdleScreenSettings.DEFAULT_ACCENT)
             prefIdleBase = prefs.getInt(IdleScreenSettings.KEY_IDLE_BASE, IdleScreenSettings.DEFAULT_BASE)
@@ -512,6 +519,10 @@ class LyricsWallpaperService : WallpaperService() {
         private var prevTitleLayout: StaticLayout? = null
         private var prevArtistLayout: StaticLayout? = null
         private var metadataTransitionProgress = 1.0f
+        private var metadataTransitionStartTime = 0L
+
+        private var cardFadeProgress = 1.0f
+        private var cardFadeStartTime = 0L
 
         private var pendingTrack: PendingTrack? = null
         private var pendingCommitRunnable: Runnable? = null
@@ -540,7 +551,9 @@ class LyricsWallpaperService : WallpaperService() {
                 prevAlbumArtAspect = albumArtAspect
                 prevTitleLayout = metadataTitleLayout
                 prevArtistLayout = metadataArtistLayout
+                metadataTransitionStartTime = SystemClock.elapsedRealtime()
                 metadataTransitionProgress = 0.0f
+                cardFadeProgress = 1.0f
             }
         }
         private var lastWatchdogCheck = 0L
@@ -562,7 +575,12 @@ class LyricsWallpaperService : WallpaperService() {
         private val bmpPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         private val metadataLayerPaint = Paint()
         private val albumArtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
+        private val prevAlbumArtPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { isFilterBitmap = true }
         private val albumArtPath = Path()
+        private val albumArtRect = RectF()
+        private val albumArtSrcRect = Rect()
+        private val prevAlbumArtRect = RectF()
+        private val prevAlbumArtSrcRect = Rect()
         private val prevMetaLayerPaint = Paint()
         private val nextMetaLayerPaint = Paint()
         private val activeLineLayerPaint = Paint()
@@ -600,6 +618,7 @@ class LyricsWallpaperService : WallpaperService() {
             IdleScreenSettings.DEFAULT_HIGHLIGHT
         )
         private var currentColors = targetColors.copyOf()
+        private var targetBgGeneration = -1
 
         private val activePaint = TextPaint().apply {
             color = Color.WHITE
@@ -616,7 +635,7 @@ class LyricsWallpaperService : WallpaperService() {
             typeface = ResourcesCompat.getFont(this@LyricsWallpaperService, R.font.inter_black)
             isAntiAlias = true
             letterSpacing = -0.02f // Match active tracking
-            alpha = (255 * 0.35f).toInt()
+            alpha = 255
             style = Paint.Style.FILL
         }
         
@@ -876,7 +895,9 @@ class LyricsWallpaperService : WallpaperService() {
             albumArt = null
             albumArtAspect = 1.0f
             hasArtForCurrentTrack = false
+            cancelPendingArtRetry()
             currentArtUri = null
+            inFlightArtUri = null
             lyricsSearchExhausted = false
             lyricBitmaps?.forEach { it.recycle() }
             lyricBitmaps = null
@@ -951,6 +972,8 @@ class LyricsWallpaperService : WallpaperService() {
 
         override fun onCreate(surfaceHolder: SurfaceHolder?) {
             super.onCreate(surfaceHolder)
+            // Seed permission state before the first frame builds metadata layouts.
+            notificationAccessGranted = hasNotificationAccess()
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
             loadPreferences(prefs)
             prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
@@ -1004,6 +1027,8 @@ class LyricsWallpaperService : WallpaperService() {
         override fun onDestroy() {
             super.onDestroy()
             cancelPendingCommit()
+            cancelPendingArtRetry()
+            trackArtGeneration++
             unregisterNotificationEngine(this, isPreview)
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
             prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
@@ -1034,6 +1059,13 @@ class LyricsWallpaperService : WallpaperService() {
         override fun onVisibilityChanged(visible: Boolean) {
             this.visible = visible
             if (visible) {
+                val hasAccess = hasNotificationAccess()
+                if (hasAccess != notificationAccessGranted) {
+                    notificationAccessGranted = hasAccess
+                    // Invalidate cached metadata layouts so idle text is rebuilt with the new permission state.
+                    metadataTitleLayout = null
+                    metadataArtistLayout = null
+                }
                 lastFrameTimeNanos = 0
                 val wasOff = isScreenOff
                 isScreenOff = false
@@ -1048,6 +1080,8 @@ class LyricsWallpaperService : WallpaperService() {
                 val isMetadataState = isMetadataState(now, timeSinceWake, lines)
                 targetViewAlpha = if (isMetadataState) 1.0f else 0.0f
                 viewAlpha = targetViewAlpha
+
+                completeExpiredTransitions()
 
                 syncPlaybackState()
                 snapScrollToPosition()
@@ -1075,10 +1109,25 @@ class LyricsWallpaperService : WallpaperService() {
             targetViewAlpha = if (isMetadataState) 1.0f else 0.0f
             viewAlpha = targetViewAlpha
 
+            completeExpiredTransitions()
+
             syncPlaybackState()
             snapScrollToPosition()
             drawFrame(0f)
             drawFrame(0f)
+        }
+
+        private fun completeExpiredTransitions() {
+            val nowRealtime = SystemClock.elapsedRealtime()
+            if (metadataTransitionStartTime > 0L && nowRealtime - metadataTransitionStartTime >= CardFade.DURATION_MS) {
+                metadataTransitionProgress = 1.0f
+                prevTitleLayout = null
+                prevArtistLayout = null
+            }
+            if (cardFadeStartTime > 0L && nowRealtime - cardFadeStartTime >= CardFade.DURATION_MS) {
+                cardFadeProgress = 1.0f
+                prevAlbumArt = null
+            }
         }
 
         override fun doFrame(frameTimeNanos: Long) {
@@ -1090,8 +1139,15 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private var currentArtUri: String? = null
+        private var inFlightArtUri: String? = null
         private var hasArtForCurrentTrack = false
         private var trackArtGeneration = 0
+        private var pendingArtRetryRunnable: Runnable? = null
+
+        private fun cancelPendingArtRetry() {
+            pendingArtRetryRunnable?.let { mainHandler.removeCallbacks(it) }
+            pendingArtRetryRunnable = null
+        }
 
         private fun onMetadataChanged(metadata: MediaMetadata?) {
             if (metadata == null) {
@@ -1150,28 +1206,7 @@ class LyricsWallpaperService : WallpaperService() {
                         cancelPendingCommit()
                     } else {
                         if (durationMs > 0) currentDurationMs = durationMs
-                        // Prefer the high resolution URI. The metadata bitmap is the fallback.
-                        if (!albumArtUri.isNullOrBlank() && albumArtUri != currentArtUri) {
-                            currentArtUri = albumArtUri
-                            lyricsManager.fetchBitmap(albumArtUri) { bitmap ->
-                                mainHandler.post {
-                                    if (bitmap != null) {
-                                        updateAlbumArt(bitmap)
-                                        hasArtForCurrentTrack = true
-                                    } else if (art != null) {
-                                        // If high-res fetch failed, fallback to the bitmap provided in metadata
-                                        updateAlbumArt(art)
-                                        hasArtForCurrentTrack = true
-                                    }
-                                }
-                            }
-                        }
-                        // 2. If we don't have a URI (or it hasn't changed), but we have a bitmap AND
-                        // we haven't successfully set any art for this specific track yet, use it.
-                        else if (art != null && !hasArtForCurrentTrack) {
-                            updateAlbumArt(art)
-                            hasArtForCurrentTrack = true
-                        }
+                        fetchAlbumArt(albumArtUri, art)
                     }
                 }
 
@@ -1187,6 +1222,7 @@ class LyricsWallpaperService : WallpaperService() {
             albumArtUri: String?,
             durationMs: Long
         ) {
+            cancelPendingArtRetry()
             trackArtGeneration++
             startMetadataTransition()
             currentTitle = title
@@ -1197,6 +1233,7 @@ class LyricsWallpaperService : WallpaperService() {
             currentDurationMs = durationMs
             lyricsSearchExhausted = false
             currentArtUri = null
+            inFlightArtUri = null
             hasArtForCurrentTrack = false
             songStartTime = System.currentTimeMillis()
 
@@ -1241,28 +1278,7 @@ class LyricsWallpaperService : WallpaperService() {
                 lyricsSearchExhausted = true
             }
 
-            // Prefer the high resolution URI. The metadata bitmap is the fallback.
-            if (!albumArtUri.isNullOrBlank() && albumArtUri != currentArtUri) {
-                currentArtUri = albumArtUri
-                lyricsManager.fetchBitmap(albumArtUri) { bitmap ->
-                    mainHandler.post {
-                        if (bitmap != null) {
-                            updateAlbumArt(bitmap)
-                            hasArtForCurrentTrack = true
-                        } else if (art != null) {
-                            // If high-res fetch failed, fallback to the bitmap provided in metadata
-                            updateAlbumArt(art)
-                            hasArtForCurrentTrack = true
-                        }
-                    }
-                }
-            }
-            // 2. If we don't have a URI (or it hasn't changed), but we have a bitmap AND
-            // we haven't successfully set any art for this specific track yet, use it.
-            else if (art != null && !hasArtForCurrentTrack) {
-                updateAlbumArt(art)
-                hasArtForCurrentTrack = true
-            }
+            fetchAlbumArt(albumArtUri, art)
 
             // Special case: if it's a new track but we have NO new art yet,
             // clear the old art after a short delay if it still hasn't arrived.
@@ -1272,8 +1288,64 @@ class LyricsWallpaperService : WallpaperService() {
                     if (trackArtGeneration == gen && !hasArtForCurrentTrack) {
                          albumArt = null
                          albumArtAspect = 1.0f
+                         prevAlbumArt = null
+                         cardFadeProgress = 1.0f
                     }
                 }, 500)
+            }
+        }
+
+        private fun fetchAlbumArt(albumArtUri: String?, fallbackArt: Bitmap?) {
+            if (!albumArtUri.isNullOrBlank() && albumArtUri != currentArtUri && albumArtUri != inFlightArtUri) {
+                cancelPendingArtRetry()
+                // inFlightArtUri stays set across delays so incoming metadata events for the same URI do not launch redundant parallel fetches.
+                inFlightArtUri = albumArtUri
+                executeArtFetch(albumArtUri, fallbackArt, trackArtGeneration, attempt = 1)
+            } else if (fallbackArt != null && !hasArtForCurrentTrack) {
+                updateAlbumArt(fallbackArt)
+                hasArtForCurrentTrack = true
+            }
+        }
+
+        private fun executeArtFetch(albumArtUri: String, fallbackArt: Bitmap?, gen: Int, attempt: Int) {
+            if (trackArtGeneration != gen) return
+            lyricsManager.fetchBitmap(albumArtUri) { bitmap ->
+                mainHandler.post {
+                    if (trackArtGeneration != gen || inFlightArtUri != albumArtUri) return@post
+                    if (bitmap != null) {
+                        inFlightArtUri = null
+                        pendingArtRetryRunnable = null
+                        currentArtUri = albumArtUri
+                        updateAlbumArt(bitmap)
+                        hasArtForCurrentTrack = true
+                    } else {
+                        val retryDelay = ArtRetry.delayAfterFailure(attempt)
+                        if (retryDelay != null) {
+                            if (fallbackArt != null && !hasArtForCurrentTrack) {
+                                updateAlbumArt(fallbackArt)
+                                hasArtForCurrentTrack = true
+                            }
+                            val retryRunnable = Runnable {
+                                pendingArtRetryRunnable = null
+                                executeArtFetch(albumArtUri, fallbackArt, gen, attempt + 1)
+                            }
+                            pendingArtRetryRunnable = retryRunnable
+                            mainHandler.postDelayed(retryRunnable, retryDelay)
+                        } else {
+                            inFlightArtUri = null
+                            pendingArtRetryRunnable = null
+                            if (fallbackArt != null && !hasArtForCurrentTrack) {
+                                updateAlbumArt(fallbackArt)
+                                hasArtForCurrentTrack = true
+                            } else if (!hasArtForCurrentTrack) {
+                                albumArt = null
+                                albumArtAspect = 1.0f
+                                prevAlbumArt = null
+                                cardFadeProgress = 1.0f
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -1281,21 +1353,58 @@ class LyricsWallpaperService : WallpaperService() {
             detectedBluetoothLatency = 0L
         }
 
+        /**
+         * Cuts the black bars off a letterboxed thumbnail. The bars are wide enough to
+         * show inside the rounded corners of the metadata view, and they drag the
+         * extracted palette towards black, so they come off before anything reads the
+         * bitmap.
+         *
+         * Sampling a handful of columns is enough: a bar spans the full width, so a row
+         * only counts as one when every sample in it is dark.
+         */
+        private fun cropLetterbox(bitmap: Bitmap): Bitmap {
+            val columnSamples = 9
+            val width = bitmap.width
+            val height = bitmap.height
+            if (width < columnSamples || height <= 0) return bitmap
+
+            val strips = Array(columnSamples) { IntArray(height) }
+            for (i in 0 until columnSamples) {
+                val x = (i + 1) * width / (columnSamples + 1)
+                bitmap.getPixels(strips[i], 0, 1, x, 0, 1, height)
+            }
+
+            val rowIsDark = BooleanArray(height) { y ->
+                strips.all { MetadataArtLayout.isLetterboxDark(it[y]) }
+            }
+
+            val rows = MetadataArtLayout.contentRows(rowIsDark)
+            if (rows.first == 0 && rows.last == height - 1) return bitmap
+            return Bitmap.createBitmap(bitmap, 0, rows.first, width, rows.last - rows.first + 1)
+        }
+
         private fun updateAlbumArt(sourceBitmap: Bitmap) {
-            albumArt = sourceBitmap
-            albumArtAspect = MetadataArtLayout.aspectFor(
-                MetadataArtLayout.allowsNativeAspect(mediaObserver.getActivePackageName()),
-                sourceBitmap.width,
-                sourceBitmap.height
-            )
+            val nativeAspect = MetadataArtLayout.allowsNativeAspect(mediaObserver.getActivePackageName())
+            val art = if (nativeAspect) cropLetterbox(sourceBitmap) else sourceBitmap
+            if (art === albumArt) return
+
+            if (CardFade.shouldFade(albumArt, art)) {
+                prevAlbumArt = albumArt
+                prevAlbumArtAspect = albumArtAspect
+                cardFadeProgress = 0.0f
+                cardFadeStartTime = SystemClock.elapsedRealtime()
+            }
+            albumArt = art
+            albumArtAspect = MetadataArtLayout.aspectFor(nativeAspect, art.width, art.height)
+            val capturedGen = trackArtGeneration
             engineScope.launch {
                 val palette = withContext(Dispatchers.Default) {
-                    AuroraRenderer.extractPalette(sourceBitmap)
+                    AuroraRenderer.extractPalette(art)
                 }
 
                 // pre-process and blur the album cover for the dynamic background (Very Blurred - 2 passes)
                 val blurred = withContext(Dispatchers.Default) {
-                    val preprocessed = AuroraRenderer.preprocessArt(sourceBitmap, palette.accent, 0.15f)
+                    val preprocessed = AuroraRenderer.preprocessArt(art, palette.accent, 0.15f)
                     // Radius 80 scales radius 20 linearly with resolution (512 / 128) to preserve visual softness.
                     val firstPass = AuroraRenderer.blurBitmap(preprocessed, 80)
                     val secondPass = AuroraRenderer.blurBitmap(firstPass, 80)
@@ -1312,7 +1421,7 @@ class LyricsWallpaperService : WallpaperService() {
                         palette.highlight
                     )
                     
-                    triggerBgTransition(blurred)
+                    triggerBgTransition(blurred, capturedGen)
 
                     if (prefDynamicTheming && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                         try { notifyColorsChanged() } catch (e: Exception) { /* wallpaper may not be set */ }
@@ -1363,14 +1472,25 @@ class LyricsWallpaperService : WallpaperService() {
 
         private fun resetToIdleState() {
             cancelPendingCommit()
+            cancelPendingArtRetry()
+            trackArtGeneration++
             currentTitle = null
             currentArtist = null
             currentDurationMs = 0L
             lyricsSearchExhausted = false
             albumArt = null
             albumArtAspect = 1.0f
+            prevAlbumArt = null
+            prevAlbumArtAspect = 1.0f
+            cardFadeProgress = 1.0f
+            cardFadeStartTime = 0L
+            metadataTransitionProgress = 1.0f
+            metadataTransitionStartTime = 0L
+            prevTitleLayout = null
+            prevArtistLayout = null
             currentLyrics = null
             currentArtUri = null
+            inFlightArtUri = null
             hasArtForCurrentTrack = false
 
             metadataTitleLayout = null
@@ -1394,6 +1514,7 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private fun applyIdleBackground() {
+            val capturedGen = trackArtGeneration
             engineScope.launch(Dispatchers.Default) {
                 val idleMesh = AuroraRenderer.createIdleMesh(targetColors)
                 val preprocessed = AuroraRenderer.preprocessArt(idleMesh, Color.BLACK, 0f)
@@ -1405,7 +1526,7 @@ class LyricsWallpaperService : WallpaperService() {
                 firstPass.recycle()
                 
                 withContext(Dispatchers.Main) {
-                    triggerBgTransition(blurred)
+                    triggerBgTransition(blurred, capturedGen)
                     
                     if (prefDynamicTheming && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                         try { notifyColorsChanged() } catch (e: Exception) { /* wallpaper may not be set */ }
@@ -1415,7 +1536,7 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private fun drawFrame(dt: Float) {
-            val frameStartNs = if (BuildConfig.DEBUG) System.nanoTime() else 0L
+            val frameStartNs = if (BuildFlags.DEBUG) System.nanoTime() else 0L
             val holder = surfaceHolder
             var canvas: Canvas? = null
             try {
@@ -1467,7 +1588,7 @@ class LyricsWallpaperService : WallpaperService() {
                 if (canvas != null) {
                     try { holder.unlockCanvasAndPost(canvas) } catch (e: Exception) {}
                 }
-                if (BuildConfig.DEBUG) {
+                if (BuildFlags.DEBUG) {
                     val frameEndNs = System.nanoTime()
                     val isLineChange = (SystemClock.elapsedRealtime() - lineChangeElapsedMs) <= 200L
                     frameDiagnostics?.recordFrame(frameStartNs, frameEndNs, isLineChange)
@@ -1535,6 +1656,18 @@ class LyricsWallpaperService : WallpaperService() {
                 val speed = 6.0f
                 viewAlpha += (targetViewAlpha - viewAlpha) * (dt * speed).coerceAtMost(1.0f)
                 if (Math.abs(viewAlpha - targetViewAlpha) < 0.005f) viewAlpha = targetViewAlpha
+            }
+
+            if (viewAlpha <= 0.0f) {
+                if (metadataTransitionProgress < 1.0f) {
+                    metadataTransitionProgress = 1.0f
+                    prevTitleLayout = null
+                    prevArtistLayout = null
+                }
+                if (cardFadeProgress < 1.0f) {
+                    cardFadeProgress = 1.0f
+                    prevAlbumArt = null
+                }
             }
 
             if (lines != null && (lyricLayouts == null || lyricBitmaps == null || lineOffsets == null)) {
@@ -1670,7 +1803,7 @@ class LyricsWallpaperService : WallpaperService() {
                         val scale = 0.95f + (0.05f * easedFactor)
                         canvas.scale(scale, scale, centerX, lineCenterY)
 
-                        val targetAlpha = (0.35f + (0.65f * easedFactor)) * 230
+                        val targetAlpha = INACTIVE_LYRIC_ALPHA.toFloat() + ((230f - INACTIVE_LYRIC_ALPHA.toFloat()) * easedFactor)
                         val isActive = i == currentIndex
                         val isFadingOut = i < currentIndex && exitLinear < 1f
 
@@ -1739,19 +1872,19 @@ class LyricsWallpaperService : WallpaperService() {
                                             0f
                                         }
                                         span.activeAlpha = 230
-                                        span.inactiveAlpha = 80
+                                        span.inactiveAlpha = INACTIVE_LYRIC_ALPHA
                                     }
                                 }
                             } else {
                                 val fadeProgress = exitLinear.coerceIn(0f, 1f)
-                                val currentAlpha = (230 - (230 - 80) * fadeProgress).toInt()
+                                val currentAlpha = (230 - (230 - INACTIVE_LYRIC_ALPHA) * fadeProgress).toInt()
 
                                 for (word in line.words) {
                                     val span = word.spanRef as? WordGradientSpan ?: continue
                                     span.progress = 1f
                                     span.motionProgress = 0f
                                     span.activeAlpha = currentAlpha
-                                    span.inactiveAlpha = 80
+                                    span.inactiveAlpha = INACTIVE_LYRIC_ALPHA
                                 }
                             }
 
@@ -1763,7 +1896,7 @@ class LyricsWallpaperService : WallpaperService() {
                             val hasSpans = line.words.any { it.spanRef != null }
                             if (!hasSpans) {
                                 activeLineLayerBounds.set(0f, 0f, layout.width.toFloat(), layout.height.toFloat())
-                                activeLineLayerPaint.alpha = 80
+                                activeLineLayerPaint.alpha = INACTIVE_LYRIC_ALPHA
                                 canvas.saveLayer(activeLineLayerBounds, activeLineLayerPaint)
                                 layout.draw(canvas)
                                 canvas.restore()
@@ -1797,10 +1930,10 @@ class LyricsWallpaperService : WallpaperService() {
                     // GPU offscreen framebuffer allocation every frame.
                     metadataLayerPaint.alpha = (viewAlpha * 255).toInt()
                     canvas.saveLayer(null, metadataLayerPaint)
-                    drawMetadataWithAlbumArt(canvas, width, height, dt)
+                    drawMetadataWithAlbumArt(canvas, width, height)
                     canvas.restore()
                 } else {
-                    drawMetadataWithAlbumArt(canvas, width, height, dt)
+                    drawMetadataWithAlbumArt(canvas, width, height)
                 }
             }
 
@@ -1832,7 +1965,10 @@ class LyricsWallpaperService : WallpaperService() {
             tLayout: StaticLayout,
             aLayout: StaticLayout,
             art: Bitmap?,
-            aspect: Float
+            aspect: Float,
+            prevArt: Bitmap? = null,
+            prevAspect: Float = 1.0f,
+            cardProgress: Float = 1.0f
         ) {
             val centerX = width / 2f
             val centerY = height / 2f
@@ -1842,30 +1978,69 @@ class LyricsWallpaperService : WallpaperService() {
             canvas.save()
             canvas.scale(scale, scale, centerX, centerY)
 
-            val albumW = if (art != null) MetadataArtLayout.fittedWidth(width, height, aspect) else 0f
-            val albumH = if (art != null) MetadataArtLayout.fittedHeight(width, height, aspect) else 0f
+            val isCardFading = cardProgress < 1.0f && (prevArt != null || art != null)
+            val effectiveArt = art ?: if (isCardFading) prevArt else null
+            val effectiveAspect = if (art != null) aspect else prevAspect
+
+            val albumW = if (effectiveArt != null) MetadataArtLayout.fittedWidth(width, height, effectiveAspect) else 0f
+            val albumH = if (effectiveArt != null) MetadataArtLayout.fittedHeight(width, height, effectiveAspect) else 0f
             val hasTitle = tLayout.text.isNotEmpty()
             val hasArtist = aLayout.text.isNotEmpty()
             val titleHeight = if (hasTitle) tLayout.height else 0
             val artistHeight = if (hasArtist) aLayout.height else 0
-            val albumTextGap = if (art != null && (hasTitle || hasArtist)) width * 0.04f else 0f
+            val albumTextGap = if (effectiveArt != null && (hasTitle || hasArtist)) width * 0.04f else 0f
             val metadataGap = if (hasTitle && hasArtist) 5.0f else 0f
             
             val totalHeight = albumH + albumTextGap + titleHeight + metadataGap + artistHeight
             var currentY = centerY - (totalHeight / 2f)
             
             // Draw Album Art
-            art?.let { bmp ->
-                val rect = RectF(centerX - albumW / 2f, currentY, centerX + albumW / 2f, currentY + albumH)
-                val cornerRadius = prefAlbumCornerRadius
-
-                canvas.save()
-                albumArtPath.reset()
-                albumArtPath.addRoundRect(rect, cornerRadius, cornerRadius, Path.Direction.CW)
-                canvas.clipPath(albumArtPath)
-                canvas.drawBitmap(bmp, Rect(0, 0, bmp.width, bmp.height), rect, albumArtPaint)
-                canvas.restore()
+            val cornerRadius = prefAlbumCornerRadius
+            if (isCardFading) {
+                if (prevArt != null) {
+                    val prevW = MetadataArtLayout.fittedWidth(width, height, prevAspect)
+                    val prevH = MetadataArtLayout.fittedHeight(width, height, prevAspect)
+                    val sameRect = art != null && prevW == albumW && prevH == albumH
+                    prevAlbumArtRect.set(
+                        centerX - prevW / 2f,
+                        currentY + (albumH - prevH) / 2f,
+                        centerX + prevW / 2f,
+                        currentY + (albumH + prevH) / 2f
+                    )
+                    prevAlbumArtSrcRect.set(0, 0, prevArt.width, prevArt.height)
+                    prevAlbumArtPaint.alpha = CardFade.outgoingAlphaInt(cardProgress, sameRect)
+                    canvas.save()
+                    albumArtPath.reset()
+                    albumArtPath.addRoundRect(prevAlbumArtRect, cornerRadius, cornerRadius, Path.Direction.CW)
+                    canvas.clipPath(albumArtPath)
+                    canvas.drawBitmap(prevArt, prevAlbumArtSrcRect, prevAlbumArtRect, prevAlbumArtPaint)
+                    canvas.restore()
+                }
+                if (art != null) {
+                    albumArtRect.set(centerX - albumW / 2f, currentY, centerX + albumW / 2f, currentY + albumH)
+                    albumArtSrcRect.set(0, 0, art.width, art.height)
+                    albumArtPaint.alpha = CardFade.incomingAlphaInt(cardProgress)
+                    canvas.save()
+                    albumArtPath.reset()
+                    albumArtPath.addRoundRect(albumArtRect, cornerRadius, cornerRadius, Path.Direction.CW)
+                    canvas.clipPath(albumArtPath)
+                    canvas.drawBitmap(art, albumArtSrcRect, albumArtRect, albumArtPaint)
+                    canvas.restore()
+                }
                 currentY += albumH + albumTextGap
+            } else {
+                art?.let { bmp ->
+                    albumArtRect.set(centerX - albumW / 2f, currentY, centerX + albumW / 2f, currentY + albumH)
+                    albumArtSrcRect.set(0, 0, bmp.width, bmp.height)
+                    albumArtPaint.alpha = 255
+                    canvas.save()
+                    albumArtPath.reset()
+                    albumArtPath.addRoundRect(albumArtRect, cornerRadius, cornerRadius, Path.Direction.CW)
+                    canvas.clipPath(albumArtPath)
+                    canvas.drawBitmap(bmp, albumArtSrcRect, albumArtRect, albumArtPaint)
+                    canvas.restore()
+                    currentY += albumH + albumTextGap
+                }
             }
             
             // Draw Title
@@ -1896,7 +2071,7 @@ class LyricsWallpaperService : WallpaperService() {
             return LyricsRenderer.cleanTitle(title)
         }
 
-        private fun drawMetadataWithAlbumArt(canvas: Canvas, width: Float, height: Float, dt: Float) {
+        private fun drawMetadataWithAlbumArt(canvas: Canvas, width: Float, height: Float) {
             val metadataMaxTextWidth = (width * 0.75f).toInt() 
             
             if (metadataTitleLayout == null || metadataArtistLayout == null || metadataTitleLayout?.width != metadataMaxTextWidth) {
@@ -1913,23 +2088,31 @@ class LyricsWallpaperService : WallpaperService() {
                     alpha = 255
                 }
 
-                val rawTitle = currentTitle ?: prefIdleTitle
+                val rawTitle = currentTitle ?: IdleScreenSettings.idleTitle(notificationAccessGranted, prefIdleTitle)
                 val title = cleanTitle(rawTitle)
                 metadataTitleLayout = StaticLayout.Builder.obtain(title, 0, title.length, titlePaint, metadataMaxTextWidth)
                     .setAlignment(Layout.Alignment.ALIGN_CENTER)
                     .setBreakStrategy(LineBreaker.BREAK_STRATEGY_BALANCED)
                     .build()
                 
-                val artist = currentArtist ?: ""
+                val artist = currentArtist ?: IdleScreenSettings.idleSubtitle(notificationAccessGranted)
                 metadataArtistLayout = StaticLayout.Builder.obtain(artist, 0, artist.length, artistPaintForMetadata, metadataMaxTextWidth)
                     .setAlignment(Layout.Alignment.ALIGN_CENTER)
                     .setBreakStrategy(LineBreaker.BREAK_STRATEGY_BALANCED)
                     .build()
             }
 
-            // Update transition progress (speed: 2.0f for 500ms duration)
             if (metadataTransitionProgress < 1.0f) {
-                metadataTransitionProgress = (metadataTransitionProgress + dt * 2.0f).coerceAtMost(1.0f)
+                val elapsed = SystemClock.elapsedRealtime() - metadataTransitionStartTime
+                metadataTransitionProgress = CardFade.progressAt(elapsed)
+            }
+
+            if (cardFadeProgress < 1.0f) {
+                val elapsed = SystemClock.elapsedRealtime() - cardFadeStartTime
+                cardFadeProgress = CardFade.progressAt(elapsed)
+                if (CardFade.isComplete(cardFadeProgress)) {
+                    prevAlbumArt = null
+                }
             }
 
             if (metadataTransitionProgress < 1.0f && prevTitleLayout != null && prevArtistLayout != null) {
@@ -1947,11 +2130,19 @@ class LyricsWallpaperService : WallpaperService() {
                 canvas.restore()
             } else {
                 if (prevTitleLayout != null) {
-                    prevAlbumArt = null
                     prevTitleLayout = null
                     prevArtistLayout = null
+                    if (CardFade.isComplete(cardFadeProgress)) {
+                        prevAlbumArt = null
+                    }
                 }
-                drawMetadataLayouts(canvas, width, height, metadataTitleLayout!!, metadataArtistLayout!!, albumArt, albumArtAspect)
+                drawMetadataLayouts(
+                    canvas, width, height,
+                    metadataTitleLayout!!, metadataArtistLayout!!,
+                    albumArt, albumArtAspect,
+                    prevAlbumArt, prevAlbumArtAspect,
+                    cardFadeProgress
+                )
             }
         }
 
@@ -1964,6 +2155,7 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private fun showToast(message: String) {
+            if (!prefStatusToasts) return
             val now = SystemClock.elapsedRealtime()
             if (now - lastToastTime < TOAST_COOLDOWN_MS) return
             lastToastTime = now
@@ -1972,7 +2164,13 @@ class LyricsWallpaperService : WallpaperService() {
             }
         }
 
-        private fun triggerBgTransition(newBlurred: Bitmap) {
+        private fun hasNotificationAccess(): Boolean {
+            val cn = ComponentName(this@LyricsWallpaperService, NotificationService::class.java)
+            val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+            return flat != null && flat.contains(cn.flattenToString())
+        }
+
+        private fun triggerBgTransition(newBlurred: Bitmap, incomingGeneration: Int) {
             val isIdle = currentTitle.isNullOrBlank()
             val isDebugDemo = isDebugDemoActive()
             val timeOffset = when {
@@ -1991,27 +2189,58 @@ class LyricsWallpaperService : WallpaperService() {
                 else -> (Math.random() * 1000f).toFloat()
             }
 
-            if (currentBgArt == null) {
-                currentBgArt = newBlurred
-                nextBgArt = null
-                blendProgress = 0f
-                isTransitioning = false
-                accumulatedTime = timeOffset
-                currentSeedX = seedX
-                currentSeedY = seedY
-            } else {
-                if (isTransitioning) {
+            val decision = BgHandoff.decide(
+                hasCurrentBg = currentBgArt != null,
+                isTransitioning = isTransitioning,
+                currentGen = targetBgGeneration,
+                incomingGen = incomingGeneration
+            )
+            if (BuildFlags.DEBUG) {
+                Log.d("Wallpaper", "Bg transition decision: $decision (gen=$incomingGeneration, targetGen=$targetBgGeneration)")
+            }
+
+            when (decision) {
+                BgHandoffDecision.DROP_STALE -> {
+                    newBlurred.recycle()
+                }
+                BgHandoffDecision.START_FRESH -> {
+                    currentBgArt = newBlurred
+                    nextBgArt = null
+                    blendProgress = 0f
+                    isTransitioning = false
+                    accumulatedTime = timeOffset
+                    currentSeedX = seedX
+                    currentSeedY = seedY
+                    targetBgGeneration = incomingGeneration
+                }
+                BgHandoffDecision.REPLACE_TARGET -> {
+                    val oldTarget = nextBgArt
+                    nextBgArt = newBlurred
+                    oldTarget?.recycle()
+                    targetBgGeneration = incomingGeneration
+                }
+                BgHandoffDecision.ADVANCE_AND_START -> {
                     currentBgArt?.recycle()
                     currentBgArt = nextBgArt
                     currentSeedX = nextSeedX
                     currentSeedY = nextSeedY
+                    nextBgArt = newBlurred
+                    blendProgress = 0f
+                    isTransitioning = true
+                    nextAccumulatedTime = timeOffset
+                    nextSeedX = seedX
+                    nextSeedY = seedY
+                    targetBgGeneration = incomingGeneration
                 }
-                nextBgArt = newBlurred
-                blendProgress = 0f
-                isTransitioning = true
-                nextAccumulatedTime = timeOffset
-                nextSeedX = seedX
-                nextSeedY = seedY
+                BgHandoffDecision.START_TRANSITION -> {
+                    nextBgArt = newBlurred
+                    blendProgress = 0f
+                    isTransitioning = true
+                    nextAccumulatedTime = timeOffset
+                    nextSeedX = seedX
+                    nextSeedY = seedY
+                    targetBgGeneration = incomingGeneration
+                }
             }
         }
 
