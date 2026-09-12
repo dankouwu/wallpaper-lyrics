@@ -146,13 +146,13 @@ class LyricsWallpaperService : WallpaperService() {
                     // Eval warp for current texture
                     float t = u_time * 0.05;
                     float2 uvSeeded = uv + u_seed;
-                    float n1 = snoise(uvSeeded * 0.22 + float2(t, t * 0.7));
-                    float n2 = snoise(uvSeeded * 0.22 + float2(-t * 0.8, t * 0.5) + float2(50.0, 50.0));
-                    float n3 = snoise(uvSeeded * 0.25 + float2(t * 1.2, -t) + float2(100.0, 0.0));
-                    float n4 = snoise(uvSeeded * 0.25 + float2(-t, t * 1.1) + float2(0.0, 100.0));
+                    float n1 = snoise(uvSeeded * 0.35 + float2(t, t * 0.7));
+                    float n2 = snoise(uvSeeded * 0.35 + float2(-t * 0.8, t * 0.5) + float2(50.0, 50.0));
+                    float n3 = snoise(uvSeeded * 0.9 + float2(t * 1.2, -t) + float2(100.0, 0.0));
+                    float n4 = snoise(uvSeeded * 0.9 + float2(-t, t * 1.1) + float2(0.0, 100.0));
                     warp = float2(
-                        n1 * 0.82 + n3 * 0.18,
-                        n2 * 0.82 + n4 * 0.18
+                        n1 * 0.65 + n3 * 0.35,
+                        n2 * 0.65 + n4 * 0.35
                     ) * centerWeight;
                 }
                 float2 warpedUV = clamp(uv + warp * u_intensity, 0.0, 1.0);
@@ -163,13 +163,13 @@ class LyricsWallpaperService : WallpaperService() {
                     // Eval warp for next texture
                     float tNext = u_time_next * 0.05;
                     float2 uvSeededNext = uv + u_seed_next;
-                    float nn1 = snoise(uvSeededNext * 0.22 + float2(tNext, tNext * 0.7));
-                    float nn2 = snoise(uvSeededNext * 0.22 + float2(-tNext * 0.8, tNext * 0.5) + float2(50.0, 50.0));
-                    float nn3 = snoise(uvSeededNext * 0.25 + float2(tNext * 1.2, -tNext) + float2(100.0, 0.0));
-                    float nn4 = snoise(uvSeededNext * 0.25 + float2(-tNext, tNext * 1.1) + float2(0.0, 100.0));
+                    float nn1 = snoise(uvSeededNext * 0.35 + float2(tNext, tNext * 0.7));
+                    float nn2 = snoise(uvSeededNext * 0.35 + float2(-tNext * 0.8, tNext * 0.5) + float2(50.0, 50.0));
+                    float nn3 = snoise(uvSeededNext * 0.9 + float2(tNext * 1.2, -tNext) + float2(100.0, 0.0));
+                    float nn4 = snoise(uvSeededNext * 0.9 + float2(-tNext, tNext * 1.1) + float2(0.0, 100.0));
                     warpNext = float2(
-                        nn1 * 0.82 + nn3 * 0.18,
-                        nn2 * 0.82 + nn4 * 0.18
+                        nn1 * 0.65 + nn3 * 0.35,
+                        nn2 * 0.65 + nn4 * 0.35
                     ) * centerWeight;
                 }
                 float2 warpedUVNext = clamp(uv + warpNext * u_intensity, 0.0, 1.0);
@@ -180,16 +180,8 @@ class LyricsWallpaperService : WallpaperService() {
                 float vignette = 1.0 - dot(center, center) * 0.3;
                 color.rgb *= vignette;
 
-                // Saturation and Warmth
                 float gray = dot(color.rgb, float3(0.299, 0.587, 0.114));
                 color.rgb = mix(float3(gray), color.rgb, u_saturation);
-
-                // Warmth adjustment: keep cool/neutral colors neutral, make warm colors warmer
-                float warmth = max(0.0, color.r - color.b);
-                float3 warmColor = color.rgb * float3(1.22, 1.05, 0.80);
-                color.rgb = clamp(mix(color.rgb, warmColor, warmth), 0.0, 1.0);
-
-                color.rgb *= 0.75; // Sightly less aggressive dimming for better vibrancy
 
                 // u_time starts at a random offset up to 1000 and grows without bound, so an
                 // unwrapped frame index pushes ign past float precision and the dither collapses
