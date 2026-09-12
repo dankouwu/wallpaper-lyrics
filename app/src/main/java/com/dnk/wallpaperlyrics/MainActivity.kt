@@ -80,8 +80,7 @@ class MainActivity : AppCompatActivity() {
                 rootLayout.addView(header)
             }
 
-            // CARD 1: General Settings
-            addSectionHeader("Setup")
+            addSectionHeader("System Access")
             val card1 = LS.SettingsCard(this).apply {
                 notificationRow = LS.SettingsRow(
                     this@MainActivity,
@@ -133,7 +132,11 @@ class MainActivity : AppCompatActivity() {
                     }
                 )
                 addRow(batteryRow)
+            }
+            rootLayout.addView(card1)
 
+            addSectionHeader("General")
+            val card2 = LS.SettingsCard(this).apply {
                 addRow(LS.SettingsRow(
                     this@MainActivity,
                     LS.IconType.SLIDERS,
@@ -224,11 +227,10 @@ class MainActivity : AppCompatActivity() {
                     addRow(playerRow)
                 }
             }
-            rootLayout.addView(card1)
+            rootLayout.addView(card2)
 
-            // CARD 2: Timing & Sync
             addSectionHeader("Timing & Speed")
-            val card2 = LS.SettingsCard(this).apply {
+            val card3 = LS.SettingsCard(this).apply {
                 val initialOffset = prefs.getInt("sync_offset", 0)
                 lateinit var offsetRow: LS.SettingsRow
                 offsetRow = LS.SettingsRow(
@@ -289,11 +291,10 @@ class MainActivity : AppCompatActivity() {
                 )
                 addRow(songOffsetRow)
             }
-            rootLayout.addView(card2)
+            rootLayout.addView(card3)
 
-            // CARD 3: Maintenance
             addSectionHeader("Maintenance")
-            val card3 = LS.SettingsCard(this).apply {
+            val card4 = LS.SettingsCard(this).apply {
                 addRow(LS.SettingsRow(
                     this@MainActivity,
                     LS.IconType.RELOAD,
@@ -341,11 +342,10 @@ class MainActivity : AppCompatActivity() {
                     }
                 ))
             }
-            rootLayout.addView(card3)
+            rootLayout.addView(card4)
 
-            // CARD 4: About Section
             addSectionHeader("About")
-            val card4 = LS.SettingsCard(this).apply {
+            val card5 = LS.SettingsCard(this).apply {
                 addRow(LS.SettingsRow(
                     this@MainActivity,
                     LS.IconType.FILE_STACK,
@@ -415,7 +415,7 @@ class MainActivity : AppCompatActivity() {
                     }
                 ))
             }
-            rootLayout.addView(card4)
+            rootLayout.addView(card5)
 
             val scrollView = android.widget.ScrollView(this).apply {
                 isFillViewport = true
