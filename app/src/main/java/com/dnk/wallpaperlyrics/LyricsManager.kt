@@ -899,6 +899,8 @@ class LyricsManager(private val context: Context) {
     }
 
     private fun showToast(message: String) {
+        val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean(LyricsSettings.KEY_STATUS_TOASTS, true)) return
         val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
         mainHandler.post {
             android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
