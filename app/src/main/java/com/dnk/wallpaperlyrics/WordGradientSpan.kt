@@ -13,6 +13,8 @@ data class AuroraPalette(
     val highlight: Int
 )
 
+const val INACTIVE_LYRIC_ALPHA = 80
+
 class WordGradientSpan(
     left: Float,
     right: Float
@@ -34,7 +36,7 @@ class WordGradientSpan(
     var progress: Float = 0f
     var motionProgress: Float = 0f
     var activeAlpha: Int = 230
-    var inactiveAlpha: Int = 80
+    var inactiveAlpha: Int = INACTIVE_LYRIC_ALPHA
 
     // Cached shader state: avoids allocating a new LinearGradient on every draw call.
     // At 60 FPS with a 10-word active line, this eliminates ~600 heap allocations/second.
@@ -144,22 +146,16 @@ class WordMotionSpan(
             xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
         }
 
-        fun computeLayerBoundsValues(
-            x: Float,
-            top: Int,
-            bottom: Int,
-            measuredAdvance: Int,
-            textSize: Float
-        ): FloatArray {
-            val horizPad = measuredAdvance * 0.02f + textSize * 0.10f
-            val topPad = textSize * 0.15f
-            val bottomPad = textSize * 0.08f
-            return floatArrayOf(
-                x - horizPad,
-                top.toFloat() - topPad,
-                x + measuredAdvance.toFloat() + horizPad,
-                bottom.toFloat() + bottomPad
-            )
+        fun computeHorizontalPadding(measuredAdvance: Int, textSize: Float): Float {
+            return measuredAdvance * 0.02f + textSize * 0.10f
+        }
+
+        fun computeTopPadding(textSize: Float): Float {
+            return textSize * 0.15f
+        }
+
+        fun computeBottomPadding(textSize: Float): Float {
+            return textSize * 0.08f
         }
 
         fun computeWordLayerBounds(
@@ -170,9 +166,9 @@ class WordMotionSpan(
             textSize: Float,
             outRect: RectF
         ) {
-            val horizPad = measuredAdvance * 0.02f + textSize * 0.10f
-            val topPad = textSize * 0.15f
-            val bottomPad = textSize * 0.08f
+            val horizPad = computeHorizontalPadding(measuredAdvance, textSize)
+            val topPad = computeTopPadding(textSize)
+            val bottomPad = computeBottomPadding(textSize)
             outRect.set(
                 x - horizPad,
                 top.toFloat() - topPad,
