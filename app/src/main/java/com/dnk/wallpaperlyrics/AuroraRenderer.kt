@@ -424,15 +424,24 @@ object AuroraRenderer {
         return Color.argb(255, r, g, b)
     }
 
+    // srgbToLinear is only ever fed byteValue / 255f, so 256 entries cover every input it
+    // can receive and the table is exact rather than an approximation. The conversion is
+    // three of the six pow calls in boostChromaColor, which runs on a quarter of a million
+    // pixels per track.
+    private val srgbToLinearTable = FloatArray(256) { i ->
+        val c = i / 255f
+        if (c <= 0.04045f) c / 12.92f else Math.pow(((c + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
+    }
+
     fun boostChromaColor(color: Int, boost: Float): Int {
         val alpha = color and 0xFF000000.toInt()
         val rByte = (color shr 16) and 0xFF
         val gByte = (color shr 8) and 0xFF
         val bByte = color and 0xFF
 
-        val rLin = srgbToLinear(rByte / 255f)
-        val gLin = srgbToLinear(gByte / 255f)
-        val bLin = srgbToLinear(bByte / 255f)
+        val rLin = srgbToLinearTable[rByte]
+        val gLin = srgbToLinearTable[gByte]
+        val bLin = srgbToLinearTable[bByte]
 
         val l = 0.4122214708f * rLin + 0.5363325363f * gLin + 0.0514459929f * bLin
         val m = 0.2119034982f * rLin + 0.6806995451f * gLin + 0.1073969566f * bLin
@@ -517,15 +526,6 @@ object AuroraRenderer {
             pixels[i] = boostChromaColor(pixels[i], boost)
         }
         target.setPixels(pixels, 0, w, 0, 0, w, h)
-    }
-
-    private fun srgbToLinear(c: Float): Float {
-        val clamped = c.coerceIn(0f, 1f)
-        return if (clamped <= 0.04045f) {
-            clamped / 12.92f
-        } else {
-            Math.pow(((clamped + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
-        }
     }
 
     private fun linearToSrgb(c: Float): Float {
