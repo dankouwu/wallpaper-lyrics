@@ -16,7 +16,7 @@ import androidx.palette.graphics.Palette
 object AuroraRenderer {
 
     const val BACKGROUND_WORK_RESOLUTION = 512
-    const val BACKGROUND_CHROMA_BOOST = 3.5f
+    const val BACKGROUND_CHROMA_BOOST = 4.5f
 
     fun drawAurora(
         canvas: Canvas,
