@@ -15,6 +15,8 @@ object IdleScreenSettings {
     const val MAX_SAVED_COLORS = 12
 
     const val DEFAULT_IDLE_TITLE = "No Music Playing"
+    const val SETUP_TITLE = "Notification access needed"
+    const val SETUP_SUBTITLE = "Open Wallpaper Lyrics to grant it"
     const val DEFAULT_ACCENT = 0xFFFF0055.toInt()
     const val DEFAULT_BASE = 0xFF0A0B1A.toInt()
     const val DEFAULT_MID = 0xFF7A22FF.toInt()
@@ -45,6 +47,17 @@ object IdleScreenSettings {
 
     fun resolveIdleTitle(stored: String?): String {
         return stored ?: DEFAULT_IDLE_TITLE
+    }
+
+    fun idleTitle(hasNotificationAccess: Boolean, configuredTitle: String): String {
+        if (!hasNotificationAccess) {
+            return SETUP_TITLE
+        }
+        return resolveIdleTitle(configuredTitle.takeIf { it.isNotBlank() })
+    }
+
+    fun idleSubtitle(hasNotificationAccess: Boolean): String {
+        return if (hasNotificationAccess) "" else SETUP_SUBTITLE
     }
 
     fun parseSavedColors(stored: String?): List<Int> {

@@ -1,6 +1,7 @@
 package com.dnk.wallpaperlyrics
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -182,6 +183,41 @@ class IdleScreenSettingsTest {
         assertEquals(0f, IdleScreenSettings.componentFromTouch(50f, 0f), 0.0001f)
         assertEquals(0f, IdleScreenSettings.componentFromTouch(50f, -100f), 0.0001f)
         assertEquals(0f, IdleScreenSettings.componentFromTouch(0f, 0f), 0.0001f)
+    }
+
+    @Test
+    fun `idleTitle with missing notification access returns setup title`() {
+        assertEquals(IdleScreenSettings.SETUP_TITLE, IdleScreenSettings.idleTitle(false, "Anything"))
+    }
+
+    @Test
+    fun `idleTitle with notification access returns custom text`() {
+        assertEquals("My Own Text", IdleScreenSettings.idleTitle(true, "My Own Text"))
+    }
+
+    @Test
+    fun `idleTitle with notification access and empty string returns default title`() {
+        assertEquals(IdleScreenSettings.DEFAULT_IDLE_TITLE, IdleScreenSettings.idleTitle(true, ""))
+    }
+
+    @Test
+    fun `idleTitle with notification access and whitespace returns default title`() {
+        assertEquals(IdleScreenSettings.DEFAULT_IDLE_TITLE, IdleScreenSettings.idleTitle(true, "   "))
+    }
+
+    @Test
+    fun `idleSubtitle with missing notification access returns setup subtitle`() {
+        assertEquals(IdleScreenSettings.SETUP_SUBTITLE, IdleScreenSettings.idleSubtitle(false))
+    }
+
+    @Test
+    fun `idleSubtitle with notification access returns empty string`() {
+        assertEquals("", IdleScreenSettings.idleSubtitle(true))
+    }
+
+    @Test
+    fun `setup title is different from default idle title`() {
+        assertNotEquals(IdleScreenSettings.DEFAULT_IDLE_TITLE, IdleScreenSettings.SETUP_TITLE)
     }
 }
 

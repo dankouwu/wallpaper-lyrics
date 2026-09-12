@@ -20,6 +20,9 @@ import androidx.appcompat.widget.SwitchCompat
  */
 object LyricsSettings {
 
+    /** Whether the wallpaper announces fetch progress with a toast. On by default. */
+    const val KEY_STATUS_TOASTS = "status_toasts"
+
     // The union of every icon the three settings screens use.
     enum class IconType {
         BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH,
@@ -48,7 +51,7 @@ object LyricsSettings {
         override fun draw(canvas: Canvas) {
             val bounds = bounds
             if (iconType == IconType.DELETE) {
-                paint.color = Color.parseColor("#FF453A")
+                paint.color = Color.parseColor("#FF7B72")
             } else if (iconType == IconType.CHECK) {
                 paint.color = Color.parseColor("#30D158")
             } else {
@@ -318,7 +321,7 @@ object LyricsSettings {
                 text = title
                 textSize = 16f
                 if (iconType == IconType.DELETE) {
-                    setTextColor(Color.parseColor("#FF453A"))
+                    setTextColor(Color.parseColor("#FF7B72"))
                 } else {
                     setTextColor(Color.WHITE)
                 }
@@ -384,7 +387,7 @@ object LyricsSettings {
                     valueBadge = TextView(context).apply {
                         text = initialVal
                         textSize = 16f
-                        setTextColor(Color.parseColor("#878787"))
+                        setTextColor(Color.parseColor("#D1D1D6"))
                         typeface = android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.NORMAL)
                         layoutParams = LayoutParams(
                             LayoutParams.WRAP_CONTENT,
@@ -422,6 +425,11 @@ object LyricsSettings {
                 text = newSubtitle
                 visibility = if (newSubtitle.isEmpty()) View.GONE else View.VISIBLE
             }
+        }
+        fun setRowEnabled(enabled: Boolean) {
+            isEnabled = enabled
+            isClickable = enabled
+            alpha = if (enabled) 1f else 0.4f
         }
     }
 }
