@@ -155,4 +155,22 @@ class ChromaBoostTest {
             }
         }
     }
+
+    @Test
+    fun `srgb to linear table matches formula for all two hundred fifty six entries`() {
+        val field = AuroraRenderer::class.java.getDeclaredField("srgbToLinearTable").apply {
+            isAccessible = true
+        }
+        val table = field.get(AuroraRenderer) as FloatArray
+        assertEquals(256, table.size)
+        for (i in 0 until 256) {
+            val c = i / 255f
+            val expected = if (c <= 0.04045f) {
+                c / 12.92f
+            } else {
+                Math.pow(((c + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
+            }
+            assertEquals(expected, table[i], 1e-7f)
+        }
+    }
 }
