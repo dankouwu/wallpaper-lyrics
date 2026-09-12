@@ -70,12 +70,24 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `lightness is preserved across boost for sample colors`() {
-        val colors = listOf(0xFFC3909B.toInt(), 0xFF1E4E7A.toInt(), 0xFFE02040.toInt())
-        for (color in colors) {
+    fun `lightness is preserved within point zero one for muted sample color`() {
+        val color = 0xFFC3909B.toInt()
+        val inLab = colorToOklab(color)
+        val outLab = colorToOklab(AuroraRenderer.boostChromaColor(color, 3.5f))
+        assertEquals(inLab.l, outLab.l, 0.01f)
+    }
+
+    @Test
+    fun `lightness is reduced for saturated sample colors`() {
+        val expectedRatios = listOf(
+            0xFF1E4E7A.toInt() to 0.80f,
+            0xFFE02040.toInt() to 0.77f
+        )
+        for ((color, expectedRatio) in expectedRatios) {
             val inLab = colorToOklab(color)
             val outLab = colorToOklab(AuroraRenderer.boostChromaColor(color, 3.5f))
-            assertEquals(inLab.l, outLab.l, 0.01f)
+            val ratio = outLab.l / inLab.l
+            assertEquals(expectedRatio, ratio, 0.03f)
         }
     }
 
@@ -100,18 +112,16 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `color already at gamut edge changes by at most eight on every channel`() {
+    fun `color already at gamut edge holds hue and reduces lightness`() {
         val input = 0xFFFF46A2.toInt()
         val result = AuroraRenderer.boostChromaColor(input, 3.5f)
-        val rIn = (input shr 16) and 0xFF
-        val gIn = (input shr 8) and 0xFF
-        val bIn = input and 0xFF
-        val rOut = (result shr 16) and 0xFF
-        val gOut = (result shr 8) and 0xFF
-        val bOut = result and 0xFF
-        assertTrue(kotlin.math.abs(rIn - rOut) <= 8)
-        assertTrue(kotlin.math.abs(gIn - gOut) <= 8)
-        assertTrue(kotlin.math.abs(bIn - bOut) <= 8)
+        val inLab = colorToOklab(input)
+        val outLab = colorToOklab(result)
+        val inHue = hueDegrees(inLab)
+        val outHue = hueDegrees(outLab)
+        assertTrue(hueDifferenceDegrees(inHue, outHue) <= 1.5f)
+        val ratio = outLab.l / inLab.l
+        assertEquals(0.77f, ratio, 0.03f)
     }
 
     @Test
@@ -172,5 +182,50 @@ class ChromaBoostTest {
             }
             assertEquals(expected, table[i], 1e-7f)
         }
+    }
+
+    @Test
+    fun `maintainer saturated red example deepens lightness and matches target rgb within channel tolerance`() {
+        // The maintainer's stated #aa0611 rotates hue by about five degrees, which this implementation deliberately does not do.
+        val input = 0xFFEC213E.toInt()
+        val result = AuroraRenderer.boostChromaColor(input, 4.5f)
+        val inLab = colorToOklab(input)
+        val outLab = colorToOklab(result)
+        val lightnessRatio = outLab.l / inLab.l
+        assertEquals(0.77f, lightnessRatio, 0.02f)
+
+        val r = (result shr 16) and 0xFF
+        val g = (result shr 8) and 0xFF
+        val b = result and 0xFF
+        assertTrue(kotlin.math.abs(r - 169) <= 10)
+        assertTrue(kotlin.math.abs(g - 7) <= 10)
+        assertTrue(kotlin.math.abs(b - 38) <= 10)
+    }
+
+    @Test
+    fun `muted color preserves lightness while saturated color loses lightness`() {
+        val muted = 0xFFC3909B.toInt()
+        val saturated = 0xFFEC213E.toInt()
+        val mutedIn = colorToOklab(muted)
+        val mutedOut = colorToOklab(AuroraRenderer.boostChromaColor(muted, 4.5f))
+        val saturatedIn = colorToOklab(saturated)
+        val saturatedOut = colorToOklab(AuroraRenderer.boostChromaColor(saturated, 4.5f))
+
+        val mutedRatio = mutedOut.l / mutedIn.l
+        val saturatedRatio = saturatedOut.l / saturatedIn.l
+
+        assertEquals(1.0f, mutedRatio, 0.01f)
+        assertEquals(0.77f, saturatedRatio, 0.03f)
+        assertTrue(mutedRatio > saturatedRatio)
+        assertTrue(mutedRatio - saturatedRatio >= 0.15f)
+    }
+
+    @Test
+    fun `grey keeps lightness ratio of one within point zero one`() {
+        val input = 0xFF6E6E70.toInt()
+        val inLab = colorToOklab(input)
+        val outLab = colorToOklab(AuroraRenderer.boostChromaColor(input, 4.5f))
+        val ratio = outLab.l / inLab.l
+        assertEquals(1.0f, ratio, 0.01f)
     }
 }
