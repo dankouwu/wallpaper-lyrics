@@ -1813,19 +1813,21 @@ class LyricsWallpaperService : WallpaperService() {
                                 val firstWordOnset = line.words.minOfOrNull {
                                     if (it.fullStartTime != 0L) it.fullStartTime else it.startTime
                                 } ?: wordGatePos
-                                val isPreRollPhase = wordGatePos < firstWordOnset &&
-                                    firstWordOnset > line.startTime + 100L
+                                val hasPreRoll = firstWordOnset > line.startTime + 100L
+                                val isPreRollPhase = wordGatePos < firstWordOnset && hasPreRoll
+                                val inactiveAlpha = if (hasPreRoll) {
+                                    SyllableAnimator.getPreRollInactiveAlpha(wordGatePos, line.startTime, firstWordOnset)
+                                } else {
+                                    INACTIVE_LYRIC_ALPHA
+                                }
 
                                 if (isPreRollPhase) {
-                                    val preRollDuration = (firstWordOnset - line.startTime).toFloat().coerceAtLeast(1f)
-                                    val preRollProgress = ((wordGatePos - line.startTime) / preRollDuration).coerceIn(0f, 1f)
-                                    val preRollAlpha = (80 + (50 * preRollProgress)).toInt()
                                     for (word in line.words) {
                                         val span = word.spanRef as? WordGradientSpan ?: continue
                                         span.progress = 0f
                                         span.motionProgress = 0f
-                                        span.activeAlpha = preRollAlpha
-                                        span.inactiveAlpha = preRollAlpha
+                                        span.activeAlpha = inactiveAlpha
+                                        span.inactiveAlpha = inactiveAlpha
                                     }
                                 } else {
                                     for (word in line.words) {
@@ -1870,7 +1872,7 @@ class LyricsWallpaperService : WallpaperService() {
                                             0f
                                         }
                                         span.activeAlpha = 230
-                                        span.inactiveAlpha = INACTIVE_LYRIC_ALPHA
+                                        span.inactiveAlpha = inactiveAlpha
                                     }
                                 }
                             } else {

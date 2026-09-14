@@ -411,4 +411,86 @@ class SyllableAnimatorTest {
         assertEquals(200f, SyllableAnimator.glideDurationMs(-100f), 0.0001f)
         assertEquals(200f, SyllableAnimator.glideDurationMs(Float.NaN), 0.0001f)
     }
+
+    @Test
+    fun preRollHandoverAlphaHasNoStepAtFirstWordOnset() {
+        val lineStart = 1000L
+        val onset = 1400L
+        val alphaBeforeOnset = SyllableAnimator.getPreRollInactiveAlpha(onset - 1, lineStart, onset)
+        val alphaAtOnset = SyllableAnimator.getPreRollInactiveAlpha(onset, lineStart, onset)
+        val step = Math.abs(alphaAtOnset - alphaBeforeOnset)
+        assertTrue(
+            "Alpha difference across handover must be at most 2, but was $step (before=$alphaBeforeOnset, at=$alphaAtOnset)",
+            step <= 2
+        )
+    }
+
+    @Test
+    fun preRollInactiveAlphaIsMonotonicallyNonIncreasingAcrossSettleWindowAndReachesInactiveAlpha() {
+        val lineStart = 1000L
+        val onset = 1400L
+        val settleDuration = SyllableAnimator.PRE_ROLL_SETTLE_MS
+        var prevAlpha = SyllableAnimator.getPreRollInactiveAlpha(onset, lineStart, onset, settleDuration)
+        val steps = 100
+        for (i in 1..steps) {
+            val t = onset + (i.toFloat() / steps.toFloat() * settleDuration).toLong()
+            val currentAlpha = SyllableAnimator.getPreRollInactiveAlpha(t, lineStart, onset, settleDuration)
+            assertTrue(
+                "Expected currentAlpha ($currentAlpha) <= prevAlpha ($prevAlpha) at t=$t",
+                currentAlpha <= prevAlpha
+            )
+            prevAlpha = currentAlpha
+        }
+        val alphaAtWindowEnd = SyllableAnimator.getPreRollInactiveAlpha(onset + settleDuration, lineStart, onset, settleDuration)
+        assertEquals(INACTIVE_LYRIC_ALPHA, alphaAtWindowEnd)
+    }
+
+    @Test
+    fun preRollInactiveAlphaEqualsRestingInactiveAlphaAfterSettleWindowElapsed() {
+        val lineStart = 1000L
+        val onset = 1400L
+        val settleDuration = SyllableAnimator.PRE_ROLL_SETTLE_MS
+        assertEquals(
+            INACTIVE_LYRIC_ALPHA,
+            SyllableAnimator.getPreRollInactiveAlpha(onset + settleDuration, lineStart, onset, settleDuration)
+        )
+        assertEquals(
+            INACTIVE_LYRIC_ALPHA,
+            SyllableAnimator.getPreRollInactiveAlpha(onset + settleDuration + 100L, lineStart, onset, settleDuration)
+        )
+        assertEquals(
+            INACTIVE_LYRIC_ALPHA,
+            SyllableAnimator.getPreRollInactiveAlpha(onset + settleDuration + 10_000L, lineStart, onset, settleDuration)
+        )
+    }
+
+    @Test
+    fun preRollInactiveAlphaHandlesDegenerateInputsWithoutThrowingOrOutOfRangeValues() {
+        val validOnset = 1400L
+        val lineStart = 1000L
+
+        val zeroGapAlpha = SyllableAnimator.getPreRollInactiveAlpha(1000L, 1000L, 1000L)
+        assertTrue("Zero-length gap alpha must be in 0..255", zeroGapAlpha in 0..255)
+        assertEquals(INACTIVE_LYRIC_ALPHA, zeroGapAlpha)
+
+        val negativeGapAlpha = SyllableAnimator.getPreRollInactiveAlpha(1000L, 1000L, 800L)
+        assertTrue("Negative gap alpha must be in 0..255", negativeGapAlpha in 0..255)
+        assertEquals(INACTIVE_LYRIC_ALPHA, negativeGapAlpha)
+
+        val zeroSettleAlphaAtOnset = SyllableAnimator.getPreRollInactiveAlpha(validOnset, lineStart, validOnset, settleDurationMs = 0L)
+        assertTrue("Zero-length settle alpha at onset must be in 0..255", zeroSettleAlphaAtOnset in 0..255)
+        assertEquals(INACTIVE_LYRIC_ALPHA, zeroSettleAlphaAtOnset)
+
+        val zeroSettleAlphaAfterOnset = SyllableAnimator.getPreRollInactiveAlpha(validOnset + 50L, lineStart, validOnset, settleDurationMs = 0L)
+        assertTrue("Zero-length settle alpha after onset must be in 0..255", zeroSettleAlphaAfterOnset in 0..255)
+        assertEquals(INACTIVE_LYRIC_ALPHA, zeroSettleAlphaAfterOnset)
+
+        val beforeStartAlpha = SyllableAnimator.getPreRollInactiveAlpha(500L, lineStart, validOnset)
+        assertTrue("Before start alpha must be in 0..255", beforeStartAlpha in 0..255)
+        assertEquals(INACTIVE_LYRIC_ALPHA, beforeStartAlpha)
+
+        val wayAfterAlpha = SyllableAnimator.getPreRollInactiveAlpha(5000L, lineStart, validOnset)
+        assertTrue("Way after onset alpha must be in 0..255", wayAfterAlpha in 0..255)
+        assertEquals(INACTIVE_LYRIC_ALPHA, wayAfterAlpha)
+    }
 }

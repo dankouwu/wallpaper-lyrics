@@ -13,6 +13,8 @@ object SyllableAnimator {
     const val WORD_MIN_ANIMATION_MS = 200L
     const val BASE_GLIDE_MS = 200f
     const val REFERENCE_DISTANCE_PX = 158f
+    const val PRE_ROLL_MAX_LIFT = 50
+    const val PRE_ROLL_SETTLE_MS = 150L
 
     class SyllableInfo(
         val syllableCount: Int,
@@ -303,5 +305,33 @@ object SyllableAnimator {
         val scaled = ((sweepEnd - startMs) * WORD_MOTION_TRAIL_FRACTION).toLong()
         val trail = scaled.coerceIn(WORD_MOTION_TRAIL_MIN_MS, WORD_MOTION_TRAIL_MAX_MS)
         return Math.max(sweepEnd, Math.min(sweepEnd + trail, lineEndMs))
+    }
+
+    fun getPreRollInactiveAlpha(
+        currentPos: Long,
+        lineStartTime: Long,
+        firstWordOnset: Long,
+        settleDurationMs: Long = PRE_ROLL_SETTLE_MS
+    ): Int {
+        val preRollGap = firstWordOnset - lineStartTime
+        if (preRollGap <= 0L || currentPos < lineStartTime) {
+            return INACTIVE_LYRIC_ALPHA
+        }
+
+        return if (currentPos < firstWordOnset) {
+            val progress = ((currentPos - lineStartTime).toFloat() / preRollGap.toFloat()).coerceIn(0f, 1f)
+            (INACTIVE_LYRIC_ALPHA + (PRE_ROLL_MAX_LIFT * progress)).toInt().coerceIn(0, 255)
+        } else {
+            if (settleDurationMs <= 0L) {
+                return INACTIVE_LYRIC_ALPHA
+            }
+            val elapsed = currentPos - firstWordOnset
+            if (elapsed >= settleDurationMs) {
+                return INACTIVE_LYRIC_ALPHA
+            }
+            val settleProgress = (elapsed.toFloat() / settleDurationMs.toFloat()).coerceIn(0f, 1f)
+            val decay = 1f - easeInOutCubic(settleProgress)
+            (INACTIVE_LYRIC_ALPHA + (PRE_ROLL_MAX_LIFT * decay)).toInt().coerceIn(0, 255)
+        }
     }
 }
