@@ -228,4 +228,303 @@ class ChromaBoostTest {
         val ratio = outLab.l / inLab.l
         assertEquals(1.0f, ratio, 0.01f)
     }
+
+    private fun computeLuma(color: Int): Int {
+        val r = (color shr 16) and 0xFF
+        val g = (color shr 8) and 0xFF
+        val b = color and 0xFF
+        return Math.round(0.299f * r + 0.587f * g + 0.114f * b)
+    }
+
+    private fun computeMaxAdjacentBlockLumaStep(pixels: IntArray, width: Int, height: Int, blockSize: Int = 8): Float {
+        val bw = width / blockSize
+        val bh = height / blockSize
+        val blockLuma = FloatArray(bw * bh)
+        val blockPixels = (blockSize * blockSize).toFloat()
+
+        for (by in 0 until bh) {
+            val yOffset = by * blockSize
+            for (bx in 0 until bw) {
+                val xOffset = bx * blockSize
+                var sum = 0.0f
+                for (dy in 0 until blockSize) {
+                    val row = (yOffset + dy) * width
+                    for (dx in 0 until blockSize) {
+                        sum += computeLuma(pixels[row + xOffset + dx])
+                    }
+                }
+                blockLuma[by * bw + bx] = sum / blockPixels
+            }
+        }
+
+        var maxStep = 0.0f
+        for (by in 0 until bh) {
+            for (bx in 0 until bw) {
+                val lum = blockLuma[by * bw + bx]
+                if (bx + 1 < bw) {
+                    val rightLum = blockLuma[by * bw + bx + 1]
+                    val step = Math.abs(lum - rightLum)
+                    if (step > maxStep) maxStep = step
+                }
+                if (by + 1 < bh) {
+                    val downLum = blockLuma[(by + 1) * bw + bx]
+                    val step = Math.abs(lum - downLum)
+                    if (step > maxStep) maxStep = step
+                }
+            }
+        }
+        return maxStep
+    }
+
+    @Test
+    fun `banding measurement on synthetic smooth dark low chroma field is bounded at or below two point one`() {
+        val width = 64
+        val height = 64
+        val c1 = (0xFF shl 24) or (18 shl 16) or (15 shl 8) or 23
+        val c2 = (0xFF shl 24) or (18 shl 16) or (16 shl 8) or 22
+        val pixels = IntArray(width * height) { i ->
+            val x = i % width
+            if (x < width / 2) c1 else c2
+        }
+
+        assertEquals(0.0f, computeMaxAdjacentBlockLumaStep(pixels, width, height), 0.001f)
+
+        AuroraRenderer.boostChroma(pixels, width, height, 4.5f)
+        val maxStep = computeMaxAdjacentBlockLumaStep(pixels, width, height)
+        assertTrue("Maximum adjacent block luma step was $maxStep, expected at or below 2.1", maxStep <= 2.1f)
+    }
+
+    @Test
+    fun `alpha byte is preserved across boost path for entire field`() {
+        val width = 8
+        val height = 8
+        val pixels = IntArray(width * height) { i ->
+            val alpha = ((i * 37) and 0xFF) shl 24
+            alpha or 0x00120F17
+        }
+        val expectedAlphas = IntArray(pixels.size) { (pixels[it] ushr 24) and 0xFF }
+        AuroraRenderer.boostChroma(pixels, width, height, 4.5f)
+        for (i in pixels.indices) {
+            val actualAlpha = (pixels[i] ushr 24) and 0xFF
+            assertEquals(expectedAlphas[i], actualAlpha)
+        }
+    }
+
+    @Test
+    fun `pure grey field stays pure grey with zero chroma after boost including dithering`() {
+        val width = 16
+        val height = 16
+        val greys = intArrayOf(0x00, 0x20, 0x50, 0x6E, 0x80, 0xA0, 0xD0, 0xFF)
+        val pixels = IntArray(width * height) { i ->
+            val g = greys[i % greys.size]
+            (0xFF shl 24) or (g shl 16) or (g shl 8) or g
+        }
+        val original = pixels.clone()
+        AuroraRenderer.boostChroma(pixels, width, height, 4.5f)
+        for (i in pixels.indices) {
+            val color = pixels[i]
+            val r = (color shr 16) and 0xFF
+            val g = (color shr 8) and 0xFF
+            val b = color and 0xFF
+            assertEquals("Red and green should match for grey", r, g)
+            assertEquals("Green and blue should match for grey", g, b)
+            assertEquals("Grey pixel should be unchanged", original[i], color)
+        }
+    }
+
+    @Test
+    fun `every channel stays within zero to two hundred fifty five at black and white extremes`() {
+        val width = 16
+        val height = 16
+        val testColors = intArrayOf(
+            0xFF000000.toInt(),
+            0xFF010001.toInt(),
+            0xFF000100.toInt(),
+            0xFF020101.toInt(),
+            0xFFFEFEFF.toInt(),
+            0xFFFFFFFE.toInt(),
+            0xFFFEFFFF.toInt(),
+            0xFFFFFFFF.toInt()
+        )
+        val pixels = IntArray(width * height) { i ->
+            testColors[i % testColors.size]
+        }
+        AuroraRenderer.boostChroma(pixels, width, height, 5.0f)
+        for (i in pixels.indices) {
+            val color = pixels[i]
+            val r = (color shr 16) and 0xFF
+            val g = (color shr 8) and 0xFF
+            val b = color and 0xFF
+            assertTrue(r in 0..255)
+            assertTrue(g in 0..255)
+            assertTrue(b in 0..255)
+        }
+    }
+
+    @Test
+    fun `mean colour is preserved between dithered and undithered fields`() {
+        val width = 64
+        val height = 64
+        val c1 = (0xFF shl 24) or (18 shl 16) or (15 shl 8) or 23
+        val c2 = (0xFF shl 24) or (18 shl 16) or (16 shl 8) or 22
+        val pixelsDithered = IntArray(width * height) { i ->
+            val x = i % width
+            if (x < width / 2) c1 else c2
+        }
+        val pixelsUndithered = pixelsDithered.clone()
+
+        for (i in pixelsUndithered.indices) {
+            pixelsUndithered[i] = AuroraRenderer.boostChromaColor(pixelsUndithered[i], 4.5f)
+        }
+
+        AuroraRenderer.boostChroma(pixelsDithered, width, height, 4.5f)
+
+        var sumRDiff = 0.0
+        var sumGDiff = 0.0
+        var sumBDiff = 0.0
+        val totalPixels = width * height
+
+        for (i in 0 until totalPixels) {
+            val dColor = pixelsDithered[i]
+            val uColor = pixelsUndithered[i]
+            sumRDiff += ((dColor shr 16) and 0xFF) - ((uColor shr 16) and 0xFF)
+            sumGDiff += ((dColor shr 8) and 0xFF) - ((uColor shr 8) and 0xFF)
+            sumBDiff += (dColor and 0xFF) - (uColor and 0xFF)
+        }
+
+        val meanRDiff = Math.abs(sumRDiff / totalPixels)
+        val meanGDiff = Math.abs(sumGDiff / totalPixels)
+        val meanBDiff = Math.abs(sumBDiff / totalPixels)
+
+        assertTrue("Mean red shift was $meanRDiff, expected at or below 0.35", meanRDiff <= 0.35)
+        assertTrue("Mean green shift was $meanGDiff, expected at or below 0.35", meanGDiff <= 0.35)
+        assertTrue("Mean blue shift was $meanBDiff, expected at or below 0.35", meanBDiff <= 0.35)
+    }
+
+    @Test
+    fun `transfer function is strictly monotonic with no flat region across and beyond cap`() {
+        val lightness = 0.65f
+        val hueRad = Math.toRadians(30.0).toFloat()
+        val hueA = kotlin.math.cos(hueRad)
+        val hueB = kotlin.math.sin(hueRad)
+        val ceiling = AuroraRenderer.maxChromaAt(lightness, hueA, hueB)
+        val cap = ceiling * 0.98f
+        val boost = 4.5f
+
+        // Sweep input chroma so that scaled = chroma * boost sweeps from zero through well past cap.
+        val step = 0.0002f
+        val minChroma = 0.001f
+        val maxChroma = (cap * 1.5f) / boost
+        val minStepBound = 1e-6f
+
+        var prevOutput = AuroraRenderer.rollOffChroma(minChroma * boost, cap)
+        var chroma = minChroma + step
+        var stepCount = 0
+        while (chroma <= maxChroma) {
+            val output = AuroraRenderer.rollOffChroma(chroma * boost, cap)
+            val diff = output - prevOutput
+            assertTrue(
+                "Output chroma per-step increase must be at least $minStepBound, but was $diff at chroma=$chroma (scaled=${chroma * boost}, cap=$cap)",
+                diff >= minStepBound
+            )
+            prevOutput = output
+            chroma += step
+            stepCount++
+        }
+        assertTrue("Expected to evaluate multiple steps across the knee and cap", stepCount > 50)
+    }
+
+    @Test
+    fun `inputs below the knee are bit identical to pre change output at production boost`() {
+        val colorsBelowKnee = listOf(
+            0xFF3A4048.toInt() to 0xFF244065.toInt(),
+            0xFF3A3C40.toInt() to 0xFF333C4E.toInt(),
+            0xFF403C3A.toInt() to 0xFF4A3930.toInt(),
+            0xFF3C403A.toInt() to 0xFF334529.toInt(),
+            0xFF504E4A.toInt() to 0xFF564D3B.toInt()
+        )
+        for ((input, expected) in colorsBelowKnee) {
+            val result = AuroraRenderer.boostChromaColor(input, 4.5f)
+            assertEquals("Expected bit-identical output for color %08X".format(input), expected, result)
+        }
+
+        // The transfer function response is strictly identity below knee fraction of cap
+        val cap = 0.20f
+        val knee = cap * 0.70f
+        for (step in 0..100) {
+            val scaled = knee * (step / 100f)
+            val output = AuroraRenderer.rollOffChroma(scaled, cap)
+            assertEquals(scaled, output, 1e-6f)
+        }
+    }
+
+    @Test
+    fun `cap is never exceeded and channels stay in range for very large input chroma`() {
+        val lightness = 0.65f
+        val hueRad = Math.toRadians(30.0).toFloat()
+        val hueA = kotlin.math.cos(hueRad)
+        val hueB = kotlin.math.sin(hueRad)
+        val ceiling = AuroraRenderer.maxChromaAt(lightness, hueA, hueB)
+        val cap = ceiling * 0.98f
+
+        // Transfer function stays strictly below cap for large scaled chroma, and never exceeds cap
+        val largeInputs = floatArrayOf(cap * 1.1f, cap * 1.5f, cap * 2.0f, cap * 3.0f)
+        for (scaled in largeInputs) {
+            val output = AuroraRenderer.rollOffChroma(scaled, cap)
+            assertTrue("Output chroma ($output) must stay strictly below cap ($cap) for scaled=$scaled", output < cap)
+        }
+
+        // Extreme inputs asymptotically approach cap and never exceed it
+        val extremeInputs = floatArrayOf(cap * 5.0f, cap * 10.0f, cap * 100.0f, 1000.0f)
+        for (scaled in extremeInputs) {
+            val output = AuroraRenderer.rollOffChroma(scaled, cap)
+            assertTrue("Output chroma ($output) must never exceed cap ($cap) for scaled=$scaled", output <= cap)
+        }
+
+        // Color channels stay within 0..255 bounds under large chroma and extreme boosts
+        val testColors = intArrayOf(
+            0xFFC3909B.toInt(),
+            0xFF1E4E7A.toInt(),
+            0xFFE02040.toInt(),
+            0xFFFF46A2.toInt(),
+            0xFFEC213E.toInt(),
+            0xFFFF0000.toInt(),
+            0xFF00FF00.toInt(),
+            0xFF0000FF.toInt()
+        )
+        for (color in testColors) {
+            for (boost in floatArrayOf(4.5f, 10.0f, 50.0f, 100.0f)) {
+                val result = AuroraRenderer.boostChromaColor(color, boost)
+                val r = (result shr 16) and 0xFF
+                val g = (result shr 8) and 0xFF
+                val b = result and 0xFF
+                assertTrue(r in 0..255)
+                assertTrue(g in 0..255)
+                assertTrue(b in 0..255)
+            }
+        }
+    }
+
+    @Test
+    fun `degenerate inputs and pure grey return sane in range values without throwing or NaN`() {
+        val degenerateCaps = floatArrayOf(0.0f, -0.1f, 1e-7f, 1e-6f)
+        for (cap in degenerateCaps) {
+            val res = AuroraRenderer.rollOffChroma(0.5f, cap)
+            assertTrue("Degenerate cap $cap must not produce NaN", !res.isNaN())
+            assertTrue("Degenerate cap $cap must produce value <= cap", res <= cap + 1e-6f)
+        }
+
+        // Pure greys return sane in-range values unchanged
+        val greys = intArrayOf(0xFF000000.toInt(), 0xFF808080.toInt(), 0xFFFFFFFF.toInt(), 0xFF121212.toInt())
+        for (grey in greys) {
+            val res = AuroraRenderer.boostChromaColor(grey, 4.5f)
+            assertEquals("Grey $grey should be returned unchanged", grey, res)
+            val r = (res shr 16) and 0xFF
+            val g = (res shr 8) and 0xFF
+            val b = res and 0xFF
+            assertTrue(r in 0..255)
+            assertTrue(g in 0..255)
+            assertTrue(b in 0..255)
+        }
+    }
 }
