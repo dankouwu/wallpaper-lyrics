@@ -20,6 +20,7 @@ object AuroraRenderer {
     private const val BACKGROUND_DEPTH = 0.23f
     private const val DEPTH_GATE_LOW = 0.55f
     private const val DEPTH_GATE_HIGH = 0.85f
+    private const val CHROMA_KNEE = 0.70f
 
     fun drawAurora(
         canvas: Canvas,
@@ -436,7 +437,29 @@ object AuroraRenderer {
         if (c <= 0.04045f) c / 12.92f else Math.pow(((c + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
     }
 
-    fun boostChromaColor(color: Int, boost: Float): Int {
+    // Centering the 8x8 Bayer matrix at -31.5 / 64 preserves the mean color across the dither pattern.
+    private val BAYER_8X8 = floatArrayOf(
+        (0f - 31.5f) / 64f, (32f - 31.5f) / 64f, (8f - 31.5f) / 64f, (40f - 31.5f) / 64f,
+        (2f - 31.5f) / 64f, (34f - 31.5f) / 64f, (10f - 31.5f) / 64f, (42f - 31.5f) / 64f,
+        (48f - 31.5f) / 64f, (16f - 31.5f) / 64f, (56f - 31.5f) / 64f, (24f - 31.5f) / 64f,
+        (50f - 31.5f) / 64f, (18f - 31.5f) / 64f, (58f - 31.5f) / 64f, (26f - 31.5f) / 64f,
+        (12f - 31.5f) / 64f, (44f - 31.5f) / 64f, (4f - 31.5f) / 64f, (36f - 31.5f) / 64f,
+        (14f - 31.5f) / 64f, (46f - 31.5f) / 64f, (6f - 31.5f) / 64f, (38f - 31.5f) / 64f,
+        (60f - 31.5f) / 64f, (28f - 31.5f) / 64f, (52f - 31.5f) / 64f, (20f - 31.5f) / 64f,
+        (62f - 31.5f) / 64f, (30f - 31.5f) / 64f, (54f - 31.5f) / 64f, (22f - 31.5f) / 64f,
+        (3f - 31.5f) / 64f, (35f - 31.5f) / 64f, (11f - 31.5f) / 64f, (43f - 31.5f) / 64f,
+        (1f - 31.5f) / 64f, (33f - 31.5f) / 64f, (9f - 31.5f) / 64f, (41f - 31.5f) / 64f,
+        (51f - 31.5f) / 64f, (19f - 31.5f) / 64f, (59f - 31.5f) / 64f, (27f - 31.5f) / 64f,
+        (49f - 31.5f) / 64f, (17f - 31.5f) / 64f, (57f - 31.5f) / 64f, (25f - 31.5f) / 64f,
+        (15f - 31.5f) / 64f, (47f - 31.5f) / 64f, (7f - 31.5f) / 64f, (39f - 31.5f) / 64f,
+        (13f - 31.5f) / 64f, (45f - 31.5f) / 64f, (5f - 31.5f) / 64f, (37f - 31.5f) / 64f,
+        (63f - 31.5f) / 64f, (31f - 31.5f) / 64f, (55f - 31.5f) / 64f, (23f - 31.5f) / 64f,
+        (61f - 31.5f) / 64f, (29f - 31.5f) / 64f, (53f - 31.5f) / 64f, (21f - 31.5f) / 64f
+    )
+
+    fun boostChromaColor(color: Int, boost: Float): Int = boostChromaColor(color, boost, 0f)
+
+    private fun boostChromaColor(color: Int, boost: Float, dither: Float): Int {
         val alpha = color and 0xFF000000.toInt()
         val rByte = (color shr 16) and 0xFF
         val gByte = (color shr 8) and 0xFF
@@ -481,7 +504,9 @@ object AuroraRenderer {
         }
 
         // The 0.98 ceiling matches saturated album art while avoiding gamut boundary clipping.
-        val finalChroma = min(chroma * boost, ceiling * 0.98f)
+        val cap = ceiling * 0.98f
+        val scaled = chroma * boost
+        val finalChroma = rollOffChroma(scaled, cap)
 
         val finalA = finalChroma * hueA
         val finalB = finalChroma * hueB
@@ -498,9 +523,9 @@ object AuroraRenderer {
         val gOutLin = -1.2684380046f * finalL + 2.6097574011f * finalM - 0.3413193965f * finalS
         val bOutLin = -0.0041960863f * finalL - 0.7034186147f * finalM + 1.7076147010f * finalS
 
-        val outR = Math.round(linearToSrgb(rOutLin) * 255f).coerceIn(0, 255)
-        val outG = Math.round(linearToSrgb(gOutLin) * 255f).coerceIn(0, 255)
-        val outB = Math.round(linearToSrgb(bOutLin) * 255f).coerceIn(0, 255)
+        val outR = Math.round(linearToSrgb(rOutLin) * 255f + dither).coerceIn(0, 255)
+        val outG = Math.round(linearToSrgb(gOutLin) * 255f + dither).coerceIn(0, 255)
+        val outB = Math.round(linearToSrgb(bOutLin) * 255f + dither).coerceIn(0, 255)
 
         return alpha or (outR shl 16) or (outG shl 8) or outB
     }
@@ -510,10 +535,20 @@ object AuroraRenderer {
         val h = target.height
         val pixels = IntArray(w * h)
         target.getPixels(pixels, 0, w, 0, 0, w, h)
-        for (i in pixels.indices) {
-            pixels[i] = boostChromaColor(pixels[i], boost)
-        }
+        boostChroma(pixels, w, h, boost)
         target.setPixels(pixels, 0, w, 0, 0, w, h)
+    }
+
+    fun boostChroma(pixels: IntArray, width: Int, height: Int, boost: Float) {
+        for (y in 0 until height) {
+            val rowOffset = y * width
+            val bayerRow = (y and 7) shl 3
+            for (x in 0 until width) {
+                val dither = BAYER_8X8[bayerRow or (x and 7)]
+                val index = rowOffset + x
+                pixels[index] = boostChromaColor(pixels[index], boost, dither)
+            }
+        }
     }
 
     private fun linearToSrgb(c: Float): Float {
@@ -530,7 +565,18 @@ object AuroraRenderer {
         return t * t * (3f - 2f * t)
     }
 
-    private fun maxChromaAt(lightness: Float, hueA: Float, hueB: Float): Float {
+    internal fun rollOffChroma(scaled: Float, cap: Float): Float {
+        val knee = cap * CHROMA_KNEE
+        val range = cap - knee
+        return if (cap <= 1e-6f || cap.isNaN() || scaled.isNaN() || range <= 0f || scaled <= knee) {
+            min(scaled, cap)
+        } else {
+            val unclipped = knee + range * (1f - Math.exp(-((scaled - knee) / range).toDouble()).toFloat())
+            min(unclipped, cap)
+        }
+    }
+
+    internal fun maxChromaAt(lightness: Float, hueA: Float, hueB: Float): Float {
         // In sRGB, no realisable colour exceeds chroma 0.45 at any lightness level.
         var lo = 0f
         var hi = 0.45f
