@@ -40,14 +40,14 @@ Lyrics land in a file cache, and a miss is remembered for 24 hours so an instrum
 
 ## Install
 
-Open the [Releases](https://github.com/dankouwu/wallpaper-lyrics/releases) page on the phone and download the `wallpaper-lyrics-<version>.apk` attached to the newest one. Tap the file when it lands, and allow your browser or file manager to install unknown apps if Android asks.
+Open the [Releases](https://github.com/dankouwu/wallpaper-lyrics/releases) page on the phone and download the `wallpaper-lyrics_<version>.apk` attached to the newest one. Tap the file when it lands, and allow your browser or file manager to install unknown apps if Android asks.
 
 Then open Wallpaper Lyrics, tap **Activate Live Wallpaper**, and pick **Lyrics Wallpaper** in the system picker.
 
 From a computer instead:
 
 ```bash
-adb install -r wallpaper-lyrics-1.4.0.apk
+adb install -r wallpaper-lyrics_1.4.0.apk
 ```
 
 > [!WARNING]
