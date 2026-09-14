@@ -15,13 +15,13 @@ the idle screen. Add them here rather than shipping broken image tags.
 
 ## What it is
 
-A wallpaper, not an app you sit in. The launcher icon opens settings and nothing else. Start something in Spotify, Tidal or KDE Connect, go back to the home screen, and the lyrics are already there and already scrolling.
+A wallpaper, not an app you sit in. The launcher icon opens settings and nothing else. Start something in any player that publishes a media session, go back to the home screen, and the lyrics are already there and already scrolling.
 
 Where the timing data allows it, words light up one at a time instead of whole lines. Musixmatch publishes per word timing for a good part of the catalogue. When a track has none, it falls back to line timing from LRCLIB, which is most tracks.
 
 ## The background
 
-The cover art is scaled to 512px, tinted along its own luminance, blurred, and handed to an AGSL shader that warps it with two octaves of simplex noise at 0.22 and 0.25 frequency. It ends up moving like liquid and holding the record's palette without ever looking like the record.
+The cover art is scaled to 512px, tinted along its own luminance, blurred twice, and pushed towards the edge of what sRGB can show at each pixel's own lightness, in OKLCh so the hue does not drift. That goes to an AGSL shader which warps it with two octaves of simplex noise at 0.22 and 0.25 frequency. It ends up moving like liquid and holding the record's palette without ever looking like the record.
 
 That path needs Android 13, which is where AGSL lands. Android 8 through 12 get animated radial gradient meshes built from a palette sampled off the same artwork. It is a visible downgrade, not a subtle one.
 
@@ -39,16 +39,18 @@ Lyrics land in a file cache, and a miss is remembered for 24 hours so an instrum
 
 ## Install
 
-Release APKs are on the [Releases](https://github.com/dankouwu/wallpaper-lyrics/releases) page.
+Open the [Releases](https://github.com/dankouwu/wallpaper-lyrics/releases) page on the phone and download the `wallpaper-lyrics-<version>.apk` attached to the newest one. Tap the file when it lands, and allow your browser or file manager to install unknown apps if Android asks.
+
+Then open Wallpaper Lyrics, tap **Activate Live Wallpaper**, and pick **Lyrics Wallpaper** in the system picker.
+
+From a computer instead:
 
 ```bash
-adb install -r wallpaper-lyrics-v1.5.0.apk
+adb install -r wallpaper-lyrics-1.4.0.apk
 ```
 
-Then open the app, tap **Activate Live Wallpaper**, and pick **Lyrics Wallpaper** in the system picker.
-
 > [!WARNING]
-> Builds are signed with the Android debug key. That is fine for sideloading and it is the only way this ships, but the signature is not stable across builds, so an update may want an uninstall first. Releases before 1.5.0 were debug builds and are not worth installing.
+> Builds are signed with the Android debug key. That is fine for sideloading and it is the only way this ships, but the signature is not stable across builds, so an update may want an uninstall first.
 
 ## Setup
 
@@ -114,7 +116,7 @@ The unit tests cover the parts with no Android in them: LRC parsing, query clean
 
 - Word level timing depends on Musixmatch richsync coverage. Plenty of tracks only have line timing, and some have nothing.
 - The fluid background needs Android 13. Below that it is gradient meshes.
-- Only Spotify, Tidal and KDE Connect sessions are picked up. Other players are ignored even when they publish a session.
+- Any media session is picked up, but only Spotify, Tidal and KDE Connect are recognised by name and preferred when several are live. A player that reports thin metadata, or none until you tell it to, gives you nothing to look up.
 - Both lyrics sources are third party and unofficial. They go down, they rate limit, and they hand back the wrong track often enough that manual LRC editing exists.
 - Debug signed, so sideload only.
 - No screenshots in the repo yet.
