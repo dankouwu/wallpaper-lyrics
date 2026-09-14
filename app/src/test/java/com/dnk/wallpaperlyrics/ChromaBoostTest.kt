@@ -604,77 +604,66 @@ class ChromaBoostTest {
         }
     }
 
-    private fun invokeSmoothstep(edge0: Float, edge1: Float, x: Float): Float {
-        val method = AuroraRenderer::class.java.getDeclaredMethod(
-            "smoothstep",
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType,
-            Float::class.javaPrimitiveType
-        ).apply { isAccessible = true }
-        return method.invoke(AuroraRenderer, edge0, edge1, x) as Float
-    }
-
-    private fun getPrivateFloatConst(name: String): Float {
-        val field = AuroraRenderer::class.java.getDeclaredField(name).apply {
-            isAccessible = true
-        }
-        return field.getFloat(AuroraRenderer)
-    }
+    // The floor window is the contract, not an implementation detail to read back
+    // by reflection. Pinning the numbers here means the test fails if someone
+    // widens the window, which is the point.
+    private val depthChromaFloorLow = 0.010f
+    private val depthChromaFloorHigh = 0.030f
+    private val backgroundDepth = 0.23f
 
     @Test
-    fun `continuity of lightness multiplier across the chroma floor window`() {
-        val floorLow = getPrivateFloatConst("DEPTH_CHROMA_FLOOR_LOW")
-        val floorHigh = getPrivateFloatConst("DEPTH_CHROMA_FLOOR_HIGH")
-        val backgroundDepth = getPrivateFloatConst("BACKGROUND_DEPTH")
-        val depthGateLow = getPrivateFloatConst("DEPTH_GATE_LOW")
-        val depthGateHigh = getPrivateFloatConst("DEPTH_GATE_HIGH")
+    fun `lightness falls continuously across the chroma floor window`() {
+        // Walk away from white one blue level at a time. Chroma rises about
+        // 0.0013 per step, so the 0.010 to 0.030 window gets roughly 15 samples.
+        // Going through boostChromaColor means this covers the real gate wiring,
+        // not a copy of the arithmetic.
+        data class Sample(val chroma: Float, val ratio: Float, val color: Int)
 
-        assertEquals(0.010f, floorLow, 1e-6f)
-        assertEquals(0.030f, floorHigh, 1e-6f)
-
-        // For saturated colours with sourceRatio above DEPTH_GATE_HIGH, the ratio gate is 1.0.
-        val sourceRatio = depthGateHigh + 0.1f
-        val ratioGate = invokeSmoothstep(depthGateLow, depthGateHigh, sourceRatio)
-        assertEquals(1.0f, ratioGate, 1e-6f)
-
-        val step = 0.0002f
-        val startChroma = floorLow - 0.002f
-        val endChroma = floorHigh + 0.002f
-        val maxStepBound = 0.008f
-
-        var prevMultiplier: Float? = null
-        var chroma = startChroma
-        var stepCount = 0
-
-        while (chroma <= endChroma + 1e-6f) {
-            val chromaFloorGate = invokeSmoothstep(floorLow, floorHigh, chroma)
-            val depthGate = ratioGate * chromaFloorGate
-            val multiplier = 1f - backgroundDepth * depthGate
-
-            if (chroma <= floorLow) {
-                assertEquals(1.0f, multiplier, 1e-6f)
-            }
-            if (chroma >= floorHigh) {
-                assertEquals(1f - backgroundDepth, multiplier, 1e-6f)
-            }
-
-            prevMultiplier?.let { prev ->
-                assertTrue(
-                    "Multiplier must be monotonically non-increasing, but went from $prev to $multiplier at chroma=$chroma",
-                    multiplier <= prev + 1e-6f
-                )
-                val stepChange = Math.abs(multiplier - prev)
-                assertTrue(
-                    "Step change $stepChange at chroma $chroma exceeded bound $maxStepBound",
-                    stepChange <= maxStepBound
-                )
-            }
-
-            prevMultiplier = multiplier
-            chroma += step
-            stepCount++
+        val samples = (0..40).map { d ->
+            val input = (0xFF shl 24) or (255 shl 16) or (255 shl 8) or (255 - d)
+            val inLab = colorToOklab(input)
+            val outLab = colorToOklab(AuroraRenderer.boostChromaColor(input, 4.5f))
+            Sample(Math.hypot(inLab.a.toDouble(), inLab.b.toDouble()).toFloat(), outLab.l / inLab.l, input)
         }
 
-        assertTrue("Expected over 100 evaluation steps across the window", stepCount > 100)
+        // Output is 8 bit, so a step can wobble slightly without being a real inversion.
+        val roundingSlack = 0.004f
+        // The defect this guards against was a cliff: neighbouring near-white pixels
+        // differing by one bit were darkened by very different amounts.
+        val maxStep = 0.05f
+
+        samples.zipWithNext { prev, next ->
+            assertTrue(
+                "Lightness ratio must not rise as chroma rises: %.5f at chroma %.5f then %.5f at %.5f"
+                    .format(prev.ratio, prev.chroma, next.ratio, next.chroma),
+                next.ratio <= prev.ratio + roundingSlack
+            )
+            val step = Math.abs(next.ratio - prev.ratio)
+            assertTrue(
+                "Single step of %.4f between chroma %.5f and %.5f exceeds %.4f"
+                    .format(step, prev.chroma, next.chroma, maxStep),
+                step <= maxStep
+            )
+        }
+
+        val belowFloor = samples.filter { it.chroma <= depthChromaFloorLow }
+        assertTrue("Expected samples below the floor", belowFloor.size >= 5)
+        for (s in belowFloor) {
+            assertEquals(
+                "Below chroma %.3f the depth stage must not touch lightness (colour %08X)"
+                    .format(depthChromaFloorLow, s.color),
+                1.0f, s.ratio, 0.01f
+            )
+        }
+
+        val aboveFloor = samples.filter { it.chroma >= depthChromaFloorHigh }
+        assertTrue("Expected samples above the floor", aboveFloor.size >= 5)
+        for (s in aboveFloor) {
+            assertEquals(
+                "Above chroma %.3f the depth stage must apply in full (colour %08X)"
+                    .format(depthChromaFloorHigh, s.color),
+                1f - backgroundDepth, s.ratio, 0.02f
+            )
+        }
     }
 }
