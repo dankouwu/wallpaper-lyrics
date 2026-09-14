@@ -1,0 +1,98 @@
+name: Bug
+description: Something the wallpaper does that it should not
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens
+      description: What you see on the screen. If it is a visual glitch, a photo of the phone beats a description.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings, then About. Or the version of the release you installed.
+      placeholder: "1.4.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: android
+    attributes:
+      label: Android version
+      description: Below 13 there is no shader, so the background is gradient meshes and looks different on purpose.
+      options:
+        - "8"
+        - "9"
+        - "10"
+        - "11"
+        - "12"
+        - "13"
+        - "14"
+        - "15"
+        - "16"
+    validations:
+      required: true
+
+  - type: input
+    id: phone
+    attributes:
+      label: Phone
+      placeholder: "Samsung Galaxy S25 Ultra"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: player
+    attributes:
+      label: What was playing it
+      options:
+        - Spotify
+        - Tidal
+        - KDE Connect
+        - Something else
+        - Nothing was playing
+    validations:
+      required: true
+
+  - type: input
+    id: track
+    attributes:
+      label: Artist and track
+      description: Only if it is a lyrics, timing or background colour problem. Without the exact track there is nothing to reproduce against.
+      placeholder: "Justin Bieber, Hold Tight"
+
+  - type: checkboxes
+    id: setup
+    attributes:
+      label: Setup
+      description: Most reports that turn out not to be bugs are one of these three. Check what is actually on.
+      options:
+        - label: Notification access is granted to Wallpaper Lyrics
+        - label: Battery usage is set to Unrestricted
+        - label: If Spotify, Device Broadcast Status is on inside Spotify's settings
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logcat
+      description: Optional, and the fastest way to get this fixed. Plug the phone in and run the command below while the problem is on screen.
+      value: |
+        <details>
+        <summary>adb logcat -s WallpaperLyrics:V LyricsManager:V</summary>
+
+        ```
+        paste here
+        ```
+
+        </details>
