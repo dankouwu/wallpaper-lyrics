@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Lyrics are wrong or missing for one track
+    url: https://github.com/dankouwu/wallpaper-lyrics#what-else-it-does
+    about: Both lyrics sources are third party. Paste your own LRC for that track in Enhanced Lyrics first, and only open an issue if the app ignores what you pasted.
