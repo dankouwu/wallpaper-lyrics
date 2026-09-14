@@ -1,18 +1,20 @@
-.gradle/
+# Everything hidden at the root stays local, except what the repo needs.
+/.*
+!/.github/
+!/.gitignore
+
 build/
 app/build/
 *.iml
-.idea/
-local.properties
 .DS_Store
+local.properties
 extras/
 
-# Scratch notes and local scaffolding. Never in the repo.
+# Scratch notes. Local only.
 /*.md
 !/README.md
 /*.txt
 /*.lrc
-/.agents/
 /drifting-bug-resources/
 
 # Debug capture fixtures. Local only.
