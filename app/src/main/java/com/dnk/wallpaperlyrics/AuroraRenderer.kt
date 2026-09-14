@@ -20,6 +20,8 @@ object AuroraRenderer {
     private const val BACKGROUND_DEPTH = 0.23f
     private const val DEPTH_GATE_LOW = 0.55f
     private const val DEPTH_GATE_HIGH = 0.85f
+    private const val DEPTH_CHROMA_FLOOR_LOW = 0.010f
+    private const val DEPTH_CHROMA_FLOOR_HIGH = 0.030f
     private const val CHROMA_KNEE = 0.70f
 
     fun drawAurora(
@@ -498,7 +500,11 @@ object AuroraRenderer {
             ceiling = ceilingAtSource
         } else {
             val sourceRatio = chroma / ceilingAtSource
-            val depthGate = smoothstep(DEPTH_GATE_LOW, DEPTH_GATE_HIGH, sourceRatio)
+            // Near the neutral axis, the gamut ceiling collapses toward zero and sourceRatio
+            // can reach full saturation from sub-LSB noise. Gating by absolute chroma prevents
+            // darkening near-white and grey pixels.
+            val chromaFloorGate = smoothstep(DEPTH_CHROMA_FLOOR_LOW, DEPTH_CHROMA_FLOOR_HIGH, chroma)
+            val depthGate = smoothstep(DEPTH_GATE_LOW, DEPTH_GATE_HIGH, sourceRatio) * chromaFloorGate
             depthLightness = L * (1f - BACKGROUND_DEPTH * depthGate)
             ceiling = if (depthGate == 0f) ceilingAtSource else maxChromaAt(depthLightness, hueA, hueB)
         }
