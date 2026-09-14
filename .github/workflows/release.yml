@@ -36,10 +36,10 @@ jobs:
       - name: Rename APK
         run: |
           mv app/build/outputs/apk/release/app-release.apk \
-             wallpaper-lyrics-${{ github.ref_name }}.apk
+             wallpaper-lyrics_${{ github.ref_name }}.apk
 
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
-          files: wallpaper-lyrics-${{ github.ref_name }}.apk
+          files: wallpaper-lyrics_${{ github.ref_name }}.apk
           generate_release_notes: true
