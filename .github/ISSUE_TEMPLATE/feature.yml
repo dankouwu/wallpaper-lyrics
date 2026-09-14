@@ -1,0 +1,29 @@
+name: Feature
+description: Something you want the wallpaper to do
+labels: [feature]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is a wallpaper, not an app you sit in. Anything that needs you to open it and tap around is probably the wrong shape for it, so say what you want to happen on the home screen.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What you want
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: What you are doing when you want it
+      description: The situation, not the solution. It is usually the part that decides whether this gets built and how.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today instead
+      description: Optional. If there is a setting that nearly does it, say which one and where it falls short.

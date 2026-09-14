@@ -2,9 +2,10 @@
 
 An Android live wallpaper that shows the lyrics of whatever you are playing, in time with the music, over a background painted from the album art.
 
-[![Build](https://github.com/dankouwu/wallpaper-lyrics/actions/workflows/build.yml/badge.svg)](https://github.com/dankouwu/wallpaper-lyrics/actions/workflows/build.yml)
-[![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)](#install)
-[![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/dankouwu/wallpaper-lyrics?sort=semver&display_name=tag&label=download&color=3DDC84)](https://github.com/dankouwu/wallpaper-lyrics/releases/latest)
+[![Runs on Android 8.0+](https://img.shields.io/badge/runs%20on-Android%208.0%2B-3DDC84?logo=android&logoColor=white)](#install)
+[![Fluid background on Android 13+](https://img.shields.io/badge/fluid%20background-Android%2013%2B-5B8DEF)](#the-background)
+[![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-lightgrey)](LICENSE)
 
 <!--
 No screenshots committed yet. Capture with:
@@ -120,6 +121,12 @@ The unit tests cover the parts with no Android in them: LRC parsing, query clean
 - Both lyrics sources are third party and unofficial. They go down, they rate limit, and they hand back the wrong track often enough that manual LRC editing exists.
 - Debug signed, so sideload only.
 - No screenshots in the repo yet.
+
+## Issues
+
+Bugs and requests go through [Issues](https://github.com/dankouwu/wallpaper-lyrics/issues), which has a form for each. The bug form asks for your Android version, your phone and the track, because without those there is usually nothing to reproduce.
+
+Pull requests are not open. This is a one person project and I would rather read what is wrong than a patch.
 
 ## License
 
