@@ -527,4 +527,154 @@ class ChromaBoostTest {
             assertTrue(b in 0..255)
         }
     }
+
+    @Test
+    fun `near white with tiny above guard chroma preserves lightness without depth darkening`() {
+        val input = 0xFFFFFDFE.toInt()
+        val inLuma = computeLuma(input)
+        val result = AuroraRenderer.boostChromaColor(input, 4.5f)
+        val outLuma = computeLuma(result)
+        val lumaDiff = Math.abs(outLuma - inLuma)
+        val bound = 2
+        assertTrue(
+            "Output luma ($outLuma) must be within $bound levels of input luma ($inLuma), but diff was $lumaDiff",
+            lumaDiff <= bound
+        )
+    }
+
+    @Test
+    fun `no manufactured structure on near neutral field`() {
+        val width = 16
+        val height = 16
+        val pixels = IntArray(width * height) { i ->
+            val x = i % width
+            val y = i / width
+            val r = 255
+            val g = if ((x + y) % 2 == 0) 255 else 253
+            val b = if (x % 2 == 0) 255 else 254
+            (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        val inLumas = pixels.map { computeLuma(it) }
+        val inRange = inLumas.maxOrNull()!! - inLumas.minOrNull()!!
+
+        AuroraRenderer.boostChroma(pixels, width, height, 4.5f)
+
+        val outLumas = pixels.map { computeLuma(it) }
+        val outRange = outLumas.maxOrNull()!! - outLumas.minOrNull()!!
+        val bound = 3
+        assertTrue(
+            "Output luma range was $outRange, expected within bound of $bound (input range was $inRange)",
+            outRange <= bound
+        )
+
+        var maxAdjacentStep = 0
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val lum = outLumas[y * width + x]
+                if (x + 1 < width) {
+                    val step = Math.abs(lum - outLumas[y * width + (x + 1)])
+                    if (step > maxAdjacentStep) maxAdjacentStep = step
+                }
+                if (y + 1 < height) {
+                    val step = Math.abs(lum - outLumas[(y + 1) * width + x])
+                    if (step > maxAdjacentStep) maxAdjacentStep = step
+                }
+            }
+        }
+        assertTrue(
+            "Maximum adjacent luma step was $maxAdjacentStep, expected at or below 2",
+            maxAdjacentStep <= 2
+        )
+    }
+
+    @Test
+    fun `vivid colours still get depth and have lightness reduced`() {
+        val pinnedSaturatedSamples = listOf(
+            0xFF1E4E7A.toInt() to 0.80f,
+            0xFFE02040.toInt() to 0.77f,
+            0xFFEC213E.toInt() to 0.77f,
+            0xFFFF46A2.toInt() to 0.77f
+        )
+        for ((color, expectedRatio) in pinnedSaturatedSamples) {
+            val inLab = colorToOklab(color)
+            val outLab = colorToOklab(AuroraRenderer.boostChromaColor(color, 4.5f))
+            val ratio = outLab.l / inLab.l
+            assertEquals(expectedRatio, ratio, 0.02f)
+            assertTrue("Depth stage must reduce lightness for saturated sample %08X".format(color), ratio <= 0.82f)
+        }
+    }
+
+    private fun invokeSmoothstep(edge0: Float, edge1: Float, x: Float): Float {
+        val method = AuroraRenderer::class.java.getDeclaredMethod(
+            "smoothstep",
+            Float::class.javaPrimitiveType,
+            Float::class.javaPrimitiveType,
+            Float::class.javaPrimitiveType
+        ).apply { isAccessible = true }
+        return method.invoke(AuroraRenderer, edge0, edge1, x) as Float
+    }
+
+    private fun getPrivateFloatConst(name: String): Float {
+        val field = AuroraRenderer::class.java.getDeclaredField(name).apply {
+            isAccessible = true
+        }
+        return field.getFloat(AuroraRenderer)
+    }
+
+    @Test
+    fun `continuity of lightness multiplier across the chroma floor window`() {
+        val floorLow = getPrivateFloatConst("DEPTH_CHROMA_FLOOR_LOW")
+        val floorHigh = getPrivateFloatConst("DEPTH_CHROMA_FLOOR_HIGH")
+        val backgroundDepth = getPrivateFloatConst("BACKGROUND_DEPTH")
+        val depthGateLow = getPrivateFloatConst("DEPTH_GATE_LOW")
+        val depthGateHigh = getPrivateFloatConst("DEPTH_GATE_HIGH")
+
+        assertEquals(0.010f, floorLow, 1e-6f)
+        assertEquals(0.030f, floorHigh, 1e-6f)
+
+        // For saturated colours with sourceRatio above DEPTH_GATE_HIGH, the ratio gate is 1.0.
+        val sourceRatio = depthGateHigh + 0.1f
+        val ratioGate = invokeSmoothstep(depthGateLow, depthGateHigh, sourceRatio)
+        assertEquals(1.0f, ratioGate, 1e-6f)
+
+        val step = 0.0002f
+        val startChroma = floorLow - 0.002f
+        val endChroma = floorHigh + 0.002f
+        val maxStepBound = 0.008f
+
+        var prevMultiplier: Float? = null
+        var chroma = startChroma
+        var stepCount = 0
+
+        while (chroma <= endChroma + 1e-6f) {
+            val chromaFloorGate = invokeSmoothstep(floorLow, floorHigh, chroma)
+            val depthGate = ratioGate * chromaFloorGate
+            val multiplier = 1f - backgroundDepth * depthGate
+
+            if (chroma <= floorLow) {
+                assertEquals(1.0f, multiplier, 1e-6f)
+            }
+            if (chroma >= floorHigh) {
+                assertEquals(1f - backgroundDepth, multiplier, 1e-6f)
+            }
+
+            prevMultiplier?.let { prev ->
+                assertTrue(
+                    "Multiplier must be monotonically non-increasing, but went from $prev to $multiplier at chroma=$chroma",
+                    multiplier <= prev + 1e-6f
+                )
+                val stepChange = Math.abs(multiplier - prev)
+                assertTrue(
+                    "Step change $stepChange at chroma $chroma exceeded bound $maxStepBound",
+                    stepChange <= maxStepBound
+                )
+            }
+
+            prevMultiplier = multiplier
+            chroma += step
+            stepCount++
+        }
+
+        assertTrue("Expected over 100 evaluation steps across the window", stepCount > 100)
+    }
 }
