@@ -350,7 +350,7 @@ class MainActivity : AppCompatActivity() {
                     this@MainActivity,
                     LS.IconType.FILE_STACK,
                     "Version",
-                    "1.5.0",
+                    "2.0.0",
                     LS.TrailingType.NONE,
                     onClick = {}
                 ))
