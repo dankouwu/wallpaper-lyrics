@@ -47,7 +47,7 @@ Then open Wallpaper Lyrics, tap **Activate Live Wallpaper**, and pick **Lyrics W
 From a computer instead:
 
 ```bash
-adb install -r wallpaper-lyrics_1.4.0.apk
+adb install -r wallpaper-lyrics_2.0.0.apk
 ```
 
 > [!WARNING]

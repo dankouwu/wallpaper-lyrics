@@ -58,7 +58,7 @@ body:
     attributes:
       label: App version
       description: Settings, then About. Or the version of the release you installed.
-      placeholder: "1.4.0"
+      placeholder: "2.0.0"
     validations:
       required: true
 
