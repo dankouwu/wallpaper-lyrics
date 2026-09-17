@@ -1,0 +1,90 @@
+name: Lyrics
+description: Lyrics are wrong, missing, or out of sync for a track
+labels: [lyrics]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Lyrics come from third party services (Musixmatch and LRCLIB). If a track has wrong or missing lyrics on those services, that is an upstream data issue rather than an app bug. You can override lyrics for any song by tapping Edit Synced Lyrics in the app.
+
+  - type: dropdown
+    id: problem
+    attributes:
+      label: Problem type
+      description: Which of these best describes the issue
+      options:
+        - The app is mistiming lyrics that are otherwise correct
+        - I pasted custom LRC into Edit Synced Lyrics, but the app ignored it
+        - The lyrics text is wrong or missing from Musixmatch or LRCLIB
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: track
+    attributes:
+      label: Artist and track
+      description: Exact artist and track title as shown in your player. Without this there is nothing to reproduce against.
+      placeholder: "Justin Bieber, Hold Tight"
+    validations:
+      required: true
+
+  - type: textarea
+    id: comparison
+    attributes:
+      label: What you see versus what should be shown
+      description: The line displayed on screen compared to what should be showing at that moment.
+      value: |
+        Line shown on screen:
+        Line that should be showing:
+        Approximate timestamp:
+    validations:
+      required: true
+
+  - type: dropdown
+    id: player
+    attributes:
+      label: What was playing it
+      options:
+        - Spotify
+        - Tidal
+        - KDE Connect
+        - Something else
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Settings, then About. Or the version of the release you installed.
+      placeholder: "1.4.0"
+    validations:
+      required: true
+
+  - type: input
+    id: phone
+    attributes:
+      label: Phone
+      placeholder: "Samsung Galaxy S25 Ultra"
+
+  - type: textarea
+    id: custom_lrc
+    attributes:
+      label: Custom LRC text
+      description: Optional. If you pasted your own LRC into Edit Synced Lyrics and the app ignored it, paste that LRC here.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logcat
+      description: Optional, but helps verify fetch results and timing callbacks. Run this command while playback is active.
+      value: |
+        <details>
+        <summary>adb logcat -s Wallpaper:V LyricsManager:V MediaObserver:V WP-Drift:V WallpaperDemo:V</summary>
+
+        ```
+        paste here
+        ```
+
+        </details>

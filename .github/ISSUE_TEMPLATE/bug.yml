@@ -2,6 +2,19 @@ name: Bug
 description: Something the wallpaper does that it should not
 labels: [bug]
 body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the wallpaper is affected
+      options:
+        - Background or colour
+        - Lyrics or timing
+        - Player detection or notification controls
+        - Something else
+    validations:
+      required: true
+
   - type: textarea
     id: what
     attributes:
@@ -17,6 +30,20 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How to trigger the problem. State whether it happens every time or intermittently.
+      value: |
+        1.
+        2.
+        3.
+
+        Frequency (every time or intermittently):
+    validations:
+      required: true
+
   - type: input
     id: version
     attributes:
@@ -26,21 +53,12 @@ body:
     validations:
       required: true
 
-  - type: dropdown
+  - type: input
     id: android
     attributes:
       label: Android version
-      description: Below 13 there is no shader, so the background is gradient meshes and looks different on purpose.
-      options:
-        - "8"
-        - "9"
-        - "10"
-        - "11"
-        - "12"
-        - "13"
-        - "14"
-        - "15"
-        - "16"
+      description: Android 8 or newer. Below 13 there is no RuntimeShader, so the background falls back to gradient meshes and looks different on purpose.
+      placeholder: "14"
     validations:
       required: true
 
@@ -69,7 +87,7 @@ body:
     id: track
     attributes:
       label: Artist and track
-      description: Only if it is a lyrics, timing or background colour problem. Without the exact track there is nothing to reproduce against.
+      description: Only if this is a background colour, artwork, or song-specific problem.
       placeholder: "Justin Bieber, Hold Tight"
 
   - type: checkboxes
@@ -78,9 +96,9 @@ body:
       label: Setup
       description: Most reports that turn out not to be bugs are one of these three. Check what is actually on.
       options:
-        - label: Notification access is granted to Wallpaper Lyrics
-        - label: Battery usage is set to Unrestricted
-        - label: If Spotify, Device Broadcast Status is on inside Spotify's settings
+        - label: Notification access is granted (checked in Wallpaper Lyrics, shows "Granted")
+        - label: Battery usage is set to Unrestricted (checked in Wallpaper Lyrics, shows "Unrestricted")
+        - label: If using Spotify, Device Broadcast Status is enabled inside Spotify settings
 
   - type: textarea
     id: logs
@@ -89,7 +107,7 @@ body:
       description: Optional, and the fastest way to get this fixed. Plug the phone in and run the command below while the problem is on screen.
       value: |
         <details>
-        <summary>adb logcat -s WallpaperLyrics:V LyricsManager:V</summary>
+        <summary>adb logcat -s Wallpaper:V LyricsManager:V MediaObserver:V WP-Drift:V WallpaperDemo:V</summary>
 
         ```
         paste here
