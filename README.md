@@ -51,7 +51,7 @@ adb install -r wallpaper-lyrics_2.0.0.apk
 ```
 
 > [!WARNING]
-> Builds are signed with the Android debug key. That is fine for sideloading and it is the only way this ships, but the signature is not stable across builds, so an update may want an uninstall first.
+> Releases are signed with a debug key. That is fine for sideloading and it is the only way this ships. Every release has used the same key, so a new version installs over the old one. An APK you build yourself carries your own debug key and will not install over a release until you uninstall it.
 
 ## Setup
 
