@@ -7,6 +7,19 @@ body:
       value: |
         This is a wallpaper, not an app you sit in. Anything that needs you to open it and tap around is probably the wrong shape for it, so say what you want to happen on the home screen.
 
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the wallpaper this feature relates to
+      options:
+        - Background or colour
+        - Lyrics or timing
+        - Player detection or notification controls
+        - Something else
+    validations:
+      required: true
+
   - type: textarea
     id: what
     attributes:
