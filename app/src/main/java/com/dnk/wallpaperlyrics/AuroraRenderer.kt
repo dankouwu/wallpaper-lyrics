@@ -23,6 +23,9 @@ object AuroraRenderer {
     private const val DEPTH_CHROMA_FLOOR_LOW = 0.010f
     private const val DEPTH_CHROMA_FLOOR_HIGH = 0.030f
     private const val CHROMA_KNEE = 0.70f
+    private const val LIGHTNESS_CAP_KNEE = 0.62f
+    private const val LIGHTNESS_CAP_CEILING = 0.76f
+    private const val LIGHTNESS_CAP_STRENGTH = 0.5f
 
     fun drawAurora(
         canvas: Canvas,
@@ -555,6 +558,80 @@ object AuroraRenderer {
                 pixels[index] = boostChromaColor(pixels[index], boost, dither)
             }
         }
+    }
+
+    // Caps bright backgrounds so white lyrics stay legible against white covers without clipping contrast in darker scenes.
+    // Uses a soft exponential knee above 0.62 to prevent harsh luminance boundaries on gradients.
+    fun capLightness(target: Bitmap) {
+        val w = target.width
+        val h = target.height
+        val pixels = IntArray(w * h)
+        target.getPixels(pixels, 0, w, 0, 0, w, h)
+        capLightness(pixels, w, h)
+        target.setPixels(pixels, 0, w, 0, 0, w, h)
+    }
+
+    internal fun capLightness(pixels: IntArray, width: Int, height: Int) {
+        for (y in 0 until height) {
+            val rowOffset = y * width
+            val bayerRow = (y and 7) shl 3
+            for (x in 0 until width) {
+                val dither = BAYER_8X8[bayerRow or (x and 7)]
+                val index = rowOffset + x
+                pixels[index] = capLightnessColor(pixels[index], dither)
+            }
+        }
+    }
+
+    internal fun capLightnessColor(color: Int): Int = capLightnessColor(color, 0f)
+
+    internal fun capLightnessColor(color: Int, dither: Float): Int {
+        val alpha = color and 0xFF000000.toInt()
+        val rByte = (color shr 16) and 0xFF
+        val gByte = (color shr 8) and 0xFF
+        val bByte = color and 0xFF
+
+        val rLin = srgbToLinearTable[rByte]
+        val gLin = srgbToLinearTable[gByte]
+        val bLin = srgbToLinearTable[bByte]
+
+        val l = 0.4122214708f * rLin + 0.5363325363f * gLin + 0.0514459929f * bLin
+        val m = 0.2119034982f * rLin + 0.6806995451f * gLin + 0.1073969566f * bLin
+        val s = 0.0883024619f * rLin + 0.2817188376f * gLin + 0.6299787005f * bLin
+
+        val l_ = Math.cbrt(l.toDouble()).toFloat()
+        val m_ = Math.cbrt(m.toDouble()).toFloat()
+        val s_ = Math.cbrt(s.toDouble()).toFloat()
+
+        val L = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_
+        if (L <= LIGHTNESS_CAP_KNEE) {
+            return color
+        }
+
+        val a = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_
+        val b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_
+
+        val range = LIGHTNESS_CAP_CEILING - LIGHTNESS_CAP_KNEE
+        val cappedL = LIGHTNESS_CAP_KNEE + range * (1f - Math.exp(-((L - LIGHTNESS_CAP_KNEE) / range).toDouble()).toFloat())
+        val blendedL = L - LIGHTNESS_CAP_STRENGTH * (L - cappedL)
+
+        val finalL_ = blendedL + 0.3963377774f * a + 0.2158037573f * b
+        val finalM_ = blendedL - 0.1055613458f * a - 0.0638541728f * b
+        val finalS_ = blendedL - 0.0894841775f * a - 1.2914855480f * b
+
+        val finalL = finalL_ * finalL_ * finalL_
+        val finalM = finalM_ * finalM_ * finalM_
+        val finalS = finalS_ * finalS_ * finalS_
+
+        val rOutLin = +4.0767416621f * finalL - 3.3077115913f * finalM + 0.2309699292f * finalS
+        val gOutLin = -1.2684380046f * finalL + 2.6097574011f * finalM - 0.3413193965f * finalS
+        val bOutLin = -0.0041960863f * finalL - 0.7034186147f * finalM + 1.7076147010f * finalS
+
+        val outR = Math.round(linearToSrgb(rOutLin) * 255f + dither).coerceIn(0, 255)
+        val outG = Math.round(linearToSrgb(gOutLin) * 255f + dither).coerceIn(0, 255)
+        val outB = Math.round(linearToSrgb(bOutLin) * 255f + dither).coerceIn(0, 255)
+
+        return alpha or (outR shl 16) or (outG shl 8) or outB
     }
 
     private fun linearToSrgb(c: Float): Float {

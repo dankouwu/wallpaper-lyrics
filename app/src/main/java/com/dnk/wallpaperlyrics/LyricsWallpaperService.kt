@@ -1399,6 +1399,7 @@ class LyricsWallpaperService : WallpaperService() {
                     preprocessed.recycle()
                     firstPass.recycle()
                     AuroraRenderer.boostChroma(secondPass, AuroraRenderer.BACKGROUND_CHROMA_BOOST)
+                    AuroraRenderer.capLightness(secondPass)
                     secondPass
                 }
                 
