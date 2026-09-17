@@ -26,8 +26,6 @@ jobs:
       - name: Assemble debug APK
         run: ./gradlew assembleDebug
 
-      # No APK artifact here on purpose. Release builds from the tag workflow are
-      # the only ones anyone should be installing.
       - name: Upload test report on failure
         if: failure()
         uses: actions/upload-artifact@v7
