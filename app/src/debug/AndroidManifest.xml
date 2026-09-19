@@ -1,19 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-
     <application>
         <activity
             android:name=".DebugWallpaperCaptureActivity"
             android:excludeFromRecents="true"
             android:exported="true"
             android:theme="@style/Theme.WallpaperCapture" />
-        <activity
-            android:name=".DebugVisualizerProbeActivity"
-            android:exported="false"
-            android:label="Visualizer Probe"
-            android:screenOrientation="portrait"
-            android:theme="@android:style/Theme.Material.NoActionBar" />
         <activity
             android:name=".DebugTuningActivity"
             android:exported="false"
