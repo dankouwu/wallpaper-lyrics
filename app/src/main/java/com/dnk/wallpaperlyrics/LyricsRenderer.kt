@@ -279,9 +279,10 @@ object LyricsRenderer {
                 codePointEnds,
                 codePointIndices,
                 codePointCount,
-                SyllableAnimator.usesPerLetterMotion(wordDurationMs, codePointCount),
+                wordDurationMs,
                 relativeXs,
-                measuredAdvance
+                measuredAdvance,
+                paint.textSize
             ),
             partStart,
             partEnd,
@@ -347,6 +348,34 @@ object LyricsRenderer {
         return Pair(topShader, bottomShader)
     }
 
+    fun getInstrumentalDotFocus(
+        progress: Float,
+        dotIndex: Int,
+        dotCount: Int,
+        dotOverlap: Float = 0f
+    ): Float {
+        if (dotCount <= 0 || dotIndex < 0 || dotIndex >= dotCount) return 0.0f
+        if (progress.isNaN() || dotOverlap.isNaN()) return 0.0f
+        val p = progress.coerceIn(0f, 1f)
+        val overlap = dotOverlap.coerceIn(0f, 100f)
+
+        val countF = dotCount.toFloat()
+        val centre = (dotIndex.toFloat() + 0.5f) / countF
+        val halfWidth = (1f + overlap / 100f) / (2f * countF)
+
+        val wStart = Math.max(0f, centre - halfWidth)
+        val wEnd = Math.min(1f, centre + halfWidth)
+
+        if (p <= wStart || p >= wEnd) return 0.0f
+
+        val t = if (p <= centre) {
+            (p - wStart) / (centre - wStart)
+        } else {
+            (wEnd - p) / (wEnd - centre)
+        }
+        return t * t * (3f - 2f * t)
+    }
+
     fun drawInstrumentalProgress(
         canvas: Canvas,
         layout: StaticLayout,
@@ -354,7 +383,10 @@ object LyricsRenderer {
         position: Long,
         line: LyricLine
     ) {
-        val dotCount = 3
+        val dotCount = Tuning.dotCount.coerceIn(1, 8)
+        val dotScalePeak = Tuning.dotScalePeak
+        val dotLiftFraction = Tuning.dotLiftFraction
+        val dotOverlap = Tuning.dotOverlap
         val dotSpacing = 36f
         val dotRadius = 7f
         val totalWidth = (dotCount - 1) * dotSpacing
@@ -368,14 +400,13 @@ object LyricsRenderer {
         val paint = dotPaint
 
         for (i in 0 until dotCount) {
-            val centerProgress = (i + 1).toFloat() / (dotCount + 1)
-            val dist = Math.abs(progress - centerProgress) * (dotCount + 1)
-            val focus = (1.0f - dist).coerceIn(0.0f, 1.0f)
+            val focus = getInstrumentalDotFocus(progress, i, dotCount, dotOverlap)
             val alpha = (100 + (155 * focus)).toInt()
-            val scale = 1.0f + (0.4f * focus)
+            val scale = 1.0f + ((dotScalePeak - 1.0f) * focus)
+            val lift = dotRadius * dotLiftFraction * focus
 
             paint.alpha = (alpha * groupAlpha).toInt()
-            canvas.drawCircle(startX + i * dotSpacing, dotY, dotRadius * scale, paint)
+            canvas.drawCircle(startX + i * dotSpacing, dotY - lift, dotRadius * scale, paint)
         }
     }
 

@@ -23,6 +23,7 @@ class MediaObserver(
     private var lastActivePlaybackState: Int = PlaybackState.STATE_NONE
     private var currentControllers: List<MediaController> = emptyList()
     private val watchedSessions = mutableMapOf<MediaSession.Token, WatchedSession>()
+    private val everPlayedTokens = mutableSetOf<MediaSession.Token>()
     private val handler = Handler(Looper.getMainLooper())
     private val componentName = ComponentName(context, NotificationService::class.java)
 
@@ -86,6 +87,7 @@ class MediaObserver(
                 controller.unregisterCallback(this)
             } catch (e: Exception) {}
             watchedSessions.remove(controller.sessionToken)
+            everPlayedTokens.remove(controller.sessionToken)
             currentControllers = currentControllers.filter { it.sessionToken != controller.sessionToken }
         }
     }
@@ -145,6 +147,14 @@ class MediaObserver(
         val controllersList = controllers ?: emptyList()
         currentControllers = controllersList
 
+        val currentTokens = controllersList.map { it.sessionToken }.toSet()
+        everPlayedTokens.retainAll(currentTokens)
+        for (controller in controllersList) {
+            if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) {
+                everPlayedTokens.add(controller.sessionToken)
+            }
+        }
+
         val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         val preferred = prefs.getString("preferred_media_player", "default") ?: "default"
 
@@ -156,7 +166,8 @@ class MediaObserver(
                 packageName = controller.packageName,
                 hasUsableMetadata = !title.isNullOrBlank(),
                 playbackState = state,
-                isCurrent = controller.sessionToken == activeController?.sessionToken
+                isCurrent = controller.sessionToken == activeController?.sessionToken,
+                hasEverPlayed = controller.sessionToken in everPlayedTokens
             )
         }
         val chosen = MediaSessionChoice.choose(candidates, preferred)

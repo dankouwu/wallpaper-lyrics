@@ -10,6 +10,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -482,6 +483,34 @@ object LyricsSettings {
         private val trackRect = RectF()
         private val activeTrackRect = RectF()
 
+        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+        private var downX = 0f
+        private var downY = 0f
+        private var isDragging = false
+        private var isVerticalScroll = false
+
+        enum class DragDecision {
+            UNDECIDED,
+            HORIZONTAL,
+            VERTICAL
+        }
+
+        companion object {
+            // Evaluates gesture direction against touch slop to prevent vertical parent scroll hijacking.
+            fun decideDrag(dx: Float, dy: Float, touchSlop: Float): DragDecision {
+                val absDx = Math.abs(dx)
+                val absDy = Math.abs(dy)
+                if (absDx < touchSlop && absDy < touchSlop) {
+                    return DragDecision.UNDECIDED
+                }
+                return if (absDx > absDy) DragDecision.HORIZONTAL else DragDecision.VERTICAL
+            }
+
+            fun isPredominantlyHorizontal(dx: Float, dy: Float, touchSlop: Float): Boolean {
+                return decideDrag(dx, dy, touchSlop) == DragDecision.HORIZONTAL
+            }
+        }
+
         private fun updateProgress(value: Int, fromUser: Boolean) {
             val clamped = value.coerceIn(0, max)
             if (currentProgress != clamped) {
@@ -541,21 +570,53 @@ object LyricsSettings {
 
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    updateProgressFromTouch(event.x)
+                    downX = event.x
+                    downY = event.y
+                    isDragging = false
+                    isVerticalScroll = false
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    updateProgressFromTouch(event.x)
-                    return true
+                    if (isVerticalScroll) {
+                        return false
+                    }
+                    if (isDragging) {
+                        updateProgressFromTouch(event.x)
+                        return true
+                    }
+                    val dx = event.x - downX
+                    val dy = event.y - downY
+                    when (decideDrag(dx, dy, touchSlop.toFloat())) {
+                        DragDecision.HORIZONTAL -> {
+                            isDragging = true
+                            parent?.requestDisallowInterceptTouchEvent(true)
+                            updateProgressFromTouch(event.x)
+                            return true
+                        }
+                        DragDecision.VERTICAL -> {
+                            isVerticalScroll = true
+                            return false
+                        }
+                        DragDecision.UNDECIDED -> {
+                            return true
+                        }
+                    }
                 }
                 MotionEvent.ACTION_UP -> {
-                    updateProgressFromTouch(event.x)
+                    val wasVertical = isVerticalScroll
+                    isDragging = false
+                    isVerticalScroll = false
                     parent?.requestDisallowInterceptTouchEvent(false)
+                    if (wasVertical) {
+                        return false
+                    }
+                    updateProgressFromTouch(event.x)
                     performClick()
                     return true
                 }
                 MotionEvent.ACTION_CANCEL -> {
+                    isDragging = false
+                    isVerticalScroll = false
                     parent?.requestDisallowInterceptTouchEvent(false)
                     return true
                 }

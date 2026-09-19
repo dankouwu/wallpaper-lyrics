@@ -51,31 +51,21 @@ data class SearchResult(
     val syncedLyrics: String?
 )
 
-class LyricsManager(private val context: Context) {
+class LyricsManager(
+    private val context: Context,
+    val storage: LyricsStorage = LyricsStorage.forContext(context)
+) {
     val client = OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .build()
     private val gson = Gson()
-    private val cacheDir = File(context.cacheDir, "lyrics_cache").apply { mkdirs() }
 
     /** SHA-256 hex digest. hashCode() collides often enough to cross cache entries. */
-    private fun sha256(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(input.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
-    }
+    private fun sha256(input: String): String = LyricsStorage.sha256(input)
 
     fun deleteCacheFor(title: String, artist: String) {
-        val cacheKey = sha256("${title}_$artist")
-        val cacheFile = File(cacheDir, "$cacheKey.json")
-        val missFile = File(cacheDir, "$cacheKey.miss")
-        try {
-            if (cacheFile.exists()) cacheFile.delete()
-            if (missFile.exists()) missFile.delete()
-        } catch (e: Exception) {
-            Log.e("LyricsManager", "Failed to delete cache for $title - $artist", e)
-        }
+        storage.deleteCacheFor(title, artist)
     }
 
     companion object {
@@ -92,7 +82,37 @@ class LyricsManager(private val context: Context) {
             return String.format("%02d:%02d.%02d", minutes, seconds, centiseconds)
         }
 
-        fun parseLrcText(lrcText: String, durationMs: Long? = null): List<LyricLine>? {
+        fun renderLrc(lines: List<LyricLine>): String {
+            val sb = StringBuilder()
+            for (line in lines) {
+                if (line.isInstrumental && line.content == "♪") continue
+                val lineTimeStr = formatTime(line.startTime)
+                val words = line.words
+                val hasRealWords = words != null && words.isNotEmpty() && words.any { !it.isEstimated }
+                if (hasRealWords && words != null) {
+                    val lineSb = StringBuilder()
+                    lineSb.append("[$lineTimeStr]")
+                    for (index in words.indices) {
+                        val word = words[index]
+                        lineSb.append("<${formatTime(word.startTime)}>${word.text}")
+                        val nextWord = if (index < words.size - 1) words[index + 1] else null
+                        if (nextWord == null || word.endTime != nextWord.startTime) {
+                            lineSb.append("<${formatTime(word.endTime)}>")
+                        }
+                    }
+                    sb.append(lineSb.toString()).append("\n")
+                } else {
+                    sb.append("[$lineTimeStr] ${line.content}\n")
+                }
+            }
+            return sb.toString().trim()
+        }
+
+        fun parseLrcText(
+            lrcText: String,
+            durationMs: Long? = null,
+            isAuthoritative: Boolean = false
+        ): List<LyricLine>? {
             val rawLines = mutableListOf<LyricLine>()
             val lineRegex = Regex("\\[(\\d+):(\\d+)\\.(\\d+)\\](.*)")
             
@@ -195,8 +215,12 @@ class LyricsManager(private val context: Context) {
                                     val endIndex = sb.length
                                     
                                     val wordDuration = word.endTime - word.startTime
+                                    // Clamps excessively long word durations from provider data where a word's
+                                    // end time extends across long pauses to the next word, preventing words
+                                    // from remaining highlighted for seconds. Hand-edited lyrics bypass this
+                                    // heuristic because user-supplied timings are authoritative.
                                     val estimatedWordDuration = (trimmedText.length * 120L + 150L).coerceIn(200L, 800L)
-                                    val finalWordEndTime = if (wordDuration > estimatedWordDuration && word.endTime > word.startTime) {
+                                    val finalWordEndTime = if (!isAuthoritative && wordDuration > estimatedWordDuration && word.endTime > word.startTime) {
                                         word.startTime + estimatedWordDuration
                                     } else {
                                         word.endTime
@@ -430,29 +454,26 @@ class LyricsManager(private val context: Context) {
      * failures (offline, 429, 5xx) where the caller's watchdog may retry later.
      */
     fun fetchLyrics(title: String, artist: String, durationMs: Long, callback: (List<LyricLine>?, Boolean) -> Unit) {
-        val cacheKey = sha256("${title}_$artist")
-        val cacheFile = File(cacheDir, "$cacheKey.json")
-        val missFile = File(cacheDir, "$cacheKey.miss")
-
-        if (cacheFile.exists()) {
-            try {
-                val json = cacheFile.readText()
-                val lines = gson.fromJson(json, Array<LyricLine>::class.java).toList()
-                callback(lines, true)
+        when (val resolution = storage.resolveLyrics(title, artist)) {
+            is LyricsResolution.Override -> {
+                callback(resolution.lines, true)
                 return
-            } catch (e: Exception) {
-                cacheFile.delete()
             }
-        }
-
-        if (missFile.exists()) {
-            val stamp = try { missFile.readText().toLongOrNull() } catch (e: Exception) { null } ?: 0L
-            if (System.currentTimeMillis() - stamp < MISS_TTL_MS) {
+            is LyricsResolution.Cached -> {
+                callback(resolution.lines, true)
+                return
+            }
+            is LyricsResolution.Miss -> {
                 callback(null, true)
                 return
             }
-            missFile.delete()
+            is LyricsResolution.NeedsFetch -> {
+                // Handled by network fetch ladder below
+            }
         }
+
+        val cacheFile = storage.getCacheFile(title, artist)
+        val missFile = storage.getMissFile(title, artist)
 
         val candidates = TrackQuery.buildQueries(title, artist)
         if (candidates.isEmpty()) {
@@ -513,7 +534,10 @@ class LyricsManager(private val context: Context) {
                                     
                                     val parsedLines = parseLrcText(lyricsText, durationMs)
                                     if (parsedLines != null) {
-                                        try { cacheFile.writeText(gson.toJson(parsedLines)) } catch (ex: Exception) {}
+                                        try {
+                                            cacheFile.writeText(gson.toJson(parsedLines))
+                                            storage.evictOldEntries()
+                                        } catch (ex: Exception) {}
                                         showToast("Custom provider lyrics loaded!")
                                         callback(parsedLines, true)
                                         return
@@ -699,7 +723,10 @@ class LyricsManager(private val context: Context) {
                                 if (parsedRichsync != null) {
                                     val parsedLines = parseLrcText(parsedRichsync, durationMs)
                                     if (parsedLines != null) {
-                                        try { cacheFile.writeText(gson.toJson(parsedLines)) } catch (ex: Exception) {}
+                                        try {
+                                            cacheFile.writeText(gson.toJson(parsedLines))
+                                            storage.evictOldEntries()
+                                        } catch (ex: Exception) {}
                                         showToast("Musixmatch word-synced lyrics loaded!")
                                         callback(parsedLines, true)
                                         return
@@ -752,10 +779,13 @@ class LyricsManager(private val context: Context) {
                             val subtitleObj = message?.getAsJsonObject("body")?.getAsJsonObject("subtitle")
                             val subtitleBody = subtitleObj?.get("subtitle_body")?.asString
                             if (subtitleBody != null) {
-                                val parsedLines = parseLrcText(subtitleBody, durationMs)
-                                if (parsedLines != null) {
-                                    try { cacheFile.writeText(gson.toJson(parsedLines)) } catch (ex: Exception) {}
-                                    showToast("Musixmatch lyrics loaded!")
+                                 val parsedLines = parseLrcText(subtitleBody, durationMs)
+                                 if (parsedLines != null) {
+                                     try {
+                                         cacheFile.writeText(gson.toJson(parsedLines))
+                                         storage.evictOldEntries()
+                                     } catch (ex: Exception) {}
+                                     showToast("Musixmatch lyrics loaded!")
                                     callback(parsedLines, true)
                                     return
                                 }
@@ -844,10 +874,16 @@ class LyricsManager(private val context: Context) {
                 } else null
 
                 if (lines != null) {
-                    try { cacheFile.writeText(gson.toJson(lines)) } catch (e: Exception) {}
+                    try {
+                        cacheFile.writeText(gson.toJson(lines))
+                        storage.evictOldEntries()
+                    } catch (e: Exception) {}
                     callback(lines, true)
                 } else {
-                    try { missFile.writeText(System.currentTimeMillis().toString()) } catch (e: Exception) {}
+                    try {
+                        missFile.writeText(System.currentTimeMillis().toString())
+                        storage.cleanupExpiredMisses()
+                    } catch (e: Exception) {}
                     callback(null, true)
                 }
             }

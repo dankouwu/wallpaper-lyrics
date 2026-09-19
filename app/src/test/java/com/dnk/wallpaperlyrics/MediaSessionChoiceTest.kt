@@ -170,7 +170,19 @@ class MediaSessionChoiceTest {
     }
 
     @Test
-    fun `first survivor is chosen when candidates have equal priority`() {
+    fun `stopped playback tie between known music packages with usable metadata is deterministic regardless of ordering`() {
+        val stoppedSpotify = Candidate("com.spotify.music", hasUsableMetadata = true, playbackState = 2, isCurrent = false)
+        val stoppedTidal = Candidate("com.aspiro.tidal", hasUsableMetadata = true, playbackState = 2, isCurrent = false)
+
+        val resultForward = MediaSessionChoice.choose(listOf(stoppedSpotify, stoppedTidal), "default")
+        val resultReverse = MediaSessionChoice.choose(listOf(stoppedTidal, stoppedSpotify), "default")
+
+        assertEquals(stoppedSpotify, resultForward)
+        assertEquals(stoppedSpotify, resultReverse)
+    }
+
+    @Test
+    fun `candidates with equal priority are deterministically resolved by package name regardless of order`() {
         val spotify = Candidate("com.spotify.music", hasUsableMetadata = true, playbackState = MediaSessionChoice.STATE_PLAYING)
         val tidal = Candidate("com.aspiro.tidal", hasUsableMetadata = true, playbackState = MediaSessionChoice.STATE_PLAYING)
 
@@ -178,7 +190,26 @@ class MediaSessionChoiceTest {
         assertEquals(spotify, result)
 
         val resultReverse = MediaSessionChoice.choose(listOf(tidal, spotify), "default")
-        assertEquals(tidal, resultReverse)
+        assertEquals(spotify, resultReverse)
+    }
+
+    @Test
+    fun `stopped playback tie returns same winner for any candidate permutation`() {
+        val candidateA = Candidate("com.player.a", hasUsableMetadata = true, playbackState = 2, isCurrent = false)
+        val candidateB = Candidate("com.player.b", hasUsableMetadata = true, playbackState = 2, isCurrent = false)
+        val candidateC = Candidate("com.player.c", hasUsableMetadata = true, playbackState = 2, isCurrent = false)
+
+        val list1 = listOf(candidateA, candidateB, candidateC)
+        val list2 = listOf(candidateC, candidateA, candidateB)
+        val list3 = listOf(candidateB, candidateC, candidateA)
+
+        val winner1 = MediaSessionChoice.choose(list1, "default")
+        val winner2 = MediaSessionChoice.choose(list2, "default")
+        val winner3 = MediaSessionChoice.choose(list3, "default")
+
+        assertEquals(candidateC, winner1)
+        assertEquals(candidateC, winner2)
+        assertEquals(candidateC, winner3)
     }
 
     @Test
@@ -233,6 +264,66 @@ class MediaSessionChoiceTest {
 
         val result = MediaSessionChoice.choose(listOf(playingOther, playingCurrent), "default")
         assertEquals(playingCurrent, result)
+    }
+
+    @Test
+    fun `single candidate that has never played returns null regardless of playback state and metadata`() {
+        val candidate = Candidate(
+            "com.spotify.music",
+            hasUsableMetadata = true,
+            playbackState = MediaSessionChoice.STATE_PLAYING,
+            hasEverPlayed = false
+        )
+
+        val result = MediaSessionChoice.choose(listOf(candidate), "default")
+        assertNull(result)
+    }
+
+    @Test
+    fun `list where every candidate has never played returns null`() {
+        val first = Candidate("com.spotify.music", hasUsableMetadata = true, playbackState = MediaSessionChoice.STATE_PLAYING, hasEverPlayed = false)
+        val second = Candidate("com.aspiro.tidal", hasUsableMetadata = true, playbackState = MediaSessionChoice.STATE_PLAYING, hasEverPlayed = false)
+
+        val result = MediaSessionChoice.choose(listOf(first, second), "default")
+        assertNull(result)
+    }
+
+    @Test
+    fun `given one never played candidate with usable metadata and one played candidate choose returns played one`() {
+        val neverPlayed = Candidate("com.spotify.music", hasUsableMetadata = true, playbackState = MediaSessionChoice.STATE_PLAYING, hasEverPlayed = false)
+        val played = Candidate("com.generic.player", hasUsableMetadata = false, playbackState = 2, hasEverPlayed = true)
+
+        val resultForward = MediaSessionChoice.choose(listOf(neverPlayed, played), "default")
+        assertEquals(played, resultForward)
+
+        val resultReverse = MediaSessionChoice.choose(listOf(played, neverPlayed), "default")
+        assertEquals(played, resultReverse)
+    }
+
+    @Test
+    fun `candidate with hasEverPlayed true and state none is still chosen when only candidate`() {
+        val idlePlayed = Candidate("com.spotify.music", hasUsableMetadata = false, playbackState = MediaSessionChoice.STATE_NONE, hasEverPlayed = true)
+
+        val result = MediaSessionChoice.choose(listOf(idlePlayed), "default")
+        assertEquals(idlePlayed, result)
+    }
+
+    @Test
+    fun `existing ranking is unchanged when every candidate has played`() {
+        val pausedWithMeta = Candidate("com.spotify.music", hasUsableMetadata = true, playbackState = 2, hasEverPlayed = true)
+        val playingNoMeta = Candidate("com.spotify.music", hasUsableMetadata = false, playbackState = MediaSessionChoice.STATE_PLAYING, hasEverPlayed = true)
+
+        val resultForward = MediaSessionChoice.choose(listOf(playingNoMeta, pausedWithMeta), "default")
+        assertEquals(pausedWithMeta, resultForward)
+
+        val resultReverse = MediaSessionChoice.choose(listOf(pausedWithMeta, playingNoMeta), "default")
+        assertEquals(pausedWithMeta, resultReverse)
+
+        val pausedSpotify = Candidate("com.spotify.music", hasUsableMetadata = true, playbackState = 2, isCurrent = true, hasEverPlayed = true)
+        val playingGeneric = Candidate("com.generic.player", hasUsableMetadata = true, playbackState = MediaSessionChoice.STATE_PLAYING, isCurrent = false, hasEverPlayed = true)
+
+        val resultPlayingBeatsPaused = MediaSessionChoice.choose(listOf(pausedSpotify, playingGeneric), "default")
+        assertEquals(playingGeneric, resultPlayingBeatsPaused)
     }
 }
 

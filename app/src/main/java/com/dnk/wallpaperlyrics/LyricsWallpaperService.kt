@@ -1,5 +1,7 @@
 package com.dnk.wallpaperlyrics
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.*
 import android.app.WallpaperColors
 import android.content.ComponentName
@@ -38,16 +40,17 @@ class LyricsWallpaperService : WallpaperService() {
         private const val BLUR_SHADER = """
             uniform shader content;
             uniform float2 uRes;
+            uniform float u_edge_falloff;
             
             vec4 main(vec2 fragCoord) {
                 vec2 uv = fragCoord / uRes;
                 float dist = 0.0;
                 
-                // Calculate blur strength based on Y position (top 22% and bottom 22%)
-                if (uv.y < 0.22) {
-                    dist = (0.22 - uv.y) / 0.22;
-                } else if (uv.y > 0.78) {
-                    dist = (uv.y - 0.78) / 0.22;
+                // Calculate blur strength based on Y position (top and bottom falloff band)
+                if (uv.y < u_edge_falloff) {
+                    dist = (u_edge_falloff - uv.y) / u_edge_falloff;
+                } else if (uv.y > (1.0 - u_edge_falloff)) {
+                    dist = (uv.y - (1.0 - u_edge_falloff)) / u_edge_falloff;
                 }
                 
                 if (dist <= 0.0) return content.eval(fragCoord);
@@ -85,6 +88,7 @@ class LyricsWallpaperService : WallpaperService() {
             uniform float u_static_bg;
             uniform float u_tex_scale;
             uniform float2 u_tex_offset;
+            uniform float u_vignette;
 
             float ign(float2 p) {
                 return fract(52.9829189 * fract(dot(p, float2(0.06711056, 0.00583715))));
@@ -176,7 +180,7 @@ class LyricsWallpaperService : WallpaperService() {
 
                 half4 color = mix(colorCurrent, colorNext, u_blend);
 
-                float vignette = 1.0 - dot(center, center) * 0.3;
+                float vignette = 1.0 - dot(center, center) * u_vignette;
                 color.rgb *= vignette;
 
                 // u_time starts at a random offset up to 1000 and grows without bound, so an
@@ -327,10 +331,12 @@ class LyricsWallpaperService : WallpaperService() {
 
         private var prefDynamicTheming = false
         private var prefBgSpeed = 1.0f
+        private var prefBgSaturation = AuroraRenderer.DEFAULT_CHROMA_EXPONENT
         private var prefSyncOffset = 0
         private var songSyncOffset = 0L
         private var prefAlbumCornerRadius = 48f
         private var prefMetadataOnlyMode = false
+        private var prefAodMode = AodMode.METADATA_AND_BACKGROUND
         private var prefStaticBg = false
         private var prefPersistentNotification = false
         private var prefStatusToasts = true
@@ -340,18 +346,43 @@ class LyricsWallpaperService : WallpaperService() {
         private var prefIdleMid = IdleScreenSettings.DEFAULT_MID
         private var prefIdleHighlight = IdleScreenSettings.DEFAULT_HIGHLIGHT
         private var notificationAccessGranted = false
+        private var audioAccessGranted = false
+        private var prefAutoSyncEnabled = false
+        private val autoSyncEstimator = AutoSyncEstimator()
+        private var autoSyncCapture: AutoSyncCapture? = null
+        private var autoSyncEstimationJob: Job? = null
+        private var failedCaptureTitle: String? = null
+        private var failedCaptureArtist: String? = null
+        private var hasLoggedCaptureFailureSkip = false
+        @Volatile private var autoSyncStatus: String? = null
+        @Volatile private var playbackSnapshot = PlaybackSnapshot()
+
+        private fun clearCaptureFailure() {
+            failedCaptureTitle = null
+            failedCaptureArtist = null
+            hasLoggedCaptureFailureSkip = false
+        }
 
         private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             when (key) {
+                AutoSyncSettings.KEY_ENABLED -> {
+                    prefAutoSyncEnabled = prefs.getBoolean(AutoSyncSettings.KEY_ENABLED, false)
+                    clearCaptureFailure()
+                    updateSongSpecificDelay(prefs)
+                    evaluateAutoSyncState()
+                }
                 "dynamic_theming" -> prefDynamicTheming = prefs.getBoolean("dynamic_theming", false)
                 "bg_speed" -> prefBgSpeed = prefs.getFloat("bg_speed", 1.0f)
+                "bg_saturation" -> prefBgSaturation = prefs.getFloat("bg_saturation", Tuning.chromaExponent)
                 "sync_offset" -> prefSyncOffset = prefs.getInt("sync_offset", 0)
                 "album_corner_radius" -> prefAlbumCornerRadius = prefs.getFloat("album_corner_radius", 48f)
                 "preferred_media_player" -> mediaObserver.refresh()
+                AodMode.KEY -> prefAodMode = AodMode.fromPref(prefs.getString(AodMode.KEY, null))
                 "metadata_only_mode" -> {
                     prefMetadataOnlyMode = prefs.getBoolean("metadata_only_mode", false)
                     if (prefMetadataOnlyMode) {
                         currentLyrics = null
+                        evaluateAutoSyncState()
                         lyricBitmaps?.forEach { it.recycle() }
                         lyricBitmaps = null
                         lyricLayouts = null
@@ -363,6 +394,7 @@ class LyricsWallpaperService : WallpaperService() {
                             engineScope.launch {
                                 lyricsSearchExhausted = false
                                 currentLyrics = null
+                                evaluateAutoSyncState()
                                 lyricBitmaps?.forEach { it.recycle() }
                                 lyricBitmaps = null
                                 lyricLayouts = null
@@ -370,6 +402,7 @@ class LyricsWallpaperService : WallpaperService() {
                                 lyricsManager.fetchLyrics(title, artist ?: "", currentDurationMs) { lines, definitive ->
                                     if (currentTitle == title) {
                                         currentLyrics = lines
+                                        evaluateAutoSyncState()
                                         if (lines == null && definitive) lyricsSearchExhausted = true
                                         if (lines != null) showToast("Lyrics synced!")
                                         else if (definitive) showToast("Lyrics unavailable")
@@ -411,19 +444,25 @@ class LyricsWallpaperService : WallpaperService() {
                     }
                 }
                 else -> {
-                    if (key != null && key.startsWith("song_delay_")) {
+                    if (key != null && (key.startsWith("song_delay_") || key.startsWith(AutoSyncSettings.AUTO_OFFSET_PREFIX))) {
                         updateSongSpecificDelay(prefs)
+                        evaluateAutoSyncState()
+                    } else if (key != null && key.startsWith(DeviceOffsets.KEY_PREFIX)) {
+                        updateBluetoothLatency()
                     }
                 }
             }
         }
 
         private fun loadPreferences(prefs: SharedPreferences) {
+            prefAutoSyncEnabled = prefs.getBoolean(AutoSyncSettings.KEY_ENABLED, false)
             prefDynamicTheming = prefs.getBoolean("dynamic_theming", false)
             prefBgSpeed = prefs.getFloat("bg_speed", 1.0f)
+            prefBgSaturation = prefs.getFloat("bg_saturation", Tuning.chromaExponent)
             prefSyncOffset = prefs.getInt("sync_offset", 0)
             prefAlbumCornerRadius = prefs.getFloat("album_corner_radius", 48f)
             prefMetadataOnlyMode = prefs.getBoolean("metadata_only_mode", false)
+            prefAodMode = AodMode.fromPref(prefs.getString(AodMode.KEY, null))
             prefStaticBg = prefs.getBoolean("static_bg", false)
             prefPersistentNotification = prefs.getBoolean("persistent_notification", false)
             prefStatusToasts = prefs.getBoolean(LyricsSettings.KEY_STATUS_TOASTS, true)
@@ -446,7 +485,10 @@ class LyricsWallpaperService : WallpaperService() {
             val title = currentTitle
             val artist = currentArtist
             songSyncOffset = if (!title.isNullOrBlank()) {
-                prefs.getInt("song_delay_${title}_${artist}", 0).toLong()
+                val manual = prefs.getInt(AutoSyncSettings.manualDelayKey(title, artist), 0)
+                val autoKey = AutoSyncSettings.autoOffsetKey(title, artist)
+                val auto = if (prefs.contains(autoKey)) prefs.getInt(autoKey, 0) else null
+                AutoSyncSettings.songOffset(manual, auto, prefAutoSyncEnabled).toLong()
             } else {
                 0L
             }
@@ -712,6 +754,8 @@ class LyricsWallpaperService : WallpaperService() {
                 } else {
                     lastKnownPlaybackPosition = state.position
                 }
+                publishPlaybackSnapshot()
+                evaluateAutoSyncState()
             }
         }
 
@@ -741,6 +785,8 @@ class LyricsWallpaperService : WallpaperService() {
                     } else {
                         lastKnownPlaybackPosition = state.position
                     }
+                    publishPlaybackSnapshot()
+                    evaluateAutoSyncState()
 
                     // Diagnostic log (~every 5s) to trace resync behavior
                     if (now - lastResyncLogTime >= 5000L) {
@@ -775,7 +821,9 @@ class LyricsWallpaperService : WallpaperService() {
             val currentOffset = offsets[currentIndex]
             val prevOffset = if (currentIndex > 0) offsets[currentIndex - 1] else currentOffset
             val glideDistance = Math.abs(currentOffset - prevOffset)
-            val glideDuration = SyllableAnimator.glideDurationMs(glideDistance)
+            val baseGlideMs = Tuning.baseGlideMs
+            val referenceDistancePx = Tuning.referenceDistancePx
+            val glideDuration = SyllableAnimator.glideDurationMs(glideDistance, baseGlideMs, referenceDistancePx)
             
             val entryProgress = ((adjustedPos - lines[currentIndex].startTime) / glideDuration).coerceIn(0f, 1f)
             val easedGlide = SyllableAnimator.easeOutGlide(entryProgress)
@@ -790,8 +838,8 @@ class LyricsWallpaperService : WallpaperService() {
                 when (intent?.action) {
                     Intent.ACTION_SCREEN_OFF -> {
                         isScreenOff = true
-                        viewAlpha = 0.0f
-                        targetViewAlpha = 0.0f
+                        viewAlpha = 1.0f
+                        targetViewAlpha = 1.0f
                         snapScrollToPosition()
                         drawFrame(0f)
                         drawFrame(0f)
@@ -828,6 +876,7 @@ class LyricsWallpaperService : WallpaperService() {
                             }
                             lyricsSearchExhausted = false
                             currentLyrics = null
+                            evaluateAutoSyncState()
                             lyricBitmaps?.forEach { it.recycle() }
                             lyricBitmaps = null
                             lyricLayouts = null
@@ -840,6 +889,7 @@ class LyricsWallpaperService : WallpaperService() {
                             lyricsManager.fetchLyrics(title, artist ?: "", currentDurationMs) { lines, definitive ->
                                 if (currentTitle == title) {
                                     currentLyrics = lines
+                                    evaluateAutoSyncState()
                                     if (lines == null && definitive) lyricsSearchExhausted = true
                                     if (lines != null) showToast("Lyrics re-fetched successfully!")
                                     else if (definitive) showToast("Lyrics unavailable")
@@ -879,6 +929,8 @@ class LyricsWallpaperService : WallpaperService() {
             // metadata transition and a fresh lyrics fetch.
             currentTitle = null
             currentArtist = null
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            TrackResolution.clearTrack(prefs, isPreview)
             currentLyrics = null
             albumArt = null
             albumArtAspect = 1.0f
@@ -936,6 +988,7 @@ class LyricsWallpaperService : WallpaperService() {
                 lyricLayouts = null
                 lineOffsets = null
                 currentLyrics = enhancedLines
+                evaluateAutoSyncState()
                 lyricsSearchExhausted = true
                 debugDemoStartRealtime = SystemClock.elapsedRealtime() - 16_570L
                 Log.i("WallpaperDemo", "Effortless provider result: line-level or unavailable; using manual word-level timing for supplied opening passage")
@@ -958,10 +1011,213 @@ class LyricsWallpaperService : WallpaperService() {
             lastWakeTime = 0L
         }
 
+        private val autoSyncRedetectReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (intent?.action != "com.dnk.wallpaperlyrics.AUTO_SYNC_REDETECT") return
+                Log.i("AutoSync", "Received AUTO_SYNC_REDETECT broadcast")
+                val title = currentTitle ?: return
+                val artist = currentArtist
+                val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                prefs.edit().remove(AutoSyncSettings.autoOffsetKey(title, artist)).apply()
+                updateSongSpecificDelay(prefs)
+                clearCaptureFailure()
+                stopAutoSyncCapture(clearSamples = true)
+                evaluateAutoSyncState()
+            }
+        }
+
+        private fun publishPlaybackSnapshot() {
+            playbackSnapshot = PlaybackSnapshot(
+                positionMs = lastKnownPlaybackPosition,
+                updateTimeRealtimeMs = lastUpdateTime,
+                speed = lastKnownPlaybackSpeed,
+                isPlaying = isPlaying
+            )
+        }
+
+        private fun updateAutoSyncStatus(newStatus: String) {
+            if (autoSyncStatus != newStatus) {
+                autoSyncStatus = newStatus
+                Log.i("AutoSync", "State changed: $newStatus")
+                val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                prefs.edit().putString(AutoSyncSettings.KEY_STATUS, newStatus).apply()
+            }
+        }
+
+        private fun evaluateAutoSyncState() {
+            if (isPreview) return
+
+            val enabled = prefAutoSyncEnabled
+            if (!enabled) {
+                stopAutoSyncCapture(clearSamples = true)
+                updateAutoSyncStatus(AutoSyncLogic.statusOff())
+                return
+            }
+
+            val hasPermission = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            if (!audioAccessGranted && hasPermission) {
+                clearCaptureFailure()
+            }
+            audioAccessGranted = hasPermission
+            if (!hasPermission) {
+                stopAutoSyncCapture(clearSamples = true)
+                updateAutoSyncStatus(AutoSyncLogic.statusAudioAccessNotGranted())
+                return
+            }
+
+            val title = currentTitle
+            val artist = currentArtist
+            if (title.isNullOrBlank()) {
+                stopAutoSyncCapture(clearSamples = true)
+                updateAutoSyncStatus(AutoSyncLogic.statusWaitingForSongWithLyrics())
+                return
+            }
+
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            val manualDelay = prefs.getInt(AutoSyncSettings.manualDelayKey(title, artist), 0)
+            if (manualDelay != 0) {
+                stopAutoSyncCapture(clearSamples = true)
+                updateAutoSyncStatus(AutoSyncLogic.statusUsingManualDelay(title, artist))
+                return
+            }
+
+            val autoKey = AutoSyncSettings.autoOffsetKey(title, artist)
+            val storedAuto = if (prefs.contains(autoKey)) prefs.getInt(autoKey, 0) else null
+            if (storedAuto != null) {
+                stopAutoSyncCapture(clearSamples = true)
+                updateAutoSyncStatus(AutoSyncLogic.statusAlreadyDetected(title, artist, storedAuto))
+                return
+            }
+
+            val lyrics = currentLyrics
+            if (lyrics.isNullOrEmpty()) {
+                stopAutoSyncCapture(clearSamples = true)
+                updateAutoSyncStatus(AutoSyncLogic.statusWaitingForSongWithLyrics())
+                return
+            }
+
+            if (isPlaying) {
+                if (AutoSyncLogic.isCaptureBlocked(title, artist, failedCaptureTitle, failedCaptureArtist)) {
+                    if (!hasLoggedCaptureFailureSkip) {
+                        hasLoggedCaptureFailureSkip = true
+                        Log.i("AutoSync", "Skipping capture: previously failed for ${AutoSyncLogic.formatSong(title, artist)}")
+                    }
+                    return
+                }
+                startAutoSyncCapture(title, artist)
+            }
+        }
+
+        private fun startAutoSyncCapture(title: String, artist: String?) {
+            if (autoSyncCapture?.isCapturing() == true) {
+                return
+            }
+            Log.i("AutoSync", "Starting capture for ${AutoSyncLogic.formatSong(title, artist)}")
+            autoSyncEstimator.clear()
+            val capture = AutoSyncCapture(
+                estimator = autoSyncEstimator,
+                snapshotProvider = { playbackSnapshot },
+                onFailure = { reason ->
+                    mainHandler.post {
+                        failedCaptureTitle = title
+                        failedCaptureArtist = artist
+                        hasLoggedCaptureFailureSkip = false
+                        stopAutoSyncCapture(clearSamples = true)
+                        updateAutoSyncStatus(AutoSyncLogic.statusAudioCaptureFailed(reason))
+                    }
+                }
+            )
+            autoSyncCapture = capture
+            val started = capture.start()
+            if (started) {
+                clearCaptureFailure()
+                updateAutoSyncStatus(AutoSyncLogic.statusListening(title, artist))
+                startAutoSyncEstimation(title, artist)
+            }
+        }
+
+        private fun stopAutoSyncCapture(clearSamples: Boolean = false) {
+            autoSyncEstimationJob?.cancel()
+            autoSyncEstimationJob = null
+            autoSyncCapture?.let {
+                Log.i("AutoSync", "Stopping capture")
+                it.stop()
+            }
+            autoSyncCapture = null
+            if (clearSamples) {
+                autoSyncEstimator.clear()
+            }
+        }
+
+        private fun startAutoSyncEstimation(title: String, artist: String?) {
+            autoSyncEstimationJob?.cancel()
+            autoSyncEstimationJob = engineScope.launch {
+                while (isActive && autoSyncCapture?.isCapturing() == true) {
+                    delay(10_000L)
+                    if (!isActive || autoSyncCapture?.isCapturing() != true) break
+
+                    val samples = autoSyncEstimator.sampleCount()
+                    if (samples < AutoSyncEstimator.MIN_SAMPLES) {
+                        continue
+                    }
+
+                    val lines = currentLyrics
+                    if (lines.isNullOrEmpty()) {
+                        continue
+                    }
+
+                    val result = withContext(Dispatchers.Default) {
+                        autoSyncEstimator.estimate(lines)
+                    }
+
+                    if (!isActive || currentTitle != title || currentArtist != artist) {
+                        Log.d("AutoSync", "Estimation discarded: song changed or engine inactive")
+                        break
+                    }
+
+                    when (result) {
+                        is AutoSyncEstimator.Result.Confident -> {
+                            Log.i("AutoSync", "Estimate result: offset=${result.offsetMs}ms, peak=${result.peakCorrelation}, margin=${result.margin}, samples=${result.samples}")
+                            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                            prefs.edit()
+                                .putInt(AutoSyncSettings.autoOffsetKey(title, artist), result.offsetMs)
+                                .apply()
+                            updateSongSpecificDelay(prefs)
+                            stopAutoSyncCapture(clearSamples = false)
+                            updateAutoSyncStatus(AutoSyncLogic.statusDetected(title, artist, result.offsetMs))
+                            break
+                        }
+                        is AutoSyncEstimator.Result.Ambiguous -> {
+                            Log.i("AutoSync", "Estimate result: offset=${result.bestOffsetMs}ms (ambiguous), peak=${result.peakCorrelation}, margin=${result.margin}, samples=${result.samples}")
+                            if (samples >= AutoSyncEstimator.DEFAULT_CAPACITY) {
+                                Log.i("AutoSync", "Estimator full without confident result; stopping")
+                                stopAutoSyncCapture(clearSamples = true)
+                                updateAutoSyncStatus(AutoSyncLogic.statusCouldNotDetect(title, artist))
+                                break
+                            } else {
+                                updateAutoSyncStatus(AutoSyncLogic.statusNotSureYet(title, artist))
+                            }
+                        }
+                        is AutoSyncEstimator.Result.NotEnoughData -> {
+                            Log.i("AutoSync", "Estimate result: NotEnoughData (samples=${result.samples}, vocalLines=${result.vocalLines})")
+                            if (samples >= AutoSyncEstimator.DEFAULT_CAPACITY) {
+                                Log.i("AutoSync", "Estimator full without confident result; stopping")
+                                stopAutoSyncCapture(clearSamples = true)
+                                updateAutoSyncStatus(AutoSyncLogic.statusCouldNotDetect(title, artist))
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         override fun onCreate(surfaceHolder: SurfaceHolder?) {
             super.onCreate(surfaceHolder)
             // Seed permission state before the first frame builds metadata layouts.
             notificationAccessGranted = hasNotificationAccess()
+            audioAccessGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            Tuning.load(this@LyricsWallpaperService)
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
             loadPreferences(prefs)
             prefs.registerOnSharedPreferenceChangeListener(prefChangeListener)
@@ -981,6 +1237,14 @@ class LyricsWallpaperService : WallpaperService() {
             } else {
                 registerReceiver(forceReloadLyricsReceiver, lyricsFilter)
             }
+
+            val autoSyncFilter = IntentFilter("com.dnk.wallpaperlyrics.AUTO_SYNC_REDETECT")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(autoSyncRedetectReceiver, autoSyncFilter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(autoSyncRedetectReceiver, autoSyncFilter)
+            }
+
             if (isDebugBuild()) {
                 val debugFilter = IntentFilter().apply {
                     addAction("com.dnk.wallpaperlyrics.DEBUG_START_EFFORTLESS")
@@ -1009,6 +1273,8 @@ class LyricsWallpaperService : WallpaperService() {
             mediaObserver.start()
             if (isPreview) {
                 resetToIdleState()
+            } else {
+                evaluateAutoSyncState()
             }
         }
 
@@ -1019,6 +1285,7 @@ class LyricsWallpaperService : WallpaperService() {
             trackArtGeneration++
             unregisterNotificationEngine(this, isPreview)
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            TrackResolution.clearTrack(prefs, isPreview)
             prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
             mediaObserver.stop()
             choreographer.removeFrameCallback(this)
@@ -1027,6 +1294,10 @@ class LyricsWallpaperService : WallpaperService() {
             try {
                 unregisterReceiver(forceReloadLyricsReceiver)
             } catch (e: Exception) {}
+            try {
+                unregisterReceiver(autoSyncRedetectReceiver)
+            } catch (e: Exception) {}
+            stopAutoSyncCapture(clearSamples = true)
             if (isDebugBuild()) {
                 try {
                     unregisterReceiver(debugDemoReceiver)
@@ -1216,6 +1487,7 @@ class LyricsWallpaperService : WallpaperService() {
             currentTitle = title
             currentArtist = artist
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            TrackResolution.publishTrack(prefs, isPreview, title, artist)
             updateSongSpecificDelay(prefs)
             updatePersistentNotificationMetadata(this, isPreview, title, artist)
             currentDurationMs = durationMs
@@ -1227,6 +1499,12 @@ class LyricsWallpaperService : WallpaperService() {
 
             lastKnownPlaybackPosition = 0L
             lastUpdateTime = SystemClock.elapsedRealtime()
+            if (!AutoSyncLogic.isCaptureBlocked(title, artist, failedCaptureTitle, failedCaptureArtist)) {
+                clearCaptureFailure()
+            }
+            stopAutoSyncCapture(clearSamples = true)
+            publishPlaybackSnapshot()
+            evaluateAutoSyncState()
 
             // Force a transition to metadata view even if paused
             targetViewAlpha = 1.0f
@@ -1255,6 +1533,7 @@ class LyricsWallpaperService : WallpaperService() {
                 lyricsManager.fetchLyrics(title, artist ?: "", durationMs) { lines, definitive ->
                     if (currentTitle == title) {
                         currentLyrics = lines
+                        evaluateAutoSyncState()
                         if (lines == null && definitive) lyricsSearchExhausted = true
                         if (lines != null) showToast("Lyrics synced!")
                         else if (definitive) showToast("Lyrics unavailable")
@@ -1263,6 +1542,7 @@ class LyricsWallpaperService : WallpaperService() {
                 }
             } else {
                 currentLyrics = null
+                evaluateAutoSyncState()
                 lyricsSearchExhausted = true
             }
 
@@ -1280,6 +1560,10 @@ class LyricsWallpaperService : WallpaperService() {
                          cardFadeProgress = 1.0f
                     }
                 }, 500)
+            }
+
+            if (isScreenOff) {
+                drawFrame(0f)
             }
         }
 
@@ -1338,7 +1622,55 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private fun updateBluetoothLatency() {
-            detectedBluetoothLatency = 0L
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    detectedBluetoothLatency = 0L
+                    return
+                }
+
+                val audioManager = getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+                if (audioManager == null) {
+                    detectedBluetoothLatency = 0L
+                    return
+                }
+
+                val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
+                val btDevice = devices.firstOrNull { dev ->
+                    dev.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    dev.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                    dev.type == android.media.AudioDeviceInfo.TYPE_HEARING_AID ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && (
+                        dev.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                        dev.type == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER ||
+                        dev.type == android.media.AudioDeviceInfo.TYPE_BLE_BROADCAST
+                    ))
+                }
+
+                val address = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) btDevice?.address else null
+                if (address.isNullOrBlank()) {
+                    detectedBluetoothLatency = 0L
+                    return
+                }
+
+                val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                val stored = mutableMapOf<String, Int>()
+                for ((key, value) in prefs.all) {
+                    if (key.startsWith(DeviceOffsets.KEY_PREFIX)) {
+                        val offset = (value as? Number)?.toInt()
+                        if (offset != null) {
+                            stored[key.removePrefix(DeviceOffsets.KEY_PREFIX)] = offset
+                        }
+                    }
+                }
+
+                val resolved = DeviceOffsets.resolve(address, stored)
+                detectedBluetoothLatency = resolved.toLong()
+            } catch (e: Exception) {
+                Log.e("Wallpaper", "Failed to update bluetooth latency", e)
+                detectedBluetoothLatency = 0L
+            }
         }
 
         /**
@@ -1398,8 +1730,25 @@ class LyricsWallpaperService : WallpaperService() {
                     val secondPass = AuroraRenderer.blurBitmap(firstPass, 80)
                     preprocessed.recycle()
                     firstPass.recycle()
-                    AuroraRenderer.boostChroma(secondPass, AuroraRenderer.BACKGROUND_CHROMA_BOOST)
-                    AuroraRenderer.capLightness(secondPass)
+                    val exponent = prefBgSaturation
+                    val gamutCap = Tuning.gamutCapFraction
+                    val linearBoost = Tuning.linearBoost
+                    val depth = Tuning.backgroundDepth
+                    val depthGateLow = Tuning.depthGateLow
+                    val depthGateHigh = Tuning.depthGateHigh
+                    AuroraRenderer.boostChroma(
+                        secondPass,
+                        exponent,
+                        gamutCap,
+                        linearBoost,
+                        depth,
+                        depthGateLow,
+                        depthGateHigh
+                    )
+                    val knee = Tuning.lightnessCapKnee
+                    val ceiling = Tuning.lightnessCapCeiling
+                    val strength = Tuning.lightnessCapStrength
+                    AuroraRenderer.capLightness(secondPass, knee, ceiling, strength)
                     secondPass
                 }
                 
@@ -1417,6 +1766,9 @@ class LyricsWallpaperService : WallpaperService() {
                         try { notifyColorsChanged() } catch (e: Exception) { /* wallpaper may not be set */ }
                     }
                 }
+            }
+            if (isScreenOff) {
+                drawFrame(0f)
             }
         }
 
@@ -1451,6 +1803,8 @@ class LyricsWallpaperService : WallpaperService() {
                 } else {
                     lastKnownPlaybackPosition = state.position
                 }
+                publishPlaybackSnapshot()
+                evaluateAutoSyncState()
 
                 // On a seek, snap the scroll cursor to the real position instead of
                 // extrapolating from a stale one.
@@ -1461,11 +1815,14 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private fun resetToIdleState() {
+            stopAutoSyncCapture(clearSamples = true)
             cancelPendingCommit()
             cancelPendingArtRetry()
             trackArtGeneration++
             currentTitle = null
             currentArtist = null
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            TrackResolution.clearTrack(prefs, isPreview)
             currentDurationMs = 0L
             lyricsSearchExhausted = false
             albumArt = null
@@ -1482,6 +1839,8 @@ class LyricsWallpaperService : WallpaperService() {
             currentArtUri = null
             inFlightArtUri = null
             hasArtForCurrentTrack = false
+            publishPlaybackSnapshot()
+            evaluateAutoSyncState()
 
             metadataTitleLayout = null
             metadataArtistLayout = null
@@ -1537,7 +1896,8 @@ class LyricsWallpaperService : WallpaperService() {
                 }
                 if (canvas != null) {
                     if (isTransitioning) {
-                        blendProgress += dt * 1.0f // 1 second crossfade duration
+                        val crossfadeRate = Tuning.crossfadeRate
+                        blendProgress += dt * crossfadeRate
                         if (blendProgress >= 1.0f) {
                             blendProgress = 1.0f
                             isTransitioning = false
@@ -1569,8 +1929,24 @@ class LyricsWallpaperService : WallpaperService() {
                     }
 
                     updateColors(dt)
-                    drawAurora(canvas)
-                    drawLyrics(canvas, dt)
+                    if (isScreenOff) {
+                        when (prefAodMode) {
+                            AodMode.OFF -> {
+                                canvas.drawPaint(backgroundPaint)
+                            }
+                            AodMode.METADATA_ONLY -> {
+                                canvas.drawPaint(backgroundPaint)
+                                drawLyrics(canvas, dt)
+                            }
+                            AodMode.METADATA_AND_BACKGROUND -> {
+                                drawAurora(canvas)
+                                drawLyrics(canvas, dt)
+                            }
+                        }
+                    } else {
+                        drawAurora(canvas)
+                        drawLyrics(canvas, dt)
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("Wallpaper", "Draw error", e)
@@ -1640,6 +2016,11 @@ class LyricsWallpaperService : WallpaperService() {
             val timeSinceWake = now - lastWakeTime
             val isMetadataState = isMetadataState(now, timeSinceWake, lines)
             targetViewAlpha = if (isMetadataState) 1.0f else 0.0f
+            if (isScreenOff) {
+                // AOD shows the last composed frame and the mode, not the playback state, decides what belongs in it.
+                targetViewAlpha = 1.0f
+                viewAlpha = 1.0f
+            }
 
             // State change transition (symmetric speeds)
             if (viewAlpha != targetViewAlpha) {
@@ -1701,6 +2082,7 @@ class LyricsWallpaperService : WallpaperService() {
                                 currentLyrics = l
                                 if (l == null && definitive) lyricsSearchExhausted = true
                                 if (l != null) showToast("Lyrics synced!")
+                                mainHandler.post { evaluateAutoSyncState() }
                             }
                         }
                     }
@@ -1726,7 +2108,9 @@ class LyricsWallpaperService : WallpaperService() {
                 val currentOffset = offsets[currentIndex]
                 val prevOffset = if (currentIndex > 0) offsets[currentIndex - 1] else currentOffset
                 val glideDistance = Math.abs(currentOffset - prevOffset)
-                val glideDuration = SyllableAnimator.glideDurationMs(glideDistance)
+                val baseGlideMs = Tuning.baseGlideMs
+                val referenceDistancePx = Tuning.referenceDistancePx
+                val glideDuration = SyllableAnimator.glideDurationMs(glideDistance, baseGlideMs, referenceDistancePx)
 
                 val entryProgress = ((adjustedPos - lines[currentIndex].startTime) / glideDuration).coerceIn(0f, 1f)
                 val easedGlide = SyllableAnimator.easeOutGlide(entryProgress)
@@ -1770,6 +2154,24 @@ class LyricsWallpaperService : WallpaperService() {
                 val lineRampFraction = ((android.os.SystemClock.elapsedRealtime() - lineChangeElapsedMs)
                     .toFloat() / 200f).coerceIn(0f, 1f)
 
+                val wordOverlapMs = Tuning.wordOverlapMs
+                val wordMinAnimationMs = Tuning.wordMinAnimationMs
+                val wordMotionTrailFraction = Tuning.wordMotionTrailFraction
+                val wordMotionTrailMinMs = Tuning.wordMotionTrailMinMs
+                val wordMotionTrailMaxMs = Tuning.wordMotionTrailMaxMs
+                val preRollSettleMs = Tuning.preRollSettleMs
+                val preRollMaxLift = Tuning.preRollMaxLift
+                val wordMotionDurationFloorMs = Tuning.wordMotionDurationFloorMs
+                val wordLeadInMs = Tuning.wordLeadInMs
+                val wordRiseDurationMs = Tuning.wordRiseDurationMs
+                val wordSettleDurationMs = Tuning.wordSettleDurationMs
+                val effectiveFloorMs = SyllableAnimator.getEffectiveMotionFloor(
+                    wordMotionDurationFloorMs,
+                    wordLeadInMs,
+                    wordRiseDurationMs,
+                    wordSettleDurationMs
+                )
+
                 for (i in (currentIndex - visibleRange)..(currentIndex + visibleRange)) {
                     if (i in layouts.indices) {
                         val line = lines[i]
@@ -1810,14 +2212,20 @@ class LyricsWallpaperService : WallpaperService() {
                                 // Detect pre-roll phase: Wav2Vec2 may detect the first word
                                 // onset 200-500ms after the LRC line timestamp. During this gap
                                 // all spans have progress=0 which makes the active line look dim
-                                // (80 alpha). Smoothly brighten from 80→80+50=130 instead.
+                                // (80 alpha). Smoothly brighten from 80->80+50=130 instead.
                                 val firstWordOnset = line.words.minOfOrNull {
                                     if (it.fullStartTime != 0L) it.fullStartTime else it.startTime
                                 } ?: wordGatePos
                                 val hasPreRoll = firstWordOnset > line.startTime + 100L
                                 val isPreRollPhase = wordGatePos < firstWordOnset && hasPreRoll
                                 val inactiveAlpha = if (hasPreRoll) {
-                                    SyllableAnimator.getPreRollInactiveAlpha(wordGatePos, line.startTime, firstWordOnset)
+                                    SyllableAnimator.getPreRollInactiveAlpha(
+                                        wordGatePos,
+                                        line.startTime,
+                                        firstWordOnset,
+                                        preRollSettleMs,
+                                        preRollMaxLift
+                                    )
                                 } else {
                                     INACTIVE_LYRIC_ALPHA
                                 }
@@ -1827,17 +2235,48 @@ class LyricsWallpaperService : WallpaperService() {
                                         val span = word.spanRef as? WordGradientSpan ?: continue
                                         span.progress = 0f
                                         span.motionProgress = 0f
+                                        span.motionWindowMs = 0L
                                         span.activeAlpha = inactiveAlpha
                                         span.inactiveAlpha = inactiveAlpha
                                     }
                                 } else {
-                                    for (word in line.words) {
+                                    for (wordIndex in line.words.indices) {
+                                        val word = line.words[wordIndex]
                                         val span = word.spanRef as? WordGradientSpan ?: continue
 
                                         val startT = if (word.fullStartTime == 0L) word.startTime else word.fullStartTime
                                         val endT = if (word.fullEndTime == 0L) word.endTime else word.fullEndTime
-                                        val effectiveEndT = SyllableAnimator.getExtendedWordEnd(startT, endT, line.endTime)
-                                        val motionEndT = SyllableAnimator.getMotionWordEnd(startT, endT, line.endTime)
+                                        val prevEndT = if (wordIndex > 0) {
+                                            val prev = line.words[wordIndex - 1]
+                                            if (prev.fullEndTime != 0L) prev.fullEndTime else prev.endTime
+                                        } else {
+                                            line.startTime
+                                        }
+                                        val motionStartT = SyllableAnimator.getMotionWordStart(
+                                            startT,
+                                            line.startTime,
+                                            prevEndT,
+                                            wordLeadInMs
+                                        )
+                                        val effectiveEndT = SyllableAnimator.getExtendedWordEnd(
+                                            startT,
+                                            endT,
+                                            line.endTime,
+                                            wordOverlapMs,
+                                            wordMinAnimationMs
+                                        )
+                                        val motionEndT = SyllableAnimator.getMotionWordEnd(
+                                            startT,
+                                            endT,
+                                            line.endTime,
+                                            wordMotionTrailFraction,
+                                            wordMotionTrailMinMs,
+                                            wordMotionTrailMaxMs,
+                                            wordOverlapMs,
+                                            wordMinAnimationMs,
+                                            effectiveFloorMs,
+                                            maxOverrunMs = transitionDuration.toLong()
+                                        )
 
                                         val sweepLinearProgress = when {
                                             wordGatePos >= effectiveEndT -> 1f
@@ -1847,11 +2286,12 @@ class LyricsWallpaperService : WallpaperService() {
                                             }
                                         }
 
+                                        val motionWindowMs = Math.max(1L, motionEndT - motionStartT)
                                         val motionLinearProgress = when {
                                             wordGatePos >= motionEndT -> 1f
-                                            wordGatePos <= startT -> 0f
+                                            wordGatePos <= motionStartT -> 0f
                                             else -> {
-                                                ((wordGatePos - startT).toFloat() / (motionEndT - startT).toFloat()).coerceIn(0f, 1f)
+                                                ((wordGatePos - motionStartT).toFloat() / motionWindowMs.toFloat()).coerceIn(0f, 1f)
                                             }
                                         }
 
@@ -1872,6 +2312,7 @@ class LyricsWallpaperService : WallpaperService() {
                                         } else {
                                             0f
                                         }
+                                        span.motionWindowMs = motionWindowMs
                                         span.activeAlpha = 230
                                         span.inactiveAlpha = inactiveAlpha
                                     }
@@ -1880,10 +2321,53 @@ class LyricsWallpaperService : WallpaperService() {
                                 val fadeProgress = exitLinear.coerceIn(0f, 1f)
                                 val currentAlpha = (230 - (230 - INACTIVE_LYRIC_ALPHA) * fadeProgress).toInt()
 
-                                for (word in line.words) {
+                                for (wordIndex in line.words.indices) {
+                                    val word = line.words[wordIndex]
                                     val span = word.spanRef as? WordGradientSpan ?: continue
+
+                                    val startT = if (word.fullStartTime == 0L) word.startTime else word.fullStartTime
+                                    val endT = if (word.fullEndTime == 0L) word.endTime else word.fullEndTime
+                                    val prevEndT = if (wordIndex > 0) {
+                                        val prev = line.words[wordIndex - 1]
+                                        if (prev.fullEndTime != 0L) prev.fullEndTime else prev.endTime
+                                    } else {
+                                        line.startTime
+                                    }
+                                    val motionStartT = SyllableAnimator.getMotionWordStart(
+                                        startT,
+                                        line.startTime,
+                                        prevEndT,
+                                        wordLeadInMs
+                                    )
+                                    val motionEndT = SyllableAnimator.getMotionWordEnd(
+                                        startT,
+                                        endT,
+                                        line.endTime,
+                                        wordMotionTrailFraction,
+                                        wordMotionTrailMinMs,
+                                        wordMotionTrailMaxMs,
+                                        wordOverlapMs,
+                                        wordMinAnimationMs,
+                                        effectiveFloorMs,
+                                        maxOverrunMs = transitionDuration.toLong()
+                                    )
+
+                                    val motionWindowMs = Math.max(1L, motionEndT - motionStartT)
+                                    val motionLinearProgress = when {
+                                        adjustedPos >= motionEndT -> 1f
+                                        adjustedPos <= motionStartT -> 0f
+                                        else -> {
+                                            ((adjustedPos - motionStartT).toFloat() / motionWindowMs.toFloat()).coerceIn(0f, 1f)
+                                        }
+                                    }
+
                                     span.progress = 1f
-                                    span.motionProgress = 0f
+                                    span.motionProgress = if (motionLinearProgress > 0f && motionLinearProgress < 1f) {
+                                        motionLinearProgress
+                                    } else {
+                                        0f
+                                    }
+                                    span.motionWindowMs = if (span.motionProgress > 0f) motionWindowMs else 0L
                                     span.activeAlpha = currentAlpha
                                     span.inactiveAlpha = INACTIVE_LYRIC_ALPHA
                                 }

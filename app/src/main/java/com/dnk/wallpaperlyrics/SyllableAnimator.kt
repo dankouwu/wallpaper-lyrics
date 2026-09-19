@@ -5,7 +5,6 @@ import java.util.LinkedHashMap
 
 object SyllableAnimator {
 
-    private const val LETTER_MOTION_MINIMUM_MS = 150L
     const val WORD_OVERLAP_MS = 50L
     const val WORD_MOTION_TRAIL_FRACTION = 0.35f
     const val WORD_MOTION_TRAIL_MIN_MS = 120L
@@ -170,10 +169,14 @@ object SyllableAnimator {
         return 1f - Math.pow(inv.toDouble(), 1.5).toFloat()
     }
 
-    fun glideDurationMs(distancePx: Float): Float {
-        if (distancePx <= 0f || distancePx.isNaN()) return BASE_GLIDE_MS
-        val factor = Math.sqrt((distancePx / REFERENCE_DISTANCE_PX).toDouble()).toFloat()
-        return (BASE_GLIDE_MS * factor).coerceIn(BASE_GLIDE_MS, BASE_GLIDE_MS * 1.6f)
+    fun glideDurationMs(
+        distancePx: Float,
+        baseGlideMs: Float = Tuning.baseGlideMs,
+        referenceDistancePx: Float = Tuning.referenceDistancePx
+    ): Float {
+        if (distancePx <= 0f || distancePx.isNaN()) return baseGlideMs
+        val factor = Math.sqrt((distancePx / referenceDistancePx).toDouble()).toFloat()
+        return (baseGlideMs * factor).coerceIn(baseGlideMs, baseGlideMs * 1.6f)
     }
 
     fun easeOutExpo(x: Float): Float {
@@ -248,33 +251,396 @@ object SyllableAnimator {
         return rStart + uEased * (rEnd - rStart)
     }
 
-    fun getWordMotionScale(linearProgress: Float): Float {
-        val progress = linearProgress.coerceIn(0f, 1f)
-        return 1f + 0.04f * Math.sin(Math.PI * progress).toFloat()
+    const val HELD_WORD_MIN_DURATION_MS = 575L
+
+    fun isHeldWord(
+        wordDurationMs: Long,
+        thresholdMs: Long = Tuning.heldWordMinDurationMs
+    ): Boolean = wordDurationMs >= thresholdMs
+
+    private fun evalScaleRise(
+        u: Float,
+        startScale: Float,
+        peakScale: Float,
+        easeInFraction: Float
+    ): Float {
+        val clampedU = u.coerceIn(0f, 1f)
+        val k = easeInFraction.coerceIn(0.01f, 0.99f)
+        return if (clampedU <= k) {
+            val w = clampedU / k
+            1.0f + (startScale - 1.0f) * (w * w * (3f - 2f * w))
+        } else {
+            val w = (clampedU - k) / (1.0f - k)
+            startScale + (peakScale - startScale) * (w * w * (3f - 2f * w))
+        }
     }
 
-    fun usesPerLetterMotion(durationMs: Long, codePointCount: Int): Boolean =
-        codePointCount > 0 && durationMs >= codePointCount.toLong() * LETTER_MOTION_MINIMUM_MS
+    private fun evalScaleCubic(p: Float, s0: Float, sPeak: Float, xPeak: Float): Float {
+        val x = xPeak.coerceIn(0.01f, 0.99f)
+        val d1 = 1f - s0
+        val dp = sPeak - s0
+        val denomD = x * x * (1f - x) * (1f - x)
+        val d = if (denomD > 0f) (x * x * d1 - (2f * x - 1f) * dp) / denomD else 0f
+        val c = (dp - x * d1) / (x * (x - 1f)) - (x + 1f) * d
+        val b = d1 - c - d
+        return s0 + p * (b + p * (c + p * d))
+    }
 
-    fun getWholeWordLift(linearProgress: Float, textSize: Float): Float {
-        val progress = linearProgress.coerceIn(0f, 1f)
-        return textSize * 0.06f * Math.sin(Math.PI * progress).toFloat()
+    fun getMotionAmplitude(
+        wordDurationMs: Long,
+        minDurationMs: Long = Tuning.wordMotionMinDurationMs,
+        maxDurationMs: Long = Tuning.wordMotionMaxDurationMs,
+        minAmplitude: Float = Tuning.wordMotionMinAmplitude
+    ): Float {
+        if (wordDurationMs <= 0L) return 1f
+        if (wordDurationMs >= maxDurationMs) return 1f
+        if (wordDurationMs <= minDurationMs) return minAmplitude
+        val t = (wordDurationMs - minDurationMs).toFloat() / (maxDurationMs - minDurationMs).toFloat()
+        val smoothT = t * t * (3f - 2f * t)
+        return minAmplitude + (1f - minAmplitude) * smoothT
+    }
+
+    fun getWordMotionScale(
+        linearProgress: Float,
+        startScale: Float = Tuning.wordScaleStart,
+        peakScale: Float = Tuning.wordScalePeak,
+        peakPosition: Float = Tuning.wordScalePeakPosition,
+        easeInFraction: Float = Tuning.wordScaleEaseInFraction
+    ): Float {
+        if (linearProgress.isNaN()) return 1f
+        val p = linearProgress.coerceIn(0f, 1f)
+        val x = peakPosition.coerceIn(0.01f, 0.99f)
+        return if (p <= x) {
+            val u = p / x
+            evalScaleRise(u, startScale, peakScale, easeInFraction)
+        } else {
+            val v = ((p - x) / (1f - x)).coerceIn(0f, 1f)
+            val denom = peakScale - 1f
+            val settleNorm = if (denom > 0f) {
+                (evalScaleCubic(x + (1f - x) * v, startScale, peakScale, x) - 1f) / denom
+            } else {
+                1f - v
+            }
+            1f + (peakScale - 1f) * settleNorm
+        }
+    }
+
+    fun getWordMotionScale(
+        linearProgress: Float,
+        motionWindowMs: Long,
+        riseDurationMs: Long = Tuning.wordRiseDurationMs,
+        startScale: Float = Tuning.wordScaleStart,
+        peakScale: Float = Tuning.wordScalePeak,
+        peakPosition: Float = Tuning.wordScalePeakPosition,
+        easeInFraction: Float = Tuning.wordScaleEaseInFraction,
+        settleDurationMs: Long = Tuning.wordSettleDurationMs
+    ): Float {
+        if (linearProgress.isNaN()) return 1f
+        val p = linearProgress.coerceIn(0f, 1f)
+        if (motionWindowMs <= 0L || riseDurationMs <= 0L) {
+            return getWordMotionScale(p, startScale, peakScale, peakPosition, easeInFraction)
+        }
+
+        val windowF = motionWindowMs.toFloat()
+        val riseF = riseDurationMs.toFloat()
+        val pMax = 0.85f
+        val pPeak = Math.min(riseF / windowF, pMax).coerceIn(0.01f, 0.99f)
+
+        val tPeak = pPeak * windowF
+        val uPeak = Math.min(1.0f, tPeak / riseF)
+        val sPeakActual = evalScaleRise(uPeak, startScale, peakScale, easeInFraction)
+
+        return if (p <= pPeak) {
+            val t = p * windowF
+            val u = Math.min(1.0f, t / riseF)
+            evalScaleRise(u, startScale, peakScale, easeInFraction)
+        } else {
+            val t = p * windowF
+            val settleF = if (settleDurationMs > 0L) settleDurationMs.toFloat() else (windowF - tPeak)
+            val availableSettle = windowF - tPeak
+            val effectiveSettleF = if (availableSettle > 0f) Math.min(settleF, availableSettle) else settleF
+            val v = if (effectiveSettleF > 0f) {
+                ((t - tPeak) / effectiveSettleF).coerceIn(0f, 1f)
+            } else {
+                1.0f
+            }
+            val denom = peakScale - 1.0f
+            val settleNorm = if (denom > 0f) {
+                (evalScaleCubic(peakPosition + (1.0f - peakPosition) * v, startScale, peakScale, peakPosition) - 1.0f) / denom
+            } else {
+                1.0f - v
+            }
+            1.0f + (sPeakActual - 1.0f) * settleNorm
+        }
+    }
+
+    fun getWordMotionScale(
+        linearProgress: Float,
+        wordDurationMs: Long
+    ): Float {
+        val raw = getWordMotionScale(linearProgress)
+        val amp = getMotionAmplitude(wordDurationMs)
+        return 1f + (raw - 1f) * amp
+    }
+
+    fun getWordMotionScale(
+        linearProgress: Float,
+        wordDurationMs: Long,
+        motionWindowMs: Long,
+        riseDurationMs: Long = Tuning.wordRiseDurationMs,
+        settleDurationMs: Long = Tuning.wordSettleDurationMs
+    ): Float {
+        val raw = getWordMotionScale(
+            linearProgress = linearProgress,
+            motionWindowMs = motionWindowMs,
+            riseDurationMs = riseDurationMs,
+            settleDurationMs = settleDurationMs
+        )
+        val amp = getMotionAmplitude(wordDurationMs)
+        return 1f + (raw - 1f) * amp
+    }
+
+    // Two smoothstep halves replace the old cubic whose third root entered
+    // the word window outside roughly 0.34..0.66, swinging negative.
+    fun getWordLift(
+        linearProgress: Float,
+        textSize: Float,
+        peakFraction: Float = Tuning.wordLiftPeakFraction,
+        peakPosition: Float = Tuning.wordLiftPeakPosition
+    ): Float {
+        if (linearProgress.isNaN() || textSize <= 0f) return 0f
+        val p = linearProgress.coerceIn(0f, 1f)
+        val x = peakPosition.coerceIn(0.01f, 0.99f)
+        val peak = peakFraction * textSize
+        return if (p <= x) {
+            val u = p / x
+            peak * u * u * (3f - 2f * u)
+        } else {
+            val v = (p - x) / (1f - x)
+            peak * (1f - v * v * (3f - 2f * v))
+        }
+    }
+
+    fun getWordLift(
+        linearProgress: Float,
+        textSize: Float,
+        wordDurationMs: Long
+    ): Float = getWordLift(linearProgress, textSize) * getMotionAmplitude(wordDurationMs)
+
+    fun getWordGlow(
+        linearProgress: Float,
+        riseEnd: Float = Tuning.wordGlowRiseEnd,
+        holdEnd: Float = Tuning.wordGlowHoldEnd
+    ): Float {
+        if (linearProgress.isNaN()) return 0f
+        val p = linearProgress.coerceIn(0f, 1f)
+        val rEnd = riseEnd.coerceIn(0.01f, 0.98f)
+        val hEnd = holdEnd.coerceIn(rEnd + 0.001f, 0.99f)
+        return when {
+            p <= 0f || p >= 1f -> 0f
+            p < rEnd -> p / rEnd
+            p <= hEnd -> 1f
+            else -> (1f - p) / (1f - hEnd)
+        }
+    }
+
+    fun getActiveLetterIndex(linearProgress: Float, codePointCount: Int): Int {
+        if (codePointCount <= 1) return 0
+        if (linearProgress.isNaN()) return 0
+        val p = linearProgress.coerceIn(0f, 1f)
+        val raw = (p * codePointCount).toInt()
+        return raw.coerceIn(0, codePointCount - 1)
+    }
+
+    fun getActiveLetterPosition(linearProgress: Float, codePointCount: Int): Float {
+        if (codePointCount <= 0) return 0f
+        if (linearProgress.isNaN()) return 0f
+        val p = linearProgress.coerceIn(0f, 1f)
+        return p * codePointCount - 0.5f
+    }
+
+    fun getRippleEnvelope(
+        linearProgress: Float,
+        easeInFraction: Float = Tuning.rippleEaseInFraction
+    ): Float {
+        if (linearProgress.isNaN()) return 0f
+        val p = linearProgress.coerceIn(0f, 1f)
+        val k = easeInFraction.coerceIn(0.001f, 0.5f)
+        return when {
+            p < k -> {
+                val u = p / k
+                u * u * (3f - 2f * u)
+            }
+            p > 1f - k -> {
+                val v = (1f - p) / k
+                v * v * (3f - 2f * v)
+            }
+            else -> 1f
+        }
+    }
+
+    fun getRippleEmphasis(
+        linearProgress: Float,
+        distance: Float,
+        falloffPower: Float = Tuning.letterFalloffPower,
+        easeInFraction: Float = Tuning.rippleEaseInFraction
+    ): Float {
+        val envelope = getRippleEnvelope(linearProgress, easeInFraction)
+        if (envelope <= 0f) return 0f
+        val falloff = getRippleFalloff(distance, falloffPower)
+        return falloff * envelope
+    }
+
+    fun getRippleEmphasis(
+        linearProgress: Float,
+        codePointIndex: Int,
+        codePointCount: Int,
+        falloffPower: Float = Tuning.letterFalloffPower,
+        easeInFraction: Float = Tuning.rippleEaseInFraction
+    ): Float {
+        if (codePointCount <= 0) return 0f
+        val activePos = getActiveLetterPosition(linearProgress, codePointCount)
+        val distance = codePointIndex.toFloat() - activePos
+        return getRippleEmphasis(linearProgress, distance, falloffPower, easeInFraction)
+    }
+
+    fun getRippleFalloff(distance: Float, power: Float = Tuning.letterFalloffPower): Float {
+        val absD = Math.abs(distance)
+        val dPowered = if (power == 3f) {
+            absD * absD * absD
+        } else {
+            Math.pow(absD.toDouble(), power.toDouble()).toFloat()
+        }
+        return 1f / (1f + dPowered)
+    }
+
+    fun getRippleFalloff(distance: Int, power: Float = Tuning.letterFalloffPower): Float =
+        getRippleFalloff(distance.toFloat(), power)
+
+    @Suppress("UNUSED_PARAMETER")
+    fun getHeldWordLetterScale(
+        linearProgress: Float,
+        distance: Float,
+        startScale: Float = Tuning.wordScaleStart,
+        peakScale: Float = Tuning.heldWordLetterScalePeak,
+        peakPosition: Float = Tuning.wordScalePeakPosition,
+        falloffPower: Float = Tuning.letterFalloffPower,
+        amplitude: Float = 1f,
+        motionWindowMs: Long = 0L,
+        riseDurationMs: Long = Tuning.wordRiseDurationMs,
+        easeInFraction: Float = Tuning.wordScaleEaseInFraction,
+        settleDurationMs: Long = Tuning.wordSettleDurationMs,
+        rippleEaseInFraction: Float = Tuning.rippleEaseInFraction
+    ): Float {
+        if (linearProgress.isNaN()) return 1f
+        val p = linearProgress.coerceIn(0f, 1f)
+        val emphasis = getRippleEmphasis(p, distance, falloffPower, rippleEaseInFraction)
+        val raw = 1f + (peakScale - 1f) * emphasis
+        return if (amplitude == 1f) raw else 1f + (raw - 1f) * amplitude
+    }
+
+    fun getHeldWordLetterScale(
+        linearProgress: Float,
+        distance: Int,
+        startScale: Float = Tuning.wordScaleStart,
+        peakScale: Float = Tuning.heldWordLetterScalePeak,
+        peakPosition: Float = Tuning.wordScalePeakPosition,
+        falloffPower: Float = Tuning.letterFalloffPower,
+        amplitude: Float = 1f,
+        motionWindowMs: Long = 0L,
+        riseDurationMs: Long = Tuning.wordRiseDurationMs,
+        easeInFraction: Float = Tuning.wordScaleEaseInFraction,
+        settleDurationMs: Long = Tuning.wordSettleDurationMs,
+        rippleEaseInFraction: Float = Tuning.rippleEaseInFraction
+    ): Float = getHeldWordLetterScale(
+        linearProgress,
+        distance.toFloat(),
+        startScale,
+        peakScale,
+        peakPosition,
+        falloffPower,
+        amplitude,
+        motionWindowMs,
+        riseDurationMs,
+        easeInFraction,
+        settleDurationMs,
+        rippleEaseInFraction
+    )
+
+    fun getLetterScale(
+        linearProgress: Float,
+        codePointIndex: Int,
+        codePointCount: Int,
+        durationMs: Long = 0L,
+        thresholdMs: Long = Tuning.heldWordMinDurationMs,
+        startScale: Float = Tuning.wordScaleStart,
+        peakScale: Float = Tuning.heldWordLetterScalePeak,
+        peakPosition: Float = Tuning.wordScalePeakPosition,
+        falloffPower: Float = Tuning.letterFalloffPower,
+        motionWindowMs: Long = 0L,
+        riseDurationMs: Long = Tuning.wordRiseDurationMs,
+        easeInFraction: Float = Tuning.wordScaleEaseInFraction,
+        settleDurationMs: Long = Tuning.wordSettleDurationMs,
+        rippleEaseInFraction: Float = Tuning.rippleEaseInFraction
+    ): Float {
+        val amp = getMotionAmplitude(durationMs)
+        val rawWordScale = if (motionWindowMs > 0L) {
+            getWordMotionScale(
+                linearProgress,
+                motionWindowMs,
+                riseDurationMs,
+                startScale,
+                Tuning.wordScalePeak,
+                peakPosition,
+                easeInFraction,
+                settleDurationMs
+            )
+        } else {
+            getWordMotionScale(linearProgress, startScale, Tuning.wordScalePeak, peakPosition, easeInFraction)
+        }
+        val wordScale = 1f + (rawWordScale - 1f) * amp
+        if (!isHeldWord(durationMs, thresholdMs) || codePointCount <= 1) {
+            return wordScale
+        }
+        val activePos = getActiveLetterPosition(linearProgress, codePointCount)
+        val distance = codePointIndex.toFloat() - activePos
+        val letterRippleScale = getHeldWordLetterScale(
+            linearProgress,
+            distance,
+            startScale,
+            peakScale,
+            peakPosition,
+            falloffPower,
+            amp,
+            motionWindowMs,
+            riseDurationMs,
+            easeInFraction,
+            settleDurationMs,
+            rippleEaseInFraction
+        )
+        // The word swell belongs to the word and the ripple belongs to the letter.
+        return wordScale * letterRippleScale
     }
 
     fun getLetterLift(
         linearProgress: Float,
         codePointIndex: Int,
         codePointCount: Int,
-        textSize: Float
+        textSize: Float,
+        durationMs: Long = 0L,
+        thresholdMs: Long = Tuning.heldWordMinDurationMs,
+        peakFraction: Float = Tuning.wordLiftPeakFraction,
+        peakPosition: Float = Tuning.wordLiftPeakPosition,
+        falloffPower: Float = Tuning.letterFalloffPower,
+        rippleEaseInFraction: Float = Tuning.rippleEaseInFraction
     ): Float {
-        val progress = linearProgress.coerceIn(0f, 1f)
-        if (progress <= 0f || progress >= 1f || codePointIndex !in 0 until codePointCount) return 0f
-
-        val start = codePointIndex.toFloat() / codePointCount
-        if (progress <= start) return 0f
-
-        val localProgress = (progress - start) / (1f - start)
-        return textSize * 0.06f * Math.sin(Math.PI * localProgress).toFloat()
+        val amp = getMotionAmplitude(durationMs)
+        if (!isHeldWord(durationMs, thresholdMs) || codePointCount <= 1) {
+            return getWordLift(linearProgress, textSize, peakFraction, peakPosition) * amp
+        }
+        val emphasis = getRippleEmphasis(linearProgress, codePointIndex, codePointCount, falloffPower, rippleEaseInFraction)
+        val maxLift = peakFraction * textSize * amp
+        return maxLift * emphasis
     }
 
     /**
@@ -282,36 +648,85 @@ object SyllableAnimator {
      * [WORD_OVERLAP_MS], clamped to [lineEndMs] so the final word of a line completes before the line
      * goes inactive, and bounded below by [endMs].
      */
-    fun getExtendedWordEnd(startMs: Long, endMs: Long, lineEndMs: Long): Long {
+    fun getExtendedWordEnd(
+        startMs: Long,
+        endMs: Long,
+        lineEndMs: Long,
+        overlapMs: Long = Tuning.wordOverlapMs,
+        minAnimationMs: Long = Tuning.wordMinAnimationMs
+    ): Long {
         val duration = endMs - startMs
         val animated = if (duration <= 0L) {
-            WORD_MIN_ANIMATION_MS
+            minAnimationMs
         } else {
-            Math.max(duration + WORD_OVERLAP_MS, WORD_MIN_ANIMATION_MS)
+            Math.max(duration + overlapMs, minAnimationMs)
         }
         val clamped = Math.min(startMs + animated, lineEndMs)
         return Math.max(endMs, clamped)
     }
 
     /**
+     * Shifts word motion start earlier by [leadInMs] so that the rise peak lands closer
+     * to word onset, clamped so motion never begins before [lineStartMs] or before the
+     * previous word has finished being sung at [prevWordEndMs].
+     */
+    fun getMotionWordStart(
+        startMs: Long,
+        lineStartMs: Long,
+        prevWordEndMs: Long = lineStartMs,
+        leadInMs: Long = Tuning.wordLeadInMs
+    ): Long {
+        if (leadInMs <= 0L) return startMs
+        val earliestAllowed = Math.max(lineStartMs, prevWordEndMs)
+        val candidate = startMs - leadInMs
+        return Math.min(startMs, Math.max(candidate, earliestAllowed))
+    }
+
+    fun getEffectiveMotionFloor(
+        floorMs: Long = Tuning.wordMotionDurationFloorMs,
+        leadInMs: Long = Tuning.wordLeadInMs,
+        riseMs: Long = Tuning.wordRiseDurationMs,
+        settleMs: Long = Tuning.wordSettleDurationMs
+    ): Long = Math.max(floorMs, leadInMs + riseMs + settleMs)
+
+    /**
      * Extends a word motion window beyond its sweep end with a trail that scales with the word so that every
      * word hands over at a similar point in its lift regardless of how long it was sung, bounded at both ends
-     * by [WORD_MOTION_TRAIL_MIN_MS] and [WORD_MOTION_TRAIL_MAX_MS], and clamped to [lineEndMs] so the last
-     * word of a line gets no trail because the line goes inactive at that point, and bounded below by the
-     * sweep end.
+     * by [WORD_MOTION_TRAIL_MIN_MS] and [WORD_MOTION_TRAIL_MAX_MS], clamped so motion does not extend beyond
+     * [lineEndMs] plus [maxOverrunMs] into the fade, and bounded below by the sweep end and effective floor.
      */
-    fun getMotionWordEnd(startMs: Long, endMs: Long, lineEndMs: Long): Long {
-        val sweepEnd = getExtendedWordEnd(startMs, endMs, lineEndMs)
-        val scaled = ((sweepEnd - startMs) * WORD_MOTION_TRAIL_FRACTION).toLong()
-        val trail = scaled.coerceIn(WORD_MOTION_TRAIL_MIN_MS, WORD_MOTION_TRAIL_MAX_MS)
-        return Math.max(sweepEnd, Math.min(sweepEnd + trail, lineEndMs))
+    fun getMotionWordEnd(
+        startMs: Long,
+        endMs: Long,
+        lineEndMs: Long,
+        trailFraction: Float = Tuning.wordMotionTrailFraction,
+        trailMinMs: Long = Tuning.wordMotionTrailMinMs,
+        trailMaxMs: Long = Tuning.wordMotionTrailMaxMs,
+        overlapMs: Long = Tuning.wordOverlapMs,
+        minAnimationMs: Long = Tuning.wordMinAnimationMs,
+        motionDurationFloorMs: Long = Tuning.wordMotionDurationFloorMs,
+        maxOverrunMs: Long = 0L,
+        leadInMs: Long = 0L,
+        riseDurationMs: Long = 0L,
+        settleDurationMs: Long = 0L
+    ): Long {
+        val sweepEnd = getExtendedWordEnd(startMs, endMs, lineEndMs, overlapMs, minAnimationMs)
+        val shapeDuration = leadInMs + riseDurationMs + settleDurationMs
+        val effectiveFloor = if (shapeDuration > 0L) Math.max(motionDurationFloorMs, shapeDuration) else motionDurationFloorMs
+        val maxMotionEnd = lineEndMs + maxOverrunMs
+        val scaled = ((sweepEnd - startMs) * trailFraction).toLong()
+        val trail = scaled.coerceIn(trailMinMs, trailMaxMs)
+        val candidate = Math.max(sweepEnd, Math.min(sweepEnd + trail, maxMotionEnd))
+        val floored = Math.min(startMs + effectiveFloor, maxMotionEnd)
+        return Math.max(candidate, Math.max(sweepEnd, floored))
     }
 
     fun getPreRollInactiveAlpha(
         currentPos: Long,
         lineStartTime: Long,
         firstWordOnset: Long,
-        settleDurationMs: Long = PRE_ROLL_SETTLE_MS
+        settleDurationMs: Long = Tuning.preRollSettleMs,
+        maxLift: Int = Tuning.preRollMaxLift
     ): Int {
         val preRollGap = firstWordOnset - lineStartTime
         if (preRollGap <= 0L || currentPos < lineStartTime) {
@@ -320,7 +735,7 @@ object SyllableAnimator {
 
         return if (currentPos < firstWordOnset) {
             val progress = ((currentPos - lineStartTime).toFloat() / preRollGap.toFloat()).coerceIn(0f, 1f)
-            (INACTIVE_LYRIC_ALPHA + (PRE_ROLL_MAX_LIFT * progress)).toInt().coerceIn(0, 255)
+            (INACTIVE_LYRIC_ALPHA + (maxLift * progress)).toInt().coerceIn(0, 255)
         } else {
             if (settleDurationMs <= 0L) {
                 return INACTIVE_LYRIC_ALPHA
@@ -331,7 +746,7 @@ object SyllableAnimator {
             }
             val settleProgress = (elapsed.toFloat() / settleDurationMs.toFloat()).coerceIn(0f, 1f)
             val decay = 1f - easeInOutCubic(settleProgress)
-            (INACTIVE_LYRIC_ALPHA + (PRE_ROLL_MAX_LIFT * decay)).toInt().coerceIn(0, 255)
+            (INACTIVE_LYRIC_ALPHA + (maxLift * decay)).toInt().coerceIn(0, 255)
         }
     }
 }
