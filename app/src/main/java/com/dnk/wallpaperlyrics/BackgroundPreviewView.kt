@@ -90,6 +90,7 @@ class BackgroundPreviewView(context: Context) : View(context) {
     private var currentCornerRadius: Float = 48f
     private var radiusScale: Float = 1.0f
     private var bgSpeed: Float = 1.0f
+    private var bgSaturationExponent: Float = AuroraRenderer.DEFAULT_CHROMA_EXPONENT
     private var staticBg: Boolean = false
     private var accumulatedTime: Float = 0f
     private var lastFrameTimeNs: Long = 0L
@@ -100,6 +101,7 @@ class BackgroundPreviewView(context: Context) : View(context) {
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var rebuildJob: Job? = null
+    private var saturationJob: Job? = null
     private var songJob: Job? = null
     private val lyricsManager by lazy { LyricsManager(context.applicationContext) }
 
@@ -138,11 +140,13 @@ class BackgroundPreviewView(context: Context) : View(context) {
         accent: Int,
         base: Int,
         mid: Int,
-        highlight: Int
+        highlight: Int,
+        saturationExponent: Float = AuroraRenderer.DEFAULT_CHROMA_EXPONENT
     ) {
         currentCornerRadius = cornerRadius
         bgSpeed = speed
         staticBg = isStatic
+        bgSaturationExponent = saturationExponent
         setIdleColors(accent, base, mid, highlight)
     }
 
@@ -154,6 +158,47 @@ class BackgroundPreviewView(context: Context) : View(context) {
 
     fun setSpeed(speed: Float) {
         bgSpeed = speed
+    }
+
+    fun setSaturationExponent(exponent: Float) {
+        if (bgSaturationExponent == exponent) return
+        bgSaturationExponent = exponent
+        val card = albumArtBitmap
+        if (previewMode == PreviewMode.SONG && card != null && !card.isRecycled) {
+            rebuildSongBackground(card)
+        }
+    }
+
+    private fun rebuildSongBackground(card: Bitmap) {
+        saturationJob?.cancel()
+        saturationJob = scope.launch {
+            var blurredResult: Bitmap? = null
+            try {
+                blurredResult = withContext(Dispatchers.Default) {
+                    val palette = AuroraRenderer.extractPalette(card)
+                    val preprocessed = AuroraRenderer.preprocessArt(card, palette.accent, 0.15f)
+                    val scaledWork = Bitmap.createScaledBitmap(preprocessed, 128, 128, true)
+                    preprocessed.recycle()
+
+                    val pass1 = AuroraRenderer.blurBitmap(scaledWork, 20)
+                    scaledWork.recycle()
+
+                    val pass2 = AuroraRenderer.blurBitmap(pass1, 20)
+                    pass1.recycle()
+                    AuroraRenderer.boostChroma(pass2, bgSaturationExponent)
+                    AuroraRenderer.capLightness(pass2)
+                    pass2
+                }
+                val oldBg = backgroundBitmap
+                backgroundBitmap = blurredResult
+                oldBg?.recycle()
+                invalidate()
+            } catch (e: CancellationException) {
+                blurredResult?.recycle()
+            } catch (e: Exception) {
+                blurredResult?.recycle()
+            }
+        }
     }
 
     fun setStaticBg(isStatic: Boolean) {
@@ -387,7 +432,7 @@ class BackgroundPreviewView(context: Context) : View(context) {
 
                         val pass2 = AuroraRenderer.blurBitmap(pass1, 20)
                         pass1.recycle()
-                        AuroraRenderer.boostChroma(pass2, AuroraRenderer.BACKGROUND_CHROMA_BOOST)
+                        AuroraRenderer.boostChroma(pass2, bgSaturationExponent)
                         AuroraRenderer.capLightness(pass2)
 
                         blurredBg = pass2

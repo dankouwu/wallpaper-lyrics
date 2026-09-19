@@ -239,7 +239,7 @@ class LightnessCapTest {
             (0xFF shl 24) or (r shl 16) or (g shl 8) or b
         }
 
-        AuroraRenderer.boostChroma(pixels, width, height, AuroraRenderer.BACKGROUND_CHROMA_BOOST)
+        AuroraRenderer.boostChroma(pixels, width, height, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         AuroraRenderer.capLightness(pixels, width, height)
 
         var totalLuma = 0.0

@@ -16,16 +16,20 @@ import androidx.palette.graphics.Palette
 object AuroraRenderer {
 
     const val BACKGROUND_WORK_RESOLUTION = 512
-    const val BACKGROUND_CHROMA_BOOST = 4.5f
-    private const val BACKGROUND_DEPTH = 0.23f
-    private const val DEPTH_GATE_LOW = 0.55f
-    private const val DEPTH_GATE_HIGH = 0.85f
-    private const val DEPTH_CHROMA_FLOOR_LOW = 0.010f
-    private const val DEPTH_CHROMA_FLOOR_HIGH = 0.030f
-    private const val CHROMA_KNEE = 0.70f
-    private const val LIGHTNESS_CAP_KNEE = 0.62f
-    private const val LIGHTNESS_CAP_CEILING = 0.76f
-    private const val LIGHTNESS_CAP_STRENGTH = 0.5f
+    const val DEFAULT_CHROMA_EXPONENT = 0.30f
+    const val MIN_CHROMA_EXPONENT = 0.15f
+    const val MAX_CHROMA_EXPONENT = 1.0f
+    const val DEFAULT_LINEAR_BOOST = 4.5f
+    const val DEFAULT_BACKGROUND_DEPTH = 0.23f
+    const val DEFAULT_DEPTH_GATE_LOW = 0.55f
+    const val DEFAULT_DEPTH_GATE_HIGH = 0.85f
+    internal const val DEPTH_CHROMA_FLOOR_LOW = 0.010f
+    internal const val DEPTH_CHROMA_FLOOR_HIGH = 0.030f
+    internal const val LIGHTNESS_CAP_KNEE = 0.62f
+    internal const val LIGHTNESS_CAP_CEILING = 0.76f
+    internal const val LIGHTNESS_CAP_STRENGTH = 0.5f
+    internal const val DEFAULT_GAMUT_CAP_FRACTION = 0.98f
+    internal const val DEFAULT_DITHER_AMPLITUDE = 0.0118f
 
     fun drawAurora(
         canvas: Canvas,
@@ -93,12 +97,16 @@ object AuroraRenderer {
             shader.setFloatUniform("u_time_next", if (isTransitioning) nextAccumulatedTime else accumulatedTime)
             shader.setFloatUniform("u_seed", currentSeedX, currentSeedY)
             shader.setFloatUniform("u_seed_next", if (isTransitioning) nextSeedX else currentSeedX, if (isTransitioning) nextSeedY else currentSeedY)
-            shader.setFloatUniform("u_intensity", 1.0f)
+            val intensity = Tuning.shaderIntensity
+            val dithering = Tuning.shaderDitherAmplitude
+            val vignette = Tuning.vignetteStrength
+
+            shader.setFloatUniform("u_intensity", intensity)
             // Dither is applied as the final operation immediately before 8-bit quantization with no
             // downstream gain stages. Per-channel triangular noise over (-1, 1) scaled by 0.5 with
-            // u_dithering = 0.0118f gives 0.0118 * 0.5 * 255 = 1.5 LSB peak amplitude, breaking shallow
-            // gradient contours across independent color channels.
-            shader.setFloatUniform("u_dithering", 0.0118f)
+            // u_dithering gives peak amplitude breaking shallow gradient contours.
+            shader.setFloatUniform("u_dithering", dithering)
+            shader.setFloatUniform("u_vignette", vignette)
             shader.setFloatUniform("u_scale", 1.0f)
             shader.setFloatUniform("u_static_bg", if (staticBg) 1.0f else 0.0f)
 
@@ -462,9 +470,26 @@ object AuroraRenderer {
         (61f - 31.5f) / 64f, (29f - 31.5f) / 64f, (53f - 31.5f) / 64f, (21f - 31.5f) / 64f
     )
 
-    fun boostChromaColor(color: Int, boost: Float): Int = boostChromaColor(color, boost, 0f)
+    fun boostChromaColor(
+        color: Int,
+        exponent: Float = DEFAULT_CHROMA_EXPONENT,
+        gamutCap: Float = DEFAULT_GAMUT_CAP_FRACTION,
+        linearBoost: Float = DEFAULT_LINEAR_BOOST,
+        depth: Float = DEFAULT_BACKGROUND_DEPTH,
+        depthGateLow: Float = DEFAULT_DEPTH_GATE_LOW,
+        depthGateHigh: Float = DEFAULT_DEPTH_GATE_HIGH
+    ): Int = boostChromaColor(color, exponent, 0f, gamutCap, linearBoost, depth, depthGateLow, depthGateHigh)
 
-    private fun boostChromaColor(color: Int, boost: Float, dither: Float): Int {
+    internal fun boostChromaColor(
+        color: Int,
+        exponent: Float,
+        dither: Float,
+        gamutCap: Float = DEFAULT_GAMUT_CAP_FRACTION,
+        linearBoost: Float = DEFAULT_LINEAR_BOOST,
+        depth: Float = DEFAULT_BACKGROUND_DEPTH,
+        depthGateLow: Float = DEFAULT_DEPTH_GATE_LOW,
+        depthGateHigh: Float = DEFAULT_DEPTH_GATE_HIGH
+    ): Int {
         val alpha = color and 0xFF000000.toInt()
         val rByte = (color shr 16) and 0xFF
         val gByte = (color shr 8) and 0xFF
@@ -495,27 +520,17 @@ object AuroraRenderer {
         val hueA = a / chroma
         val hueB = b / chroma
 
-        val ceilingAtSource = maxChromaAt(L, hueA, hueB)
-        val depthLightness: Float
-        val ceiling: Float
-        if (ceilingAtSource < 1e-6f) {
-            depthLightness = L
-            ceiling = ceilingAtSource
-        } else {
-            val sourceRatio = chroma / ceilingAtSource
-            // Near the neutral axis, the gamut ceiling collapses toward zero and sourceRatio
-            // can reach full saturation from sub-LSB noise. Gating by absolute chroma prevents
-            // darkening near-white and grey pixels.
-            val chromaFloorGate = smoothstep(DEPTH_CHROMA_FLOOR_LOW, DEPTH_CHROMA_FLOOR_HIGH, chroma)
-            val depthGate = smoothstep(DEPTH_GATE_LOW, DEPTH_GATE_HIGH, sourceRatio) * chromaFloorGate
-            depthLightness = L * (1f - BACKGROUND_DEPTH * depthGate)
-            ceiling = if (depthGate == 0f) ceilingAtSource else maxChromaAt(depthLightness, hueA, hueB)
+        val ceiling = maxChromaAt(L, hueA, hueB)
+        if (ceiling < 1e-6f) {
+            return color
         }
 
-        // The 0.98 ceiling matches saturated album art while avoiding gamut boundary clipping.
-        val cap = ceiling * 0.98f
-        val scaled = chroma * boost
-        val finalChroma = rollOffChroma(scaled, cap)
+        val sourceRatio = chroma / ceiling
+        val chromaFloorGate = smoothstep(DEPTH_CHROMA_FLOOR_LOW, DEPTH_CHROMA_FLOOR_HIGH, chroma)
+        val depthGate = smoothstep(depthGateLow, depthGateHigh, sourceRatio) * chromaFloorGate
+        val depthLightness = L * (1f - depth * depthGate)
+
+        val finalChroma = gamutRelativeChroma(chroma, ceiling, exponent, gamutCap, linearBoost)
 
         val finalA = finalChroma * hueA
         val finalB = finalChroma * hueB
@@ -539,53 +554,103 @@ object AuroraRenderer {
         return alpha or (outR shl 16) or (outG shl 8) or outB
     }
 
-    fun boostChroma(target: Bitmap, boost: Float) {
+    fun boostChroma(
+        target: Bitmap,
+        exponent: Float = DEFAULT_CHROMA_EXPONENT,
+        gamutCap: Float = DEFAULT_GAMUT_CAP_FRACTION,
+        linearBoost: Float = DEFAULT_LINEAR_BOOST,
+        depth: Float = DEFAULT_BACKGROUND_DEPTH,
+        depthGateLow: Float = DEFAULT_DEPTH_GATE_LOW,
+        depthGateHigh: Float = DEFAULT_DEPTH_GATE_HIGH
+    ) {
         val w = target.width
         val h = target.height
         val pixels = IntArray(w * h)
         target.getPixels(pixels, 0, w, 0, 0, w, h)
-        boostChroma(pixels, w, h, boost)
+        boostChroma(pixels, w, h, exponent, gamutCap, linearBoost, depth, depthGateLow, depthGateHigh)
         target.setPixels(pixels, 0, w, 0, 0, w, h)
     }
 
-    fun boostChroma(pixels: IntArray, width: Int, height: Int, boost: Float) {
+    fun boostChroma(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        exponent: Float = DEFAULT_CHROMA_EXPONENT,
+        gamutCap: Float = DEFAULT_GAMUT_CAP_FRACTION,
+        linearBoost: Float = DEFAULT_LINEAR_BOOST,
+        depth: Float = DEFAULT_BACKGROUND_DEPTH,
+        depthGateLow: Float = DEFAULT_DEPTH_GATE_LOW,
+        depthGateHigh: Float = DEFAULT_DEPTH_GATE_HIGH
+    ) {
         for (y in 0 until height) {
             val rowOffset = y * width
             val bayerRow = (y and 7) shl 3
             for (x in 0 until width) {
                 val dither = BAYER_8X8[bayerRow or (x and 7)]
                 val index = rowOffset + x
-                pixels[index] = boostChromaColor(pixels[index], boost, dither)
+                pixels[index] = boostChromaColor(
+                    pixels[index],
+                    exponent,
+                    dither,
+                    gamutCap,
+                    linearBoost,
+                    depth,
+                    depthGateLow,
+                    depthGateHigh
+                )
             }
         }
     }
 
     // Caps bright backgrounds so white lyrics stay legible against white covers without clipping contrast in darker scenes.
     // Uses a soft exponential knee above 0.62 to prevent harsh luminance boundaries on gradients.
-    fun capLightness(target: Bitmap) {
+    fun capLightness(
+        target: Bitmap,
+        knee: Float = LIGHTNESS_CAP_KNEE,
+        ceiling: Float = LIGHTNESS_CAP_CEILING,
+        strength: Float = LIGHTNESS_CAP_STRENGTH
+    ) {
         val w = target.width
         val h = target.height
         val pixels = IntArray(w * h)
         target.getPixels(pixels, 0, w, 0, 0, w, h)
-        capLightness(pixels, w, h)
+        capLightness(pixels, w, h, knee, ceiling, strength)
         target.setPixels(pixels, 0, w, 0, 0, w, h)
     }
 
-    internal fun capLightness(pixels: IntArray, width: Int, height: Int) {
+    internal fun capLightness(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        knee: Float = LIGHTNESS_CAP_KNEE,
+        ceiling: Float = LIGHTNESS_CAP_CEILING,
+        strength: Float = LIGHTNESS_CAP_STRENGTH
+    ) {
         for (y in 0 until height) {
             val rowOffset = y * width
             val bayerRow = (y and 7) shl 3
             for (x in 0 until width) {
                 val dither = BAYER_8X8[bayerRow or (x and 7)]
                 val index = rowOffset + x
-                pixels[index] = capLightnessColor(pixels[index], dither)
+                pixels[index] = capLightnessColor(pixels[index], dither, knee, ceiling, strength)
             }
         }
     }
 
-    internal fun capLightnessColor(color: Int): Int = capLightnessColor(color, 0f)
+    internal fun capLightnessColor(
+        color: Int,
+        knee: Float = LIGHTNESS_CAP_KNEE,
+        ceiling: Float = LIGHTNESS_CAP_CEILING,
+        strength: Float = LIGHTNESS_CAP_STRENGTH
+    ): Int = capLightnessColor(color, 0f, knee, ceiling, strength)
 
-    internal fun capLightnessColor(color: Int, dither: Float): Int {
+    internal fun capLightnessColor(
+        color: Int,
+        dither: Float,
+        knee: Float = LIGHTNESS_CAP_KNEE,
+        ceiling: Float = LIGHTNESS_CAP_CEILING,
+        strength: Float = LIGHTNESS_CAP_STRENGTH
+    ): Int {
         val alpha = color and 0xFF000000.toInt()
         val rByte = (color shr 16) and 0xFF
         val gByte = (color shr 8) and 0xFF
@@ -604,16 +669,16 @@ object AuroraRenderer {
         val s_ = Math.cbrt(s.toDouble()).toFloat()
 
         val L = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_
-        if (L <= LIGHTNESS_CAP_KNEE) {
+        if (L <= knee) {
             return color
         }
 
         val a = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_
         val b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_
 
-        val range = LIGHTNESS_CAP_CEILING - LIGHTNESS_CAP_KNEE
-        val cappedL = LIGHTNESS_CAP_KNEE + range * (1f - Math.exp(-((L - LIGHTNESS_CAP_KNEE) / range).toDouble()).toFloat())
-        val blendedL = L - LIGHTNESS_CAP_STRENGTH * (L - cappedL)
+        val range = ceiling - knee
+        val cappedL = knee + range * (1f - Math.exp(-((L - knee) / range).toDouble()).toFloat())
+        val blendedL = L - strength * (L - cappedL)
 
         val finalL_ = blendedL + 0.3963377774f * a + 0.2158037573f * b
         val finalM_ = blendedL - 0.1055613458f * a - 0.0638541728f * b
@@ -648,15 +713,29 @@ object AuroraRenderer {
         return t * t * (3f - 2f * t)
     }
 
-    internal fun rollOffChroma(scaled: Float, cap: Float): Float {
-        val knee = cap * CHROMA_KNEE
-        val range = cap - knee
-        return if (cap <= 1e-6f || cap.isNaN() || scaled.isNaN() || range <= 0f || scaled <= knee) {
-            min(scaled, cap)
-        } else {
-            val unclipped = knee + range * (1f - Math.exp(-((scaled - knee) / range).toDouble()).toFloat())
-            min(unclipped, cap)
-        }
+    internal fun gamutRelativeChroma(
+        chroma: Float,
+        ceiling: Float,
+        exponent: Float,
+        gamutCap: Float = DEFAULT_GAMUT_CAP_FRACTION,
+        linearBoost: Float = DEFAULT_LINEAR_BOOST
+    ): Float {
+        if (ceiling < 1e-6f) return 0f
+        val cap = ceiling * gamutCap
+        val fraction = (chroma / ceiling).coerceIn(0f, 1f)
+        val powerChroma = cap * Math.pow(fraction.toDouble(), exponent.toDouble()).toFloat()
+        val linearChroma = chroma * linearBoost
+        return min(linearChroma, powerChroma)
+    }
+
+    fun sliderPositionToExponent(position: Float): Float {
+        val clamped = position.coerceIn(0f, 1f)
+        return MAX_CHROMA_EXPONENT - clamped * (MAX_CHROMA_EXPONENT - MIN_CHROMA_EXPONENT)
+    }
+
+    fun exponentToSliderPosition(exponent: Float): Float {
+        val clamped = exponent.coerceIn(MIN_CHROMA_EXPONENT, MAX_CHROMA_EXPONENT)
+        return (MAX_CHROMA_EXPONENT - clamped) / (MAX_CHROMA_EXPONENT - MIN_CHROMA_EXPONENT)
     }
 
     internal fun maxChromaAt(lightness: Float, hueA: Float, hueB: Float): Float {

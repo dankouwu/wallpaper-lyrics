@@ -12,7 +12,8 @@ object MediaSessionChoice {
         val packageName: String,
         val hasUsableMetadata: Boolean,
         val playbackState: Int,
-        val isCurrent: Boolean = false
+        val isCurrent: Boolean = false,
+        val hasEverPlayed: Boolean = true
     )
 
     fun isEligible(packageName: String, preferred: String): Boolean {
@@ -21,11 +22,10 @@ object MediaSessionChoice {
     }
 
     fun choose(candidates: List<Candidate>, preferred: String): Candidate? {
-        // Playback state cannot be a hard filter: freshly created sessions start in STATE_NONE
-        // without metadata. Hard-rejecting mutable state leaves the observer deaf because no callback
-        // is registered to hear when the session transitions to playing. Only immutable package
-        // identity is safe to hard-filter here.
-        val eligible = candidates.filter { isEligible(it.packageName, preferred) }
+        // Package identity is the only immutable filter here. A session that has never played
+        // is not drawn but is still watched by the observer, so a session restored at boot
+        // cannot take the screen before anything plays.
+        val eligible = candidates.filter { isEligible(it.packageName, preferred) && it.hasEverPlayed }
 
         if (eligible.isEmpty()) return null
 
@@ -36,6 +36,7 @@ object MediaSessionChoice {
                 .thenBy { isKnownMusicPackage(it.packageName) }
                 .thenBy { it.playbackState == STATE_PLAYING }
                 .thenBy { it.playbackState != STATE_ERROR && it.playbackState != STATE_NONE }
+                .thenBy { it.packageName }
         )
     }
 

@@ -24,6 +24,7 @@ import android.widget.Button
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
+import java.util.Locale
 import com.dnk.wallpaperlyrics.LyricsSettings as LS
 
 class BackgroundSettingsActivity : AppCompatActivity() {
@@ -141,6 +142,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 val initialBase = prefs.getInt(IdleScreenSettings.KEY_IDLE_BASE, IdleScreenSettings.DEFAULT_BASE)
                 val initialMid = prefs.getInt(IdleScreenSettings.KEY_IDLE_MID, IdleScreenSettings.DEFAULT_MID)
                 val initialHighlight = prefs.getInt(IdleScreenSettings.KEY_IDLE_HIGHLIGHT, IdleScreenSettings.DEFAULT_HIGHLIGHT)
+                val initialSaturation = prefs.getFloat("bg_saturation", Tuning.chromaExponent)
                 initSettings(
                     initialRadius,
                     initialSpeed,
@@ -148,7 +150,8 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     initialAccent,
                     initialBase,
                     initialMid,
-                    initialHighlight
+                    initialHighlight,
+                    initialSaturation
                 )
             }
             previewView = bgPreview
@@ -785,7 +788,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     syncing = true
                     val value = minVal + (maxVal - minVal) * (progress / 1000f)
                     val formatted = if (isFloat) {
-                        String.format("%.1f", value)
+                        String.format(Locale.US, "%.1f", value)
                     } else {
                         value.toInt().toString()
                     }

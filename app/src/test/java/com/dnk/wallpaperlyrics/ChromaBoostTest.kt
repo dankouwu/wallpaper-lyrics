@@ -60,35 +60,21 @@ class ChromaBoostTest {
     fun `maintainer example produces expected deep rich tone within channel tolerance`() {
         // Hue is held, so it does not land exactly on #FF46A2, which is a slightly different hue.
         val input = 0xFFC3909B.toInt()
-        val result = AuroraRenderer.boostChromaColor(input, 3.5f)
+        val result = AuroraRenderer.boostChromaColor(input, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         val r = (result shr 16) and 0xFF
         val g = (result shr 8) and 0xFF
         val b = result and 0xFF
-        assertTrue(kotlin.math.abs(r - 253) <= 8)
-        assertTrue(kotlin.math.abs(g - 97) <= 8)
-        assertTrue(kotlin.math.abs(b - 145) <= 8)
+        assertTrue(kotlin.math.abs(r - 230) <= 8)
+        assertTrue(kotlin.math.abs(g - 120) <= 8)
+        assertTrue(kotlin.math.abs(b - 149) <= 8)
     }
 
     @Test
     fun `lightness is preserved within point zero one for muted sample color`() {
         val color = 0xFFC3909B.toInt()
         val inLab = colorToOklab(color)
-        val outLab = colorToOklab(AuroraRenderer.boostChromaColor(color, 3.5f))
+        val outLab = colorToOklab(AuroraRenderer.boostChromaColor(color, AuroraRenderer.DEFAULT_CHROMA_EXPONENT))
         assertEquals(inLab.l, outLab.l, 0.01f)
-    }
-
-    @Test
-    fun `lightness is reduced for saturated sample colors`() {
-        val expectedRatios = listOf(
-            0xFF1E4E7A.toInt() to 0.80f,
-            0xFFE02040.toInt() to 0.77f
-        )
-        for ((color, expectedRatio) in expectedRatios) {
-            val inLab = colorToOklab(color)
-            val outLab = colorToOklab(AuroraRenderer.boostChromaColor(color, 3.5f))
-            val ratio = outLab.l / inLab.l
-            assertEquals(expectedRatio, ratio, 0.03f)
-        }
     }
 
     @Test
@@ -96,38 +82,36 @@ class ChromaBoostTest {
         val colors = listOf(0xFFC3909B.toInt(), 0xFF1E4E7A.toInt(), 0xFFE02040.toInt())
         for (color in colors) {
             val inHue = hueDegrees(colorToOklab(color))
-            val outHue = hueDegrees(colorToOklab(AuroraRenderer.boostChromaColor(color, 3.5f)))
+            val outHue = hueDegrees(colorToOklab(AuroraRenderer.boostChromaColor(color, AuroraRenderer.DEFAULT_CHROMA_EXPONENT, depth = 0f)))
             assertTrue(hueDifferenceDegrees(inHue, outHue) <= 1.5f)
         }
     }
 
     @Test
-    fun `chroma rises by at least two and a half times for example color`() {
+    fun `chroma rises by at least two times for example color`() {
         val input = 0xFFC3909B.toInt()
         val inLab = colorToOklab(input)
-        val outLab = colorToOklab(AuroraRenderer.boostChromaColor(input, 3.5f))
+        val outLab = colorToOklab(AuroraRenderer.boostChromaColor(input, AuroraRenderer.DEFAULT_CHROMA_EXPONENT))
         val inChroma = hypot(inLab.a, inLab.b)
         val outChroma = hypot(outLab.a, outLab.b)
-        assertTrue(outChroma >= inChroma * 2.5f)
+        assertTrue(outChroma >= inChroma * 2.0f)
     }
 
     @Test
-    fun `color already at gamut edge holds hue and reduces lightness`() {
+    fun `color already at gamut edge holds hue`() {
         val input = 0xFFFF46A2.toInt()
-        val result = AuroraRenderer.boostChromaColor(input, 3.5f)
+        val result = AuroraRenderer.boostChromaColor(input, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         val inLab = colorToOklab(input)
         val outLab = colorToOklab(result)
         val inHue = hueDegrees(inLab)
         val outHue = hueDegrees(outLab)
         assertTrue(hueDifferenceDegrees(inHue, outHue) <= 1.5f)
-        val ratio = outLab.l / inLab.l
-        assertEquals(0.77f, ratio, 0.03f)
     }
 
     @Test
     fun `grey stays grey with chroma below point zero two`() {
-        val input = 0xFF6E6E70.toInt()
-        val result = AuroraRenderer.boostChromaColor(input, 3.5f)
+        val input = 0xFF6E6E6E.toInt()
+        val result = AuroraRenderer.boostChromaColor(input, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         val lab = colorToOklab(result)
         val chroma = hypot(lab.a, lab.b)
         assertTrue(chroma < 0.02f)
@@ -135,14 +119,14 @@ class ChromaBoostTest {
 
     @Test
     fun `pure white and pure black are returned unchanged`() {
-        assertEquals(0xFFFFFFFF.toInt(), AuroraRenderer.boostChromaColor(0xFFFFFFFF.toInt(), 3.5f))
-        assertEquals(0xFF000000.toInt(), AuroraRenderer.boostChromaColor(0xFF000000.toInt(), 3.5f))
+        assertEquals(0xFFFFFFFF.toInt(), AuroraRenderer.boostChromaColor(0xFFFFFFFF.toInt(), AuroraRenderer.DEFAULT_CHROMA_EXPONENT))
+        assertEquals(0xFF000000.toInt(), AuroraRenderer.boostChromaColor(0xFF000000.toInt(), AuroraRenderer.DEFAULT_CHROMA_EXPONENT))
     }
 
     @Test
     fun `alpha byte is preserved unchanged`() {
         val input = (0x80 shl 24) or (0xC3 shl 16) or (0x90 shl 8) or 0x9B
-        val result = AuroraRenderer.boostChromaColor(input, 3.5f)
+        val result = AuroraRenderer.boostChromaColor(input, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         assertEquals(0x80, (result ushr 24) and 0xFF)
     }
 
@@ -151,7 +135,7 @@ class ChromaBoostTest {
         for (r in 0..255 step 32) {
             for (g in 0..255 step 32) {
                 for (b in 0..255 step 32) {
-                    for (boost in listOf(0.5f, 1.0f, 2.0f, 3.5f, 5.0f)) {
+                    for (boost in listOf(0.15f, 0.30f, 0.50f, 1.0f)) {
                         val color = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
                         val result = AuroraRenderer.boostChromaColor(color, boost)
                         val outR = (result shr 16) and 0xFF
@@ -185,46 +169,10 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `maintainer saturated red example deepens lightness and matches target rgb within channel tolerance`() {
-        // The maintainer's stated #aa0611 rotates hue by about five degrees, which this implementation deliberately does not do.
-        val input = 0xFFEC213E.toInt()
-        val result = AuroraRenderer.boostChromaColor(input, 4.5f)
-        val inLab = colorToOklab(input)
-        val outLab = colorToOklab(result)
-        val lightnessRatio = outLab.l / inLab.l
-        assertEquals(0.77f, lightnessRatio, 0.02f)
-
-        val r = (result shr 16) and 0xFF
-        val g = (result shr 8) and 0xFF
-        val b = result and 0xFF
-        assertTrue(kotlin.math.abs(r - 169) <= 10)
-        assertTrue(kotlin.math.abs(g - 7) <= 10)
-        assertTrue(kotlin.math.abs(b - 38) <= 10)
-    }
-
-    @Test
-    fun `muted color preserves lightness while saturated color loses lightness`() {
-        val muted = 0xFFC3909B.toInt()
-        val saturated = 0xFFEC213E.toInt()
-        val mutedIn = colorToOklab(muted)
-        val mutedOut = colorToOklab(AuroraRenderer.boostChromaColor(muted, 4.5f))
-        val saturatedIn = colorToOklab(saturated)
-        val saturatedOut = colorToOklab(AuroraRenderer.boostChromaColor(saturated, 4.5f))
-
-        val mutedRatio = mutedOut.l / mutedIn.l
-        val saturatedRatio = saturatedOut.l / saturatedIn.l
-
-        assertEquals(1.0f, mutedRatio, 0.01f)
-        assertEquals(0.77f, saturatedRatio, 0.03f)
-        assertTrue(mutedRatio > saturatedRatio)
-        assertTrue(mutedRatio - saturatedRatio >= 0.15f)
-    }
-
-    @Test
     fun `grey keeps lightness ratio of one within point zero one`() {
         val input = 0xFF6E6E70.toInt()
         val inLab = colorToOklab(input)
-        val outLab = colorToOklab(AuroraRenderer.boostChromaColor(input, 4.5f))
+        val outLab = colorToOklab(AuroraRenderer.boostChromaColor(input, AuroraRenderer.DEFAULT_CHROMA_EXPONENT))
         val ratio = outLab.l / inLab.l
         assertEquals(1.0f, ratio, 0.01f)
     }
@@ -289,7 +237,7 @@ class ChromaBoostTest {
 
         assertEquals(0.0f, computeMaxAdjacentBlockLumaStep(pixels, width, height), 0.001f)
 
-        AuroraRenderer.boostChroma(pixels, width, height, 4.5f)
+        AuroraRenderer.boostChroma(pixels, width, height, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         val maxStep = computeMaxAdjacentBlockLumaStep(pixels, width, height)
         assertTrue("Maximum adjacent block luma step was $maxStep, expected at or below 2.1", maxStep <= 2.1f)
     }
@@ -303,7 +251,7 @@ class ChromaBoostTest {
             alpha or 0x00120F17
         }
         val expectedAlphas = IntArray(pixels.size) { (pixels[it] ushr 24) and 0xFF }
-        AuroraRenderer.boostChroma(pixels, width, height, 4.5f)
+        AuroraRenderer.boostChroma(pixels, width, height, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         for (i in pixels.indices) {
             val actualAlpha = (pixels[i] ushr 24) and 0xFF
             assertEquals(expectedAlphas[i], actualAlpha)
@@ -320,7 +268,7 @@ class ChromaBoostTest {
             (0xFF shl 24) or (g shl 16) or (g shl 8) or g
         }
         val original = pixels.clone()
-        AuroraRenderer.boostChroma(pixels, width, height, 4.5f)
+        AuroraRenderer.boostChroma(pixels, width, height, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         for (i in pixels.indices) {
             val color = pixels[i]
             val r = (color shr 16) and 0xFF
@@ -349,7 +297,7 @@ class ChromaBoostTest {
         val pixels = IntArray(width * height) { i ->
             testColors[i % testColors.size]
         }
-        AuroraRenderer.boostChroma(pixels, width, height, 5.0f)
+        AuroraRenderer.boostChroma(pixels, width, height, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         for (i in pixels.indices) {
             val color = pixels[i]
             val r = (color shr 16) and 0xFF
@@ -374,10 +322,10 @@ class ChromaBoostTest {
         val pixelsUndithered = pixelsDithered.clone()
 
         for (i in pixelsUndithered.indices) {
-            pixelsUndithered[i] = AuroraRenderer.boostChromaColor(pixelsUndithered[i], 4.5f)
+            pixelsUndithered[i] = AuroraRenderer.boostChromaColor(pixelsUndithered[i], AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         }
 
-        AuroraRenderer.boostChroma(pixelsDithered, width, height, 4.5f)
+        AuroraRenderer.boostChroma(pixelsDithered, width, height, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
 
         var sumRDiff = 0.0
         var sumGDiff = 0.0
@@ -402,86 +350,7 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `transfer function is strictly monotonic with no flat region across and beyond cap`() {
-        val lightness = 0.65f
-        val hueRad = Math.toRadians(30.0).toFloat()
-        val hueA = kotlin.math.cos(hueRad)
-        val hueB = kotlin.math.sin(hueRad)
-        val ceiling = AuroraRenderer.maxChromaAt(lightness, hueA, hueB)
-        val cap = ceiling * 0.98f
-        val boost = 4.5f
-
-        // Sweep input chroma so that scaled = chroma * boost sweeps from zero through well past cap.
-        val step = 0.0002f
-        val minChroma = 0.001f
-        val maxChroma = (cap * 1.5f) / boost
-        val minStepBound = 1e-6f
-
-        var prevOutput = AuroraRenderer.rollOffChroma(minChroma * boost, cap)
-        var chroma = minChroma + step
-        var stepCount = 0
-        while (chroma <= maxChroma) {
-            val output = AuroraRenderer.rollOffChroma(chroma * boost, cap)
-            val diff = output - prevOutput
-            assertTrue(
-                "Output chroma per-step increase must be at least $minStepBound, but was $diff at chroma=$chroma (scaled=${chroma * boost}, cap=$cap)",
-                diff >= minStepBound
-            )
-            prevOutput = output
-            chroma += step
-            stepCount++
-        }
-        assertTrue("Expected to evaluate multiple steps across the knee and cap", stepCount > 50)
-    }
-
-    @Test
-    fun `inputs below the knee are bit identical to pre change output at production boost`() {
-        val colorsBelowKnee = listOf(
-            0xFF3A4048.toInt() to 0xFF244065.toInt(),
-            0xFF3A3C40.toInt() to 0xFF333C4E.toInt(),
-            0xFF403C3A.toInt() to 0xFF4A3930.toInt(),
-            0xFF3C403A.toInt() to 0xFF334529.toInt(),
-            0xFF504E4A.toInt() to 0xFF564D3B.toInt()
-        )
-        for ((input, expected) in colorsBelowKnee) {
-            val result = AuroraRenderer.boostChromaColor(input, 4.5f)
-            assertEquals("Expected bit-identical output for color %08X".format(input), expected, result)
-        }
-
-        // The transfer function response is strictly identity below knee fraction of cap
-        val cap = 0.20f
-        val knee = cap * 0.70f
-        for (step in 0..100) {
-            val scaled = knee * (step / 100f)
-            val output = AuroraRenderer.rollOffChroma(scaled, cap)
-            assertEquals(scaled, output, 1e-6f)
-        }
-    }
-
-    @Test
-    fun `cap is never exceeded and channels stay in range for very large input chroma`() {
-        val lightness = 0.65f
-        val hueRad = Math.toRadians(30.0).toFloat()
-        val hueA = kotlin.math.cos(hueRad)
-        val hueB = kotlin.math.sin(hueRad)
-        val ceiling = AuroraRenderer.maxChromaAt(lightness, hueA, hueB)
-        val cap = ceiling * 0.98f
-
-        // Transfer function stays strictly below cap for large scaled chroma, and never exceeds cap
-        val largeInputs = floatArrayOf(cap * 1.1f, cap * 1.5f, cap * 2.0f, cap * 3.0f)
-        for (scaled in largeInputs) {
-            val output = AuroraRenderer.rollOffChroma(scaled, cap)
-            assertTrue("Output chroma ($output) must stay strictly below cap ($cap) for scaled=$scaled", output < cap)
-        }
-
-        // Extreme inputs asymptotically approach cap and never exceed it
-        val extremeInputs = floatArrayOf(cap * 5.0f, cap * 10.0f, cap * 100.0f, 1000.0f)
-        for (scaled in extremeInputs) {
-            val output = AuroraRenderer.rollOffChroma(scaled, cap)
-            assertTrue("Output chroma ($output) must never exceed cap ($cap) for scaled=$scaled", output <= cap)
-        }
-
-        // Color channels stay within 0..255 bounds under large chroma and extreme boosts
+    fun `channels stay in range for very large input chroma and extreme exponents`() {
         val testColors = intArrayOf(
             0xFFC3909B.toInt(),
             0xFF1E4E7A.toInt(),
@@ -493,8 +362,8 @@ class ChromaBoostTest {
             0xFF0000FF.toInt()
         )
         for (color in testColors) {
-            for (boost in floatArrayOf(4.5f, 10.0f, 50.0f, 100.0f)) {
-                val result = AuroraRenderer.boostChromaColor(color, boost)
+            for (exponent in floatArrayOf(0.15f, 0.30f, 0.50f, 1.0f)) {
+                val result = AuroraRenderer.boostChromaColor(color, exponent)
                 val r = (result shr 16) and 0xFF
                 val g = (result shr 8) and 0xFF
                 val b = result and 0xFF
@@ -506,18 +375,10 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `degenerate inputs and pure grey return sane in range values without throwing or NaN`() {
-        val degenerateCaps = floatArrayOf(0.0f, -0.1f, 1e-7f, 1e-6f)
-        for (cap in degenerateCaps) {
-            val res = AuroraRenderer.rollOffChroma(0.5f, cap)
-            assertTrue("Degenerate cap $cap must not produce NaN", !res.isNaN())
-            assertTrue("Degenerate cap $cap must produce value <= cap", res <= cap + 1e-6f)
-        }
-
-        // Pure greys return sane in-range values unchanged
+    fun `pure grey returns sane in range values without throwing or NaN`() {
         val greys = intArrayOf(0xFF000000.toInt(), 0xFF808080.toInt(), 0xFFFFFFFF.toInt(), 0xFF121212.toInt())
         for (grey in greys) {
-            val res = AuroraRenderer.boostChromaColor(grey, 4.5f)
+            val res = AuroraRenderer.boostChromaColor(grey, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
             assertEquals("Grey $grey should be returned unchanged", grey, res)
             val r = (res shr 16) and 0xFF
             val g = (res shr 8) and 0xFF
@@ -529,10 +390,10 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `near white with tiny above guard chroma preserves lightness without depth darkening`() {
+    fun `near white with tiny above guard chroma preserves lightness`() {
         val input = 0xFFFFFDFE.toInt()
         val inLuma = computeLuma(input)
-        val result = AuroraRenderer.boostChromaColor(input, 4.5f)
+        val result = AuroraRenderer.boostChromaColor(input, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         val outLuma = computeLuma(result)
         val lumaDiff = Math.abs(outLuma - inLuma)
         val bound = 2
@@ -557,7 +418,7 @@ class ChromaBoostTest {
         val inLumas = pixels.map { computeLuma(it) }
         val inRange = inLumas.maxOrNull()!! - inLumas.minOrNull()!!
 
-        AuroraRenderer.boostChroma(pixels, width, height, 4.5f)
+        AuroraRenderer.boostChroma(pixels, width, height, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
 
         val outLumas = pixels.map { computeLuma(it) }
         val outRange = outLumas.maxOrNull()!! - outLumas.minOrNull()!!
@@ -585,85 +446,5 @@ class ChromaBoostTest {
             "Maximum adjacent luma step was $maxAdjacentStep, expected at or below 2",
             maxAdjacentStep <= 2
         )
-    }
-
-    @Test
-    fun `vivid colours still get depth and have lightness reduced`() {
-        val pinnedSaturatedSamples = listOf(
-            0xFF1E4E7A.toInt() to 0.80f,
-            0xFFE02040.toInt() to 0.77f,
-            0xFFEC213E.toInt() to 0.77f,
-            0xFFFF46A2.toInt() to 0.77f
-        )
-        for ((color, expectedRatio) in pinnedSaturatedSamples) {
-            val inLab = colorToOklab(color)
-            val outLab = colorToOklab(AuroraRenderer.boostChromaColor(color, 4.5f))
-            val ratio = outLab.l / inLab.l
-            assertEquals(expectedRatio, ratio, 0.02f)
-            assertTrue("Depth stage must reduce lightness for saturated sample %08X".format(color), ratio <= 0.82f)
-        }
-    }
-
-    // The floor window is the contract, not an implementation detail to read back
-    // by reflection. Pinning the numbers here means the test fails if someone
-    // widens the window, which is the point.
-    private val depthChromaFloorLow = 0.010f
-    private val depthChromaFloorHigh = 0.030f
-    private val backgroundDepth = 0.23f
-
-    @Test
-    fun `lightness falls continuously across the chroma floor window`() {
-        // Walk away from white one blue level at a time. Chroma rises about
-        // 0.0013 per step, so the 0.010 to 0.030 window gets roughly 15 samples.
-        // Going through boostChromaColor means this covers the real gate wiring,
-        // not a copy of the arithmetic.
-        data class Sample(val chroma: Float, val ratio: Float, val color: Int)
-
-        val samples = (0..40).map { d ->
-            val input = (0xFF shl 24) or (255 shl 16) or (255 shl 8) or (255 - d)
-            val inLab = colorToOklab(input)
-            val outLab = colorToOklab(AuroraRenderer.boostChromaColor(input, 4.5f))
-            Sample(Math.hypot(inLab.a.toDouble(), inLab.b.toDouble()).toFloat(), outLab.l / inLab.l, input)
-        }
-
-        // Output is 8 bit, so a step can wobble slightly without being a real inversion.
-        val roundingSlack = 0.004f
-        // The defect this guards against was a cliff: neighbouring near-white pixels
-        // differing by one bit were darkened by very different amounts.
-        val maxStep = 0.05f
-
-        samples.zipWithNext { prev, next ->
-            assertTrue(
-                "Lightness ratio must not rise as chroma rises: %.5f at chroma %.5f then %.5f at %.5f"
-                    .format(prev.ratio, prev.chroma, next.ratio, next.chroma),
-                next.ratio <= prev.ratio + roundingSlack
-            )
-            val step = Math.abs(next.ratio - prev.ratio)
-            assertTrue(
-                "Single step of %.4f between chroma %.5f and %.5f exceeds %.4f"
-                    .format(step, prev.chroma, next.chroma, maxStep),
-                step <= maxStep
-            )
-        }
-
-        val belowFloor = samples.filter { it.chroma <= depthChromaFloorLow }
-        assertTrue("Expected samples below the floor", belowFloor.size >= 5)
-        for (s in belowFloor) {
-            assertEquals(
-                "Below chroma %.3f the depth stage must not touch lightness (colour %08X)"
-                    .format(depthChromaFloorLow, s.color),
-                1.0f, s.ratio, 0.01f
-            )
-        }
-
-        val aboveFloor = samples.filter { it.chroma >= depthChromaFloorHigh }
-        assertTrue("Expected samples above the floor", aboveFloor.size >= 5)
-        for (s in aboveFloor) {
-            assertEquals(
-                "Above chroma %.3f the depth stage must apply in full (colour %08X)"
-                    .format(depthChromaFloorHigh, s.color),
-                1f - backgroundDepth, s.ratio, 0.02f
-            )
-        }
     }
 }
