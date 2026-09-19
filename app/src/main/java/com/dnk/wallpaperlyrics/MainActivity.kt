@@ -435,7 +435,7 @@ class MainActivity : AppCompatActivity() {
                     this@MainActivity,
                     LS.IconType.FILE_STACK,
                     "Version",
-                    "2.0.0",
+                    packageManager.getPackageInfo(packageName, 0).versionName,
                     LS.TrailingType.NONE,
                     onClick = {}
                 ))

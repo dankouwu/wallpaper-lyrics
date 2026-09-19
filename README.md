@@ -29,7 +29,8 @@ That path needs Android 13, which is where AGSL lands. Android 8 through 12 get 
 ## What else it does
 
 - Waking the screen shows the lyrics first, then fades in the album art with the title and artist, then goes back to the lyrics.
-- Sync offset from -1000 ms to +1000 ms, plus per song offsets that stick to the track, plus Bluetooth output latency measured and subtracted automatically.
+- Always On Display has its own setting: the album card over the background, the card on black, or black on its own.
+- Sync offset from -1000 ms to +1000 ms, plus per song offsets that stick to the track, plus an offset for each paired Bluetooth device that applies whenever you play to it.
 - Lyrics you can edit by hand. Paste LRC for the current track when every source has it wrong, or purge the cache and refetch.
 - A custom lyrics endpoint, tried ahead of Musixmatch and LRCLIB, if you run your own.
 - An idle screen with its own title and four color palette for when nothing is playing.
@@ -47,7 +48,7 @@ Then open Wallpaper Lyrics, tap **Activate Live Wallpaper**, and pick **Lyrics W
 From a computer instead:
 
 ```bash
-adb install -r wallpaper-lyrics_2.0.0.apk
+adb install -r wallpaper-lyrics_2.1.0.apk
 ```
 
 > [!WARNING]
