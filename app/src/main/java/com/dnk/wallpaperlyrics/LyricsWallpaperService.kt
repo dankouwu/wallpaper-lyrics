@@ -346,31 +346,9 @@ class LyricsWallpaperService : WallpaperService() {
         private var prefIdleMid = IdleScreenSettings.DEFAULT_MID
         private var prefIdleHighlight = IdleScreenSettings.DEFAULT_HIGHLIGHT
         private var notificationAccessGranted = false
-        private var audioAccessGranted = false
-        private var prefAutoSyncEnabled = false
-        private val autoSyncEstimator = AutoSyncEstimator()
-        private var autoSyncCapture: AutoSyncCapture? = null
-        private var autoSyncEstimationJob: Job? = null
-        private var failedCaptureTitle: String? = null
-        private var failedCaptureArtist: String? = null
-        private var hasLoggedCaptureFailureSkip = false
-        @Volatile private var autoSyncStatus: String? = null
-        @Volatile private var playbackSnapshot = PlaybackSnapshot()
-
-        private fun clearCaptureFailure() {
-            failedCaptureTitle = null
-            failedCaptureArtist = null
-            hasLoggedCaptureFailureSkip = false
-        }
 
         private val prefChangeListener = SharedPreferences.OnSharedPreferenceChangeListener { prefs, key ->
             when (key) {
-                AutoSyncSettings.KEY_ENABLED -> {
-                    prefAutoSyncEnabled = prefs.getBoolean(AutoSyncSettings.KEY_ENABLED, false)
-                    clearCaptureFailure()
-                    updateSongSpecificDelay(prefs)
-                    evaluateAutoSyncState()
-                }
                 "dynamic_theming" -> prefDynamicTheming = prefs.getBoolean("dynamic_theming", false)
                 "bg_speed" -> prefBgSpeed = prefs.getFloat("bg_speed", 1.0f)
                 "bg_saturation" -> prefBgSaturation = prefs.getFloat("bg_saturation", Tuning.chromaExponent)
@@ -382,7 +360,6 @@ class LyricsWallpaperService : WallpaperService() {
                     prefMetadataOnlyMode = prefs.getBoolean("metadata_only_mode", false)
                     if (prefMetadataOnlyMode) {
                         currentLyrics = null
-                        evaluateAutoSyncState()
                         lyricBitmaps?.forEach { it.recycle() }
                         lyricBitmaps = null
                         lyricLayouts = null
@@ -394,7 +371,6 @@ class LyricsWallpaperService : WallpaperService() {
                             engineScope.launch {
                                 lyricsSearchExhausted = false
                                 currentLyrics = null
-                                evaluateAutoSyncState()
                                 lyricBitmaps?.forEach { it.recycle() }
                                 lyricBitmaps = null
                                 lyricLayouts = null
@@ -402,7 +378,6 @@ class LyricsWallpaperService : WallpaperService() {
                                 lyricsManager.fetchLyrics(title, artist ?: "", currentDurationMs) { lines, definitive ->
                                     if (currentTitle == title) {
                                         currentLyrics = lines
-                                        evaluateAutoSyncState()
                                         if (lines == null && definitive) lyricsSearchExhausted = true
                                         if (lines != null) showToast("Lyrics synced!")
                                         else if (definitive) showToast("Lyrics unavailable")
@@ -444,9 +419,8 @@ class LyricsWallpaperService : WallpaperService() {
                     }
                 }
                 else -> {
-                    if (key != null && (key.startsWith("song_delay_") || key.startsWith(AutoSyncSettings.AUTO_OFFSET_PREFIX))) {
+                    if (key != null && key.startsWith("song_delay_")) {
                         updateSongSpecificDelay(prefs)
-                        evaluateAutoSyncState()
                     } else if (key != null && key.startsWith(DeviceOffsets.KEY_PREFIX)) {
                         updateBluetoothLatency()
                     }
@@ -455,7 +429,6 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private fun loadPreferences(prefs: SharedPreferences) {
-            prefAutoSyncEnabled = prefs.getBoolean(AutoSyncSettings.KEY_ENABLED, false)
             prefDynamicTheming = prefs.getBoolean("dynamic_theming", false)
             prefBgSpeed = prefs.getFloat("bg_speed", 1.0f)
             prefBgSaturation = prefs.getFloat("bg_saturation", Tuning.chromaExponent)
@@ -485,10 +458,8 @@ class LyricsWallpaperService : WallpaperService() {
             val title = currentTitle
             val artist = currentArtist
             songSyncOffset = if (!title.isNullOrBlank()) {
-                val manual = prefs.getInt(AutoSyncSettings.manualDelayKey(title, artist), 0)
-                val autoKey = AutoSyncSettings.autoOffsetKey(title, artist)
-                val auto = if (prefs.contains(autoKey)) prefs.getInt(autoKey, 0) else null
-                AutoSyncSettings.songOffset(manual, auto, prefAutoSyncEnabled).toLong()
+                val manual = prefs.getInt("song_delay_${title}_${artist}", 0)
+                manual.toLong()
             } else {
                 0L
             }
@@ -754,8 +725,6 @@ class LyricsWallpaperService : WallpaperService() {
                 } else {
                     lastKnownPlaybackPosition = state.position
                 }
-                publishPlaybackSnapshot()
-                evaluateAutoSyncState()
             }
         }
 
@@ -785,8 +754,6 @@ class LyricsWallpaperService : WallpaperService() {
                     } else {
                         lastKnownPlaybackPosition = state.position
                     }
-                    publishPlaybackSnapshot()
-                    evaluateAutoSyncState()
 
                     // Diagnostic log (~every 5s) to trace resync behavior
                     if (now - lastResyncLogTime >= 5000L) {
@@ -876,7 +843,6 @@ class LyricsWallpaperService : WallpaperService() {
                             }
                             lyricsSearchExhausted = false
                             currentLyrics = null
-                            evaluateAutoSyncState()
                             lyricBitmaps?.forEach { it.recycle() }
                             lyricBitmaps = null
                             lyricLayouts = null
@@ -889,7 +855,6 @@ class LyricsWallpaperService : WallpaperService() {
                             lyricsManager.fetchLyrics(title, artist ?: "", currentDurationMs) { lines, definitive ->
                                 if (currentTitle == title) {
                                     currentLyrics = lines
-                                    evaluateAutoSyncState()
                                     if (lines == null && definitive) lyricsSearchExhausted = true
                                     if (lines != null) showToast("Lyrics re-fetched successfully!")
                                     else if (definitive) showToast("Lyrics unavailable")
@@ -988,7 +953,6 @@ class LyricsWallpaperService : WallpaperService() {
                 lyricLayouts = null
                 lineOffsets = null
                 currentLyrics = enhancedLines
-                evaluateAutoSyncState()
                 lyricsSearchExhausted = true
                 debugDemoStartRealtime = SystemClock.elapsedRealtime() - 16_570L
                 Log.i("WallpaperDemo", "Effortless provider result: line-level or unavailable; using manual word-level timing for supplied opening passage")
@@ -1011,212 +975,10 @@ class LyricsWallpaperService : WallpaperService() {
             lastWakeTime = 0L
         }
 
-        private val autoSyncRedetectReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context?, intent: Intent?) {
-                if (intent?.action != "com.dnk.wallpaperlyrics.AUTO_SYNC_REDETECT") return
-                Log.i("AutoSync", "Received AUTO_SYNC_REDETECT broadcast")
-                val title = currentTitle ?: return
-                val artist = currentArtist
-                val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-                prefs.edit().remove(AutoSyncSettings.autoOffsetKey(title, artist)).apply()
-                updateSongSpecificDelay(prefs)
-                clearCaptureFailure()
-                stopAutoSyncCapture(clearSamples = true)
-                evaluateAutoSyncState()
-            }
-        }
-
-        private fun publishPlaybackSnapshot() {
-            playbackSnapshot = PlaybackSnapshot(
-                positionMs = lastKnownPlaybackPosition,
-                updateTimeRealtimeMs = lastUpdateTime,
-                speed = lastKnownPlaybackSpeed,
-                isPlaying = isPlaying
-            )
-        }
-
-        private fun updateAutoSyncStatus(newStatus: String) {
-            if (autoSyncStatus != newStatus) {
-                autoSyncStatus = newStatus
-                Log.i("AutoSync", "State changed: $newStatus")
-                val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-                prefs.edit().putString(AutoSyncSettings.KEY_STATUS, newStatus).apply()
-            }
-        }
-
-        private fun evaluateAutoSyncState() {
-            if (isPreview) return
-
-            val enabled = prefAutoSyncEnabled
-            if (!enabled) {
-                stopAutoSyncCapture(clearSamples = true)
-                updateAutoSyncStatus(AutoSyncLogic.statusOff())
-                return
-            }
-
-            val hasPermission = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-            if (!audioAccessGranted && hasPermission) {
-                clearCaptureFailure()
-            }
-            audioAccessGranted = hasPermission
-            if (!hasPermission) {
-                stopAutoSyncCapture(clearSamples = true)
-                updateAutoSyncStatus(AutoSyncLogic.statusAudioAccessNotGranted())
-                return
-            }
-
-            val title = currentTitle
-            val artist = currentArtist
-            if (title.isNullOrBlank()) {
-                stopAutoSyncCapture(clearSamples = true)
-                updateAutoSyncStatus(AutoSyncLogic.statusWaitingForSongWithLyrics())
-                return
-            }
-
-            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-            val manualDelay = prefs.getInt(AutoSyncSettings.manualDelayKey(title, artist), 0)
-            if (manualDelay != 0) {
-                stopAutoSyncCapture(clearSamples = true)
-                updateAutoSyncStatus(AutoSyncLogic.statusUsingManualDelay(title, artist))
-                return
-            }
-
-            val autoKey = AutoSyncSettings.autoOffsetKey(title, artist)
-            val storedAuto = if (prefs.contains(autoKey)) prefs.getInt(autoKey, 0) else null
-            if (storedAuto != null) {
-                stopAutoSyncCapture(clearSamples = true)
-                updateAutoSyncStatus(AutoSyncLogic.statusAlreadyDetected(title, artist, storedAuto))
-                return
-            }
-
-            val lyrics = currentLyrics
-            if (lyrics.isNullOrEmpty()) {
-                stopAutoSyncCapture(clearSamples = true)
-                updateAutoSyncStatus(AutoSyncLogic.statusWaitingForSongWithLyrics())
-                return
-            }
-
-            if (isPlaying) {
-                if (AutoSyncLogic.isCaptureBlocked(title, artist, failedCaptureTitle, failedCaptureArtist)) {
-                    if (!hasLoggedCaptureFailureSkip) {
-                        hasLoggedCaptureFailureSkip = true
-                        Log.i("AutoSync", "Skipping capture: previously failed for ${AutoSyncLogic.formatSong(title, artist)}")
-                    }
-                    return
-                }
-                startAutoSyncCapture(title, artist)
-            }
-        }
-
-        private fun startAutoSyncCapture(title: String, artist: String?) {
-            if (autoSyncCapture?.isCapturing() == true) {
-                return
-            }
-            Log.i("AutoSync", "Starting capture for ${AutoSyncLogic.formatSong(title, artist)}")
-            autoSyncEstimator.clear()
-            val capture = AutoSyncCapture(
-                estimator = autoSyncEstimator,
-                snapshotProvider = { playbackSnapshot },
-                onFailure = { reason ->
-                    mainHandler.post {
-                        failedCaptureTitle = title
-                        failedCaptureArtist = artist
-                        hasLoggedCaptureFailureSkip = false
-                        stopAutoSyncCapture(clearSamples = true)
-                        updateAutoSyncStatus(AutoSyncLogic.statusAudioCaptureFailed(reason))
-                    }
-                }
-            )
-            autoSyncCapture = capture
-            val started = capture.start()
-            if (started) {
-                clearCaptureFailure()
-                updateAutoSyncStatus(AutoSyncLogic.statusListening(title, artist))
-                startAutoSyncEstimation(title, artist)
-            }
-        }
-
-        private fun stopAutoSyncCapture(clearSamples: Boolean = false) {
-            autoSyncEstimationJob?.cancel()
-            autoSyncEstimationJob = null
-            autoSyncCapture?.let {
-                Log.i("AutoSync", "Stopping capture")
-                it.stop()
-            }
-            autoSyncCapture = null
-            if (clearSamples) {
-                autoSyncEstimator.clear()
-            }
-        }
-
-        private fun startAutoSyncEstimation(title: String, artist: String?) {
-            autoSyncEstimationJob?.cancel()
-            autoSyncEstimationJob = engineScope.launch {
-                while (isActive && autoSyncCapture?.isCapturing() == true) {
-                    delay(10_000L)
-                    if (!isActive || autoSyncCapture?.isCapturing() != true) break
-
-                    val samples = autoSyncEstimator.sampleCount()
-                    if (samples < AutoSyncEstimator.MIN_SAMPLES) {
-                        continue
-                    }
-
-                    val lines = currentLyrics
-                    if (lines.isNullOrEmpty()) {
-                        continue
-                    }
-
-                    val result = withContext(Dispatchers.Default) {
-                        autoSyncEstimator.estimate(lines)
-                    }
-
-                    if (!isActive || currentTitle != title || currentArtist != artist) {
-                        Log.d("AutoSync", "Estimation discarded: song changed or engine inactive")
-                        break
-                    }
-
-                    when (result) {
-                        is AutoSyncEstimator.Result.Confident -> {
-                            Log.i("AutoSync", "Estimate result: offset=${result.offsetMs}ms, peak=${result.peakCorrelation}, margin=${result.margin}, samples=${result.samples}")
-                            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-                            prefs.edit()
-                                .putInt(AutoSyncSettings.autoOffsetKey(title, artist), result.offsetMs)
-                                .apply()
-                            updateSongSpecificDelay(prefs)
-                            stopAutoSyncCapture(clearSamples = false)
-                            updateAutoSyncStatus(AutoSyncLogic.statusDetected(title, artist, result.offsetMs))
-                            break
-                        }
-                        is AutoSyncEstimator.Result.Ambiguous -> {
-                            Log.i("AutoSync", "Estimate result: offset=${result.bestOffsetMs}ms (ambiguous), peak=${result.peakCorrelation}, margin=${result.margin}, samples=${result.samples}")
-                            if (samples >= AutoSyncEstimator.DEFAULT_CAPACITY) {
-                                Log.i("AutoSync", "Estimator full without confident result; stopping")
-                                stopAutoSyncCapture(clearSamples = true)
-                                updateAutoSyncStatus(AutoSyncLogic.statusCouldNotDetect(title, artist))
-                                break
-                            } else {
-                                updateAutoSyncStatus(AutoSyncLogic.statusNotSureYet(title, artist))
-                            }
-                        }
-                        is AutoSyncEstimator.Result.NotEnoughData -> {
-                            Log.i("AutoSync", "Estimate result: NotEnoughData (samples=${result.samples}, vocalLines=${result.vocalLines})")
-                            if (samples >= AutoSyncEstimator.DEFAULT_CAPACITY) {
-                                Log.i("AutoSync", "Estimator full without confident result; stopping")
-                                stopAutoSyncCapture(clearSamples = true)
-                                updateAutoSyncStatus(AutoSyncLogic.statusCouldNotDetect(title, artist))
-                                break
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         override fun onCreate(surfaceHolder: SurfaceHolder?) {
             super.onCreate(surfaceHolder)
             // Seed permission state before the first frame builds metadata layouts.
             notificationAccessGranted = hasNotificationAccess()
-            audioAccessGranted = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
             Tuning.load(this@LyricsWallpaperService)
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
             loadPreferences(prefs)
@@ -1236,13 +998,6 @@ class LyricsWallpaperService : WallpaperService() {
                 registerReceiver(forceReloadLyricsReceiver, lyricsFilter, Context.RECEIVER_NOT_EXPORTED)
             } else {
                 registerReceiver(forceReloadLyricsReceiver, lyricsFilter)
-            }
-
-            val autoSyncFilter = IntentFilter("com.dnk.wallpaperlyrics.AUTO_SYNC_REDETECT")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(autoSyncRedetectReceiver, autoSyncFilter, Context.RECEIVER_NOT_EXPORTED)
-            } else {
-                registerReceiver(autoSyncRedetectReceiver, autoSyncFilter)
             }
 
             if (isDebugBuild()) {
@@ -1273,8 +1028,6 @@ class LyricsWallpaperService : WallpaperService() {
             mediaObserver.start()
             if (isPreview) {
                 resetToIdleState()
-            } else {
-                evaluateAutoSyncState()
             }
         }
 
@@ -1294,10 +1047,6 @@ class LyricsWallpaperService : WallpaperService() {
             try {
                 unregisterReceiver(forceReloadLyricsReceiver)
             } catch (e: Exception) {}
-            try {
-                unregisterReceiver(autoSyncRedetectReceiver)
-            } catch (e: Exception) {}
-            stopAutoSyncCapture(clearSamples = true)
             if (isDebugBuild()) {
                 try {
                     unregisterReceiver(debugDemoReceiver)
@@ -1499,12 +1248,6 @@ class LyricsWallpaperService : WallpaperService() {
 
             lastKnownPlaybackPosition = 0L
             lastUpdateTime = SystemClock.elapsedRealtime()
-            if (!AutoSyncLogic.isCaptureBlocked(title, artist, failedCaptureTitle, failedCaptureArtist)) {
-                clearCaptureFailure()
-            }
-            stopAutoSyncCapture(clearSamples = true)
-            publishPlaybackSnapshot()
-            evaluateAutoSyncState()
 
             // Force a transition to metadata view even if paused
             targetViewAlpha = 1.0f
@@ -1533,7 +1276,6 @@ class LyricsWallpaperService : WallpaperService() {
                 lyricsManager.fetchLyrics(title, artist ?: "", durationMs) { lines, definitive ->
                     if (currentTitle == title) {
                         currentLyrics = lines
-                        evaluateAutoSyncState()
                         if (lines == null && definitive) lyricsSearchExhausted = true
                         if (lines != null) showToast("Lyrics synced!")
                         else if (definitive) showToast("Lyrics unavailable")
@@ -1542,7 +1284,6 @@ class LyricsWallpaperService : WallpaperService() {
                 }
             } else {
                 currentLyrics = null
-                evaluateAutoSyncState()
                 lyricsSearchExhausted = true
             }
 
@@ -1803,8 +1544,6 @@ class LyricsWallpaperService : WallpaperService() {
                 } else {
                     lastKnownPlaybackPosition = state.position
                 }
-                publishPlaybackSnapshot()
-                evaluateAutoSyncState()
 
                 // On a seek, snap the scroll cursor to the real position instead of
                 // extrapolating from a stale one.
@@ -1815,7 +1554,6 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private fun resetToIdleState() {
-            stopAutoSyncCapture(clearSamples = true)
             cancelPendingCommit()
             cancelPendingArtRetry()
             trackArtGeneration++
@@ -1839,8 +1577,6 @@ class LyricsWallpaperService : WallpaperService() {
             currentArtUri = null
             inFlightArtUri = null
             hasArtForCurrentTrack = false
-            publishPlaybackSnapshot()
-            evaluateAutoSyncState()
 
             metadataTitleLayout = null
             metadataArtistLayout = null
@@ -2082,7 +1818,6 @@ class LyricsWallpaperService : WallpaperService() {
                                 currentLyrics = l
                                 if (l == null && definitive) lyricsSearchExhausted = true
                                 if (l != null) showToast("Lyrics synced!")
-                                mainHandler.post { evaluateAutoSyncState() }
                             }
                         }
                     }

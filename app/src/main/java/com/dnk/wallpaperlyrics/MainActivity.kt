@@ -33,7 +33,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var wallpaperRow: LS.SettingsRow
     private lateinit var batteryRow: LS.SettingsRow
     private lateinit var songOffsetRow: LS.SettingsRow
-    private lateinit var autoSyncRow: LS.SettingsRow
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -280,19 +279,6 @@ class MainActivity : AppCompatActivity() {
 
             addSectionHeader("Timing & Speed")
             val card3 = LS.SettingsCard(this).apply {
-                val isAutoSyncEnabled = prefs.getBoolean(AutoSyncSettings.KEY_ENABLED, false)
-                autoSyncRow = LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.TIMER,
-                    "Automatic Sync",
-                    if (isAutoSyncEnabled) "On, detect the offset from the playing audio" else "Off, detect the offset from the playing audio",
-                    LS.TrailingType.CHEVRON,
-                    onClick = {
-                        startActivity(Intent(this@MainActivity, AutoSyncActivity::class.java))
-                    }
-                )
-                addRow(autoSyncRow)
-
                 val initialOffset = prefs.getInt("sync_offset", 0)
                 lateinit var offsetRow: LS.SettingsRow
                 offsetRow = LS.SettingsRow(
@@ -538,20 +524,6 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     ))
-                    addRow(LS.SettingsRow(
-                        this@MainActivity,
-                        LS.IconType.GAUGE,
-                        "Visualizer Probe",
-                        "Audio capture diagnostics and waveform test",
-                        LS.TrailingType.CHEVRON,
-                        onClick = {
-                            try {
-                                startActivity(Intent().setClassName(this@MainActivity, "com.dnk.wallpaperlyrics.DebugVisualizerProbeActivity"))
-                            } catch (e: Exception) {
-                                Toast.makeText(this@MainActivity, "Could not open visualizer probe", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    ))
                 }
                 rootLayout.addView(debugCard)
             }
@@ -625,13 +597,6 @@ class MainActivity : AppCompatActivity() {
                 songOffsetRow.updateSubtitle("No active song playing")
                 songOffsetRow.updateValue("0ms")
             }
-        }
-        if (::autoSyncRow.isInitialized) {
-            val autoEnabled = prefs.getBoolean(AutoSyncSettings.KEY_ENABLED, false)
-            autoSyncRow.updateSubtitle(
-                if (autoEnabled) "On, detect the offset from the playing audio"
-                else "Off, detect the offset from the playing audio"
-            )
         }
     }
 
