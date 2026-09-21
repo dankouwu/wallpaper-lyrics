@@ -161,9 +161,9 @@ class SyllableAnimatorTest {
 
     @Test
     fun scaleCurveMatchesSwellAndSettleSpecification() {
-        assertEquals(1.0f, SyllableAnimator.getWordMotionScale(0f), 0.0001f)
-        assertEquals(1.0f, SyllableAnimator.getWordMotionScale(1f), 0.0001f)
-        assertEquals(1.025f, SyllableAnimator.getWordMotionScale(0.60f), 0.001f)
+        assertEquals(0.95f, SyllableAnimator.getWordMotionScale(0f), 0.0001f)
+        assertEquals(0.98f, SyllableAnimator.getWordMotionScale(1f), 0.0001f)
+        assertEquals(1.00f, SyllableAnimator.getWordMotionScale(0.60f), 0.001f)
 
         val peakVal = SyllableAnimator.getWordMotionScale(0.60f)
         val beforePeak = SyllableAnimator.getWordMotionScale(0.50f)
@@ -174,7 +174,7 @@ class SyllableAnimatorTest {
         for (i in 0..10000) {
             val p = i / 10000f
             val s = SyllableAnimator.getWordMotionScale(p)
-            assertTrue("Scale at $p must not exceed 1.025 (was $s)", s <= 1.02501f)
+            assertTrue("Scale at $p must not exceed 1.00 (was $s)", s <= 1.00001f)
         }
     }
 
@@ -183,9 +183,9 @@ class SyllableAnimatorTest {
         val textSize = 100f
         assertEquals(0f, SyllableAnimator.getWordLift(0f, textSize), 0.0001f)
         assertEquals(0f, SyllableAnimator.getWordLift(1f, textSize), 0.0001f)
-        assertEquals(0.05f * textSize, SyllableAnimator.getWordLift(0.55f, textSize), 0.0001f)
+        assertEquals(0.05f * textSize, SyllableAnimator.getWordLift(0.58f, textSize), 0.0001f)
 
-        val peakVal = SyllableAnimator.getWordLift(0.55f, textSize)
+        val peakVal = SyllableAnimator.getWordLift(0.58f, textSize)
         for (i in 0..10000) {
             val p = i / 10000f
             val lift = SyllableAnimator.getWordLift(p, textSize)
@@ -319,7 +319,7 @@ class SyllableAnimatorTest {
         for (duration in listOf(200L, 500L, 1000L, 3000L)) {
             assertEquals(0f, SyllableAnimator.getWordLift(0f, textSize), 0.0001f)
             assertEquals(0f, SyllableAnimator.getWordLift(1f, textSize), 0.0001f)
-            assertEquals(1.0f, SyllableAnimator.getWordMotionScale(1f), 0.0001f)
+            assertEquals(0.98f, SyllableAnimator.getWordMotionScale(1f), 0.0001f)
 
             for (codePointCount in listOf(1, 4, 10)) {
                 for (letter in 0 until codePointCount) {
@@ -334,7 +334,7 @@ class SyllableAnimatorTest {
                         0.0001f
                     )
                     assertEquals(
-                        1.0f,
+                        0.98f,
                         SyllableAnimator.getLetterScale(1f, letter, codePointCount, duration),
                         0.0001f
                     )
@@ -824,8 +824,8 @@ class SyllableAnimatorTest {
         val defaultScale = SyllableAnimator.getWordMotionScale(0.60f)
 
         assertEquals(defaultScale, scale800, 0.0001f)
-        val dev150 = Math.abs(scale150 - 1.0f)
-        val dev800 = Math.abs(scale800 - 1.0f)
+        val dev150 = Math.abs(scale150 - 0.98f)
+        val dev800 = Math.abs(scale800 - 0.98f)
         assertTrue("Scale deviation at 150ms ($dev150) must be smaller than at 800ms ($dev800)", dev150 < dev800)
     }
 
@@ -850,7 +850,7 @@ class SyllableAnimatorTest {
         for (duration in durations) {
             assertEquals(0f, SyllableAnimator.getWordLift(0f, textSize, wordDurationMs = duration), 0.0001f)
             assertEquals(0f, SyllableAnimator.getWordLift(1f, textSize, wordDurationMs = duration), 0.0001f)
-            assertEquals(1.0f, SyllableAnimator.getWordMotionScale(1f, wordDurationMs = duration), 0.0001f)
+            assertEquals(0.98f, SyllableAnimator.getWordMotionScale(1f, wordDurationMs = duration), 0.0001f)
 
             for (count in counts) {
                 for (letter in 0 until count) {
@@ -865,7 +865,7 @@ class SyllableAnimatorTest {
                         0.0001f
                     )
                     assertEquals(
-                        1.0f,
+                        0.98f,
                         SyllableAnimator.getLetterScale(1f, letter, count, durationMs = duration),
                         0.0001f
                     )
@@ -914,7 +914,7 @@ class SyllableAnimatorTest {
                 "Window ${windowMs}ms peak reached at ${peakTimeMs}ms, expected within ${frameToleranceMs}ms of ${defaultRiseMs}ms (diff=$diffFromTarget)",
                 diffFromTarget <= frameToleranceMs
             )
-            assertEquals("Peak scale must reach 1.025", 1.025f, peakScale, 0.001f)
+            assertEquals("Peak scale must reach 1.00", 1.00f, peakScale, 0.001f)
         }
     }
 
@@ -982,7 +982,7 @@ class SyllableAnimatorTest {
     @Test
     fun testShortWindowDegradationReturnsToRestAndNeverExceedsPeak() {
         val shortWindows = listOf(200L, 150L, 100L, 50L)
-        val peakCeiling = 1.02501f
+        val peakCeiling = 1.00001f
 
         for (windowMs in shortWindows) {
             var observedPeak = Float.NEGATIVE_INFINITY
@@ -993,11 +993,11 @@ class SyllableAnimatorTest {
                 if (s > observedPeak) observedPeak = s
                 assertTrue("Scale at p=$p for window $windowMs must not exceed ceiling $peakCeiling (was $s)", s <= peakCeiling)
             }
-            // Word shorter than rise duration does not reach full 1.025 peak
-            assertTrue("Short window $windowMs must not finish full rise (peak was $observedPeak)", observedPeak < 1.025f)
+            // Word shorter than rise duration does not reach full 1.00 peak
+            assertTrue("Short window $windowMs must not finish full rise (peak was $observedPeak)", observedPeak < 1.00f)
             // Returns to rest at end of window
             val endScale = SyllableAnimator.getWordMotionScale(1f, motionWindowMs = windowMs)
-            assertEquals("Short window $windowMs must return to 1.0 at rest", 1.00f, endScale, 0.0001f)
+            assertEquals("Short window $windowMs must return to 0.98 at rest", 0.98f, endScale, 0.0001f)
         }
     }
 
@@ -1058,8 +1058,8 @@ class SyllableAnimatorTest {
         val textSize = 100f
 
         for (windowMs in windows) {
-            assertEquals("Scale at p=0 must be 1.00 for window $windowMs", 1.00f, SyllableAnimator.getWordMotionScale(0f, motionWindowMs = windowMs), 0.0001f)
-            assertEquals("Scale at p=1 must be 1.00 for window $windowMs", 1.00f, SyllableAnimator.getWordMotionScale(1f, motionWindowMs = windowMs), 0.0001f)
+            assertEquals("Scale at p=0 must be 0.95 for window $windowMs", 0.95f, SyllableAnimator.getWordMotionScale(0f, motionWindowMs = windowMs), 0.0001f)
+            assertEquals("Scale at p=1 must be 0.98 for window $windowMs", 0.98f, SyllableAnimator.getWordMotionScale(1f, motionWindowMs = windowMs), 0.0001f)
             assertEquals("Lift at p=0 must be 0 for window $windowMs", 0f, SyllableAnimator.getWordLift(0f, textSize), 0.0001f)
             assertEquals("Lift at p=1 must be 0 for window $windowMs", 0f, SyllableAnimator.getWordLift(1f, textSize), 0.0001f)
         }
@@ -1069,8 +1069,8 @@ class SyllableAnimatorTest {
     fun testNoSnapAtMotionStart() {
         val windowMs = 600L
         val startScale = SyllableAnimator.getWordMotionScale(0f, motionWindowMs = windowMs)
-        assertEquals("Scale at progress 0 must be exactly 1.0", 1.000f, startScale, 0.00001f)
-        assertEquals("Normalized scale at progress 0 must be exactly 1.0", 1.000f, SyllableAnimator.getWordMotionScale(0f), 0.00001f)
+        assertEquals("Scale at progress 0 must be exactly 0.95", 0.95f, startScale, 0.00001f)
+        assertEquals("Normalized scale at progress 0 must be exactly 0.95", 0.95f, SyllableAnimator.getWordMotionScale(0f), 0.00001f)
 
         // Measure consecutive samples across 1000 step sweep
         val steps = 1000
@@ -1093,8 +1093,8 @@ class SyllableAnimatorTest {
     fun testNoSnapAtMotionEnd() {
         val windowMs = 600L
         val endScale = SyllableAnimator.getWordMotionScale(1f, motionWindowMs = windowMs)
-        assertEquals("Scale at progress 1 must be exactly 1.0", 1.000f, endScale, 0.00001f)
-        assertEquals("Normalized scale at progress 1 must be exactly 1.0", 1.000f, SyllableAnimator.getWordMotionScale(1f), 0.00001f)
+        assertEquals("Scale at progress 1 must be exactly 0.98", 0.98f, endScale, 0.00001f)
+        assertEquals("Normalized scale at progress 1 must be exactly 0.98", 0.98f, SyllableAnimator.getWordMotionScale(1f), 0.00001f)
     }
 
     @Test
@@ -1281,8 +1281,8 @@ class SyllableAnimatorTest {
                 settleDurationMs = settleMs
             )
             assertEquals(
-                "Scale at tPeak + settleMs must be at rest (1.0 within 0.001) for duration ${durationMs}ms",
-                1.0f,
+                "Scale at tPeak + settleMs must be at rest (0.98 within 0.001) for duration ${durationMs}ms",
+                0.98f,
                 scaleAtSettle,
                 0.001f
             )
@@ -1300,7 +1300,7 @@ class SyllableAnimatorTest {
                     riseDurationMs = riseMs,
                     settleDurationMs = settleMs
                 )
-                if (Math.abs(scale - 1.0f) <= 0.0002f) {
+                if (Math.abs(scale - 0.98f) <= 0.0002f) {
                     restTimeMs = t
                     break
                 }
@@ -1374,14 +1374,16 @@ class SyllableAnimatorTest {
                 else -> ((playhead - motionStartT).toFloat() / motionWindowMs.toFloat()).coerceIn(0f, 1f)
             }
 
-            val motionProgress = if (motionLinearProgress > 0f && motionLinearProgress < 1f) motionLinearProgress else 0f
+            val motionProgress = motionLinearProgress.coerceIn(0f, 1f)
             if (playhead < motionEndT) {
                 assertTrue("Motion progress must be non-zero during fade before motionEnd", motionProgress > 0f)
                 val scale = SyllableAnimator.getWordMotionScale(motionProgress, motionWindowMs = motionWindowMs)
                 assertTrue("Scale must be continuously decreasing during settle", scale <= prevScale + 0.0001f)
                 prevScale = scale
             } else {
-                assertEquals("Motion progress must be 0 once motion window ends", 0f, motionProgress, 0.0001f)
+                assertEquals("Motion progress must hold at 1 once motion window ends", 1f, motionProgress, 0.0001f)
+                val settled = SyllableAnimator.getWordMotionScale(motionProgress, motionWindowMs = motionWindowMs)
+                assertEquals("A finished word must hold its settle scale", Tuning.wordScaleSettle, settled, 0.0001f)
             }
         }
     }
@@ -1598,8 +1600,8 @@ class SyllableAnimatorTest {
         // Before the fix, letter 6 decayed to 1.005 and letter 7 to 1.001.
         for (i in 0 until count) {
             assertTrue(
-                "Letter $i ('${word[i]}') scale (${peakHeldScales[i]}) must be >= 1.11f and within 0.025f of peak",
-                peakHeldScales[i] >= 1.11f && Math.abs(peakHeldScales[i] - peakScale) <= 0.025f
+                "Letter $i ('${word[i]}') scale (${peakHeldScales[i]}) must be >= 1.01f and within 0.025f of peak",
+                peakHeldScales[i] >= 1.01f && Math.abs(peakHeldScales[i] - peakScale) <= 0.025f
             )
         }
     }

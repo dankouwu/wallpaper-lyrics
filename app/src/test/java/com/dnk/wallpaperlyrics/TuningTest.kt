@@ -21,14 +21,14 @@ class TuningTest {
     // 1. Every parameter's default in Tuning equals the constant it replaced. Assert per parameter.
     @Test
     fun testWordScaleStartDefaultEqualsHardcodedConstant() {
-        assertEquals(0.97f, Tuning.WORD_SCALE_START.defaultValue, 0.0001f)
-        assertEquals(0.97f, Tuning.wordScaleStart, 0.0001f)
+        assertEquals(0.95f, Tuning.WORD_SCALE_START.defaultValue, 0.0001f)
+        assertEquals(0.95f, Tuning.wordScaleStart, 0.0001f)
     }
 
     @Test
     fun testWordScalePeakDefaultEqualsHardcodedConstant() {
-        assertEquals(1.025f, Tuning.WORD_SCALE_PEAK.defaultValue, 0.0001f)
-        assertEquals(1.025f, Tuning.wordScalePeak, 0.0001f)
+        assertEquals(1.00f, Tuning.WORD_SCALE_PEAK.defaultValue, 0.0001f)
+        assertEquals(1.00f, Tuning.wordScalePeak, 0.0001f)
     }
 
     @Test
@@ -45,8 +45,8 @@ class TuningTest {
 
     @Test
     fun testWordLiftPeakPositionDefaultEqualsHardcodedConstant() {
-        assertEquals(0.55f, Tuning.WORD_LIFT_PEAK_POS.defaultValue, 0.0001f)
-        assertEquals(0.55f, Tuning.wordLiftPeakPosition, 0.0001f)
+        assertEquals(0.58f, Tuning.WORD_LIFT_PEAK_POS.defaultValue, 0.0001f)
+        assertEquals(0.58f, Tuning.wordLiftPeakPosition, 0.0001f)
     }
 
     @Test
@@ -75,8 +75,8 @@ class TuningTest {
 
     @Test
     fun testHeldWordLetterScalePeakDefaultEqualsHardcodedConstant() {
-        assertEquals(1.14f, Tuning.HELD_WORD_LETTER_SCALE_PEAK.defaultValue, 0.0001f)
-        assertEquals(1.14f, Tuning.heldWordLetterScalePeak, 0.0001f)
+        assertEquals(1.04f, Tuning.HELD_WORD_LETTER_SCALE_PEAK.defaultValue, 0.0001f)
+        assertEquals(1.04f, Tuning.heldWordLetterScalePeak, 0.0001f)
     }
 
     @Test
@@ -110,35 +110,28 @@ class TuningTest {
         }
     }
 
-    // 4. The clipboard dump is valid Kotlin, contains every parameter, and round-trips.
+    // 4. The clipboard dump carries only modified values and round-trips.
     @Test
-    fun testClipboardDumpContainsEveryParameterAndRoundTrips() {
-        // Test with defaults first
+    fun testClipboardDumpCarriesOnlyModifiedValuesAndRoundTrips() {
         val defaultExport = Tuning.exportKotlin()
-        for (param in Tuning.allParams) {
-            assertTrue("Export must contain key ${param.key}", defaultExport.contains(param.key))
-        }
+        assertTrue("A dump with nothing changed must say so", defaultExport.contains("No values changed"))
+        assertEquals(0, Tuning.parseKotlinExport(defaultExport).size)
 
-        val parsedDefaults = Tuning.parseKotlinExport(defaultExport)
-        assertEquals(Tuning.allParams.size, parsedDefaults.size)
-        for (param in Tuning.allParams) {
-            val parsedVal = parsedDefaults[param.key] ?: Float.NaN
-            assertEquals("Parsed default for ${param.key} must match held value", param.value, parsedVal, 0.0001f)
-        }
-
-        // Now test with modified values
         Tuning.WORD_SCALE_PEAK.value = 1.12f
         Tuning.HELD_WORD_MIN_DURATION_MS.value = 1250f
         val modifiedExport = Tuning.exportKotlin()
 
-        assertTrue(modifiedExport.contains("wordScalePeak"))
-        assertTrue(modifiedExport.contains("1.12"))
-        assertTrue(modifiedExport.contains("modified"))
+        val parsed = Tuning.parseKotlinExport(modifiedExport)
+        assertEquals("Only the two changed values belong in the dump", 2, parsed.size)
+        assertEquals(1.12f, parsed["wordScalePeak"] ?: Float.NaN, 0.0001f)
+        assertEquals(1250f, parsed["heldWordMinDurationMs"] ?: Float.NaN, 0.0001f)
+        assertTrue("The default belongs in the comment", modifiedExport.contains("// default 1.000f"))
 
-        val parsedModified = Tuning.parseKotlinExport(modifiedExport)
-        for (param in Tuning.allParams) {
-            val parsedVal = parsedModified[param.key] ?: Float.NaN
-            assertEquals("Parsed modified for ${param.key} must match held value", param.value, parsedVal, 0.0001f)
+        for (param in Tuning.allParams.filter { !it.isModified }) {
+            assertFalse(
+                "Unmodified ${param.key} must not appear",
+                modifiedExport.contains("val ${param.key}:")
+            )
         }
     }
 
@@ -539,8 +532,8 @@ class TuningTest {
 
     @Test
     fun testDotScalePeakTunable() {
-        assertEquals(1.15f, Tuning.DOT_SCALE_PEAK.defaultValue, 0.0001f)
-        assertEquals(1.15f, Tuning.dotScalePeak, 0.0001f)
+        assertEquals(1.25f, Tuning.DOT_SCALE_PEAK.defaultValue, 0.0001f)
+        assertEquals(1.25f, Tuning.dotScalePeak, 0.0001f)
         assertEquals(1.00f, Tuning.DOT_SCALE_PEAK.min, 0.0001f)
         assertEquals(1.40f, Tuning.DOT_SCALE_PEAK.max, 0.0001f)
         assertFalse(Tuning.DOT_SCALE_PEAK.isInteger)
@@ -548,8 +541,8 @@ class TuningTest {
 
     @Test
     fun testDotLiftFractionTunable() {
-        assertEquals(0.25f, Tuning.DOT_LIFT_FRACTION.defaultValue, 0.0001f)
-        assertEquals(0.25f, Tuning.dotLiftFraction, 0.0001f)
+        assertEquals(0.40f, Tuning.DOT_LIFT_FRACTION.defaultValue, 0.0001f)
+        assertEquals(0.40f, Tuning.dotLiftFraction, 0.0001f)
         assertEquals(0.00f, Tuning.DOT_LIFT_FRACTION.min, 0.0001f)
         assertEquals(0.50f, Tuning.DOT_LIFT_FRACTION.max, 0.0001f)
         assertFalse(Tuning.DOT_LIFT_FRACTION.isInteger)
@@ -566,8 +559,8 @@ class TuningTest {
 
     @Test
     fun testDotOverlapTunable() {
-        assertEquals(0f, Tuning.DOT_OVERLAP.defaultValue, 0.0001f)
-        assertEquals(0f, Tuning.dotOverlap, 0.0001f)
+        assertEquals(35.00f, Tuning.DOT_OVERLAP.defaultValue, 0.0001f)
+        assertEquals(35.00f, Tuning.dotOverlap, 0.0001f)
         assertEquals(0f, Tuning.DOT_OVERLAP.min, 0.0001f)
         assertEquals(100f, Tuning.DOT_OVERLAP.max, 0.0001f)
         assertEquals("dotOverlap", Tuning.DOT_OVERLAP.key)
@@ -592,14 +585,27 @@ class TuningTest {
 
         Tuning.resetGroup(Tuning.GROUP_INSTRUMENTAL_DOTS)
 
-        assertEquals(1.15f, Tuning.DOT_SCALE_PEAK.value, 0.0001f)
-        assertEquals(0.25f, Tuning.DOT_LIFT_FRACTION.value, 0.0001f)
+        assertEquals(1.25f, Tuning.DOT_SCALE_PEAK.value, 0.0001f)
+        assertEquals(0.40f, Tuning.DOT_LIFT_FRACTION.value, 0.0001f)
         assertEquals(3f, Tuning.DOT_COUNT.value, 0.0001f)
-        assertEquals(0f, Tuning.DOT_OVERLAP.value, 0.0001f)
+        assertEquals(35.00f, Tuning.DOT_OVERLAP.value, 0.0001f)
         assertFalse(Tuning.DOT_SCALE_PEAK.isModified)
         assertFalse(Tuning.DOT_LIFT_FRACTION.isModified)
         assertFalse(Tuning.DOT_COUNT.isModified)
         assertFalse(Tuning.DOT_OVERLAP.isModified)
+    }
+
+    @Test
+    fun testWordSpacingTunable() {
+        assertEquals(1.15f, Tuning.WORD_SPACING.defaultValue, 0.0001f)
+        assertEquals(1.15f, Tuning.wordSpacing, 0.0001f)
+        assertEquals(1.00f, Tuning.WORD_SPACING.min, 0.0001f)
+        assertEquals(3.00f, Tuning.WORD_SPACING.max, 0.0001f)
+        assertTrue(Tuning.WORD_SPACING.min < Tuning.WORD_SPACING.max)
+        assertFalse(Tuning.WORD_SPACING.isInteger)
+        assertEquals("wordSpacing", Tuning.WORD_SPACING.key)
+        assertEquals("Word spacing", Tuning.WORD_SPACING.label)
+        assertEquals(Tuning.GROUP_WORD_MOTION, Tuning.WORD_SPACING.group)
     }
 }
 

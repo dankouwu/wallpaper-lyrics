@@ -499,6 +499,7 @@ class LyricsWallpaperService : WallpaperService() {
         private var lyricLayouts: List<StaticLayout>? = null
         private var lyricBitmaps: List<Bitmap>? = null
         private var lineOffsets: FloatArray? = null 
+        private var rememberedWordSpacing: Float = Tuning.wordSpacing
         
         private var currentTitle: String? = null
         private var currentArtist: String? = null
@@ -1777,7 +1778,14 @@ class LyricsWallpaperService : WallpaperService() {
                 }
             }
 
-            if (lines != null && (lyricLayouts == null || lyricBitmaps == null || lineOffsets == null)) {
+            val spacingChanged = Math.abs(rememberedWordSpacing - Tuning.wordSpacing) > 0.0001f
+            if (lines != null && (lyricLayouts == null || lyricBitmaps == null || lineOffsets == null || spacingChanged)) {
+                if (spacingChanged) {
+                    lyricBitmaps?.forEach { it.recycle() }
+                    lyricBitmaps = null
+                    lyricLayouts = null
+                    lineOffsets = null
+                }
                 val (layouts, bitmaps, linesWithMeasuredWords) = LyricsRenderer.buildLyricLayouts(
                     lines,
                     activePaint,
@@ -1789,6 +1797,7 @@ class LyricsWallpaperService : WallpaperService() {
 
                 lyricLayouts = layouts
                 lyricBitmaps = bitmaps
+                rememberedWordSpacing = Tuning.wordSpacing
 
                 var currentY = 0f
                 val offsets = FloatArray(lines.size)
@@ -1927,12 +1936,18 @@ class LyricsWallpaperService : WallpaperService() {
 
                         canvas.save()
 
-                        val scale = 0.95f + (0.05f * easedFactor)
+                        val isActive = i == currentIndex
+                        val isFadingOut = i < currentIndex && exitLinear < 1f
+                        val hasWordTiming = line.words != null && line.words.isNotEmpty()
+                        val restScale = Tuning.wordScaleStart
+                        val scale = if (hasWordTiming) {
+                            restScale
+                        } else {
+                            restScale + (1f - restScale) * easedFactor
+                        }
                         canvas.scale(scale, scale, centerX, lineCenterY)
 
                         val targetAlpha = INACTIVE_LYRIC_ALPHA.toFloat() + ((230f - INACTIVE_LYRIC_ALPHA.toFloat()) * easedFactor)
-                        val isActive = i == currentIndex
-                        val isFadingOut = i < currentIndex && exitLinear < 1f
 
                         if ((isActive || isFadingOut) && line.words != null && line.words.isNotEmpty()) {
                             if (isActive) {
@@ -1971,6 +1986,7 @@ class LyricsWallpaperService : WallpaperService() {
                                         span.progress = 0f
                                         span.motionProgress = 0f
                                         span.motionWindowMs = 0L
+                                        span.exitFade = 0f
                                         span.activeAlpha = inactiveAlpha
                                         span.inactiveAlpha = inactiveAlpha
                                     }
@@ -2042,12 +2058,9 @@ class LyricsWallpaperService : WallpaperService() {
                                         }
 
                                         span.progress = targetProgress
-                                        span.motionProgress = if (motionLinearProgress > 0f && motionLinearProgress < 1f) {
-                                            motionLinearProgress
-                                        } else {
-                                            0f
-                                        }
+                                        span.motionProgress = motionLinearProgress.coerceIn(0f, 1f)
                                         span.motionWindowMs = motionWindowMs
+                                        span.exitFade = 0f
                                         span.activeAlpha = 230
                                         span.inactiveAlpha = inactiveAlpha
                                     }
@@ -2097,12 +2110,9 @@ class LyricsWallpaperService : WallpaperService() {
                                     }
 
                                     span.progress = 1f
-                                    span.motionProgress = if (motionLinearProgress > 0f && motionLinearProgress < 1f) {
-                                        motionLinearProgress
-                                    } else {
-                                        0f
-                                    }
+                                    span.motionProgress = motionLinearProgress.coerceIn(0f, 1f)
                                     span.motionWindowMs = if (span.motionProgress > 0f) motionWindowMs else 0L
+                                    span.exitFade = easedExit
                                     span.activeAlpha = currentAlpha
                                     span.inactiveAlpha = INACTIVE_LYRIC_ALPHA
                                 }

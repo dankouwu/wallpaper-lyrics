@@ -267,17 +267,22 @@ object SyllableAnimator {
         val clampedU = u.coerceIn(0f, 1f)
         val k = easeInFraction.coerceIn(0.01f, 0.99f)
         return if (clampedU <= k) {
-            val w = clampedU / k
-            1.0f + (startScale - 1.0f) * (w * w * (3f - 2f * w))
+            startScale
         } else {
             val w = (clampedU - k) / (1.0f - k)
             startScale + (peakScale - startScale) * (w * w * (3f - 2f * w))
         }
     }
 
-    private fun evalScaleCubic(p: Float, s0: Float, sPeak: Float, xPeak: Float): Float {
+    private fun evalScaleCubic(
+        p: Float,
+        s0: Float,
+        sPeak: Float,
+        xPeak: Float,
+        settleScale: Float = Tuning.wordScaleSettle
+    ): Float {
         val x = xPeak.coerceIn(0.01f, 0.99f)
-        val d1 = 1f - s0
+        val d1 = settleScale - s0
         val dp = sPeak - s0
         val denomD = x * x * (1f - x) * (1f - x)
         val d = if (denomD > 0f) (x * x * d1 - (2f * x - 1f) * dp) / denomD else 0f
@@ -305,9 +310,10 @@ object SyllableAnimator {
         startScale: Float = Tuning.wordScaleStart,
         peakScale: Float = Tuning.wordScalePeak,
         peakPosition: Float = Tuning.wordScalePeakPosition,
-        easeInFraction: Float = Tuning.wordScaleEaseInFraction
+        easeInFraction: Float = Tuning.wordScaleEaseInFraction,
+        settleScale: Float = Tuning.wordScaleSettle
     ): Float {
-        if (linearProgress.isNaN()) return 1f
+        if (linearProgress.isNaN()) return settleScale
         val p = linearProgress.coerceIn(0f, 1f)
         val x = peakPosition.coerceIn(0.01f, 0.99f)
         return if (p <= x) {
@@ -315,13 +321,13 @@ object SyllableAnimator {
             evalScaleRise(u, startScale, peakScale, easeInFraction)
         } else {
             val v = ((p - x) / (1f - x)).coerceIn(0f, 1f)
-            val denom = peakScale - 1f
+            val denom = peakScale - settleScale
             val settleNorm = if (denom > 0f) {
-                (evalScaleCubic(x + (1f - x) * v, startScale, peakScale, x) - 1f) / denom
+                (evalScaleCubic(x + (1f - x) * v, startScale, peakScale, x, settleScale) - settleScale) / denom
             } else {
                 1f - v
             }
-            1f + (peakScale - 1f) * settleNorm
+            settleScale + (peakScale - settleScale) * settleNorm
         }
     }
 
@@ -333,12 +339,13 @@ object SyllableAnimator {
         peakScale: Float = Tuning.wordScalePeak,
         peakPosition: Float = Tuning.wordScalePeakPosition,
         easeInFraction: Float = Tuning.wordScaleEaseInFraction,
-        settleDurationMs: Long = Tuning.wordSettleDurationMs
+        settleDurationMs: Long = Tuning.wordSettleDurationMs,
+        settleScale: Float = Tuning.wordScaleSettle
     ): Float {
-        if (linearProgress.isNaN()) return 1f
+        if (linearProgress.isNaN()) return settleScale
         val p = linearProgress.coerceIn(0f, 1f)
         if (motionWindowMs <= 0L || riseDurationMs <= 0L) {
-            return getWordMotionScale(p, startScale, peakScale, peakPosition, easeInFraction)
+            return getWordMotionScale(p, startScale, peakScale, peakPosition, easeInFraction, settleScale)
         }
 
         val windowF = motionWindowMs.toFloat()
@@ -364,23 +371,24 @@ object SyllableAnimator {
             } else {
                 1.0f
             }
-            val denom = peakScale - 1.0f
+            val denom = peakScale - settleScale
             val settleNorm = if (denom > 0f) {
-                (evalScaleCubic(peakPosition + (1.0f - peakPosition) * v, startScale, peakScale, peakPosition) - 1.0f) / denom
+                (evalScaleCubic(peakPosition + (1.0f - peakPosition) * v, startScale, peakScale, peakPosition, settleScale) - settleScale) / denom
             } else {
                 1.0f - v
             }
-            1.0f + (sPeakActual - 1.0f) * settleNorm
+            settleScale + (sPeakActual - settleScale) * settleNorm
         }
     }
 
     fun getWordMotionScale(
         linearProgress: Float,
-        wordDurationMs: Long
+        wordDurationMs: Long,
+        settleScale: Float = Tuning.wordScaleSettle
     ): Float {
-        val raw = getWordMotionScale(linearProgress)
         val amp = getMotionAmplitude(wordDurationMs)
-        return 1f + (raw - 1f) * amp
+        val effectivePeak = settleScale + (Tuning.wordScalePeak - settleScale) * amp
+        return getWordMotionScale(linearProgress, peakScale = effectivePeak, settleScale = settleScale)
     }
 
     fun getWordMotionScale(
@@ -388,16 +396,24 @@ object SyllableAnimator {
         wordDurationMs: Long,
         motionWindowMs: Long,
         riseDurationMs: Long = Tuning.wordRiseDurationMs,
-        settleDurationMs: Long = Tuning.wordSettleDurationMs
+        settleDurationMs: Long = Tuning.wordSettleDurationMs,
+        settleScale: Float = Tuning.wordScaleSettle
     ): Float {
-        val raw = getWordMotionScale(
+        val amp = getMotionAmplitude(wordDurationMs)
+        val effectivePeak = settleScale + (Tuning.wordScalePeak - settleScale) * amp
+        return getWordMotionScale(
             linearProgress = linearProgress,
             motionWindowMs = motionWindowMs,
             riseDurationMs = riseDurationMs,
-            settleDurationMs = settleDurationMs
+            peakScale = effectivePeak,
+            settleDurationMs = settleDurationMs,
+            settleScale = settleScale
         )
-        val amp = getMotionAmplitude(wordDurationMs)
-        return 1f + (raw - 1f) * amp
+    }
+
+    fun toLineRelativeScale(absoluteScale: Float, restScale: Float, exitFade: Float = 0f): Float {
+        val relativeScale = if (restScale <= 0f) 1f else absoluteScale / restScale
+        return 1f + (relativeScale - 1f) * (1f - exitFade)
     }
 
     // Two smoothstep halves replace the old cubic whose third root entered
@@ -535,8 +551,8 @@ object SyllableAnimator {
         if (linearProgress.isNaN()) return 1f
         val p = linearProgress.coerceIn(0f, 1f)
         val emphasis = getRippleEmphasis(p, distance, falloffPower, rippleEaseInFraction)
-        val raw = 1f + (peakScale - 1f) * emphasis
-        return if (amplitude == 1f) raw else 1f + (raw - 1f) * amplitude
+        val effectivePeak = 1f + (peakScale - 1f) * amplitude
+        return 1f + (effectivePeak - 1f) * emphasis
     }
 
     fun getHeldWordLetterScale(
@@ -581,24 +597,22 @@ object SyllableAnimator {
         riseDurationMs: Long = Tuning.wordRiseDurationMs,
         easeInFraction: Float = Tuning.wordScaleEaseInFraction,
         settleDurationMs: Long = Tuning.wordSettleDurationMs,
-        rippleEaseInFraction: Float = Tuning.rippleEaseInFraction
+        rippleEaseInFraction: Float = Tuning.rippleEaseInFraction,
+        settleScale: Float = Tuning.wordScaleSettle
     ): Float {
         val amp = getMotionAmplitude(durationMs)
-        val rawWordScale = if (motionWindowMs > 0L) {
+        val wordScale = if (motionWindowMs > 0L) {
             getWordMotionScale(
-                linearProgress,
-                motionWindowMs,
-                riseDurationMs,
-                startScale,
-                Tuning.wordScalePeak,
-                peakPosition,
-                easeInFraction,
-                settleDurationMs
+                linearProgress = linearProgress,
+                wordDurationMs = durationMs,
+                motionWindowMs = motionWindowMs,
+                riseDurationMs = riseDurationMs,
+                settleDurationMs = settleDurationMs,
+                settleScale = settleScale
             )
         } else {
-            getWordMotionScale(linearProgress, startScale, Tuning.wordScalePeak, peakPosition, easeInFraction)
+            getWordMotionScale(linearProgress, durationMs, settleScale)
         }
-        val wordScale = 1f + (rawWordScale - 1f) * amp
         if (!isHeldWord(durationMs, thresholdMs) || codePointCount <= 1) {
             return wordScale
         }

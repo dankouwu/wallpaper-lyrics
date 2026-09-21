@@ -39,6 +39,8 @@ class WordGradientSpan(
     var motionWindowMs: Long = 0L
     var activeAlpha: Int = 230
     var inactiveAlpha: Int = INACTIVE_LYRIC_ALPHA
+    var bakeNeutral: Boolean = false
+    var exitFade: Float = 0f
 
     // Cached shader state: avoids allocating a new LinearGradient on every draw call.
     // At 60 FPS with a 10-word active line, this eliminates ~600 heap allocations/second.
@@ -252,8 +254,22 @@ class WordMotionSpan(
         paint: Paint,
         progress: Float
     ) {
-        if (progress <= 0f || progress >= 1f) {
+        if (progress <= 0f) {
             canvas.drawText(text, start, end, x, y.toFloat(), paint)
+            return
+        }
+        if (progress >= 1f) {
+            // A word that has not started sits at the rest scale, which is the line frame itself,
+            // so it can be drawn untransformed. A settled word sits above the frame and cannot.
+            val settled = SyllableAnimator.toLineRelativeScale(
+                Tuning.wordScaleSettle,
+                Tuning.wordScaleStart,
+                wordSpan.exitFade
+            )
+            canvas.save()
+            canvas.scale(settled, settled, x + measuredAdvance / 2f, y.toFloat())
+            canvas.drawText(text, start, end, x, y.toFloat(), paint)
+            canvas.restore()
             return
         }
 
@@ -267,6 +283,7 @@ class WordMotionSpan(
         val rippleEaseInFraction = Tuning.rippleEaseInFraction
         val riseDurationMs = Tuning.wordRiseDurationMs
         val settleDurationMs = Tuning.wordSettleDurationMs
+        val scaleSettle = Tuning.wordScaleSettle
         val motionWindowMs = wordSpan.motionWindowMs
         val liftFraction = Tuning.wordLiftPeakFraction
         val liftPeakPos = Tuning.wordLiftPeakPosition
@@ -309,17 +326,19 @@ class WordMotionSpan(
         val isHeld = SyllableAnimator.isHeldWord(wordDurationMs, heldThreshold)
         val useGpuGlow = hasGlow && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && canvas.isHardwareAccelerated && renderNode != null
 
-        val rawScale = SyllableAnimator.getWordMotionScale(
+        val effectivePeak = scaleSettle + (scalePeak - scaleSettle) * amplitude
+        val absoluteScale = SyllableAnimator.getWordMotionScale(
             progress,
             motionWindowMs,
             riseDurationMs,
             scaleStart,
-            scalePeak,
+            effectivePeak,
             scalePeakPos,
             easeInFraction,
-            settleDurationMs
+            settleDurationMs,
+            scaleSettle
         )
-        val scale = 1f + (rawScale - 1f) * amplitude
+        val scale = SyllableAnimator.toLineRelativeScale(absoluteScale, scaleStart, wordSpan.exitFade)
         val lift = SyllableAnimator.getWordLift(progress, paint.textSize, liftFraction, liftPeakPos) * amplitude
 
         if (isHeld) {
@@ -369,7 +388,7 @@ class WordMotionSpan(
                         val letterCenterX = (letterLeft + letterRight) * 0.5f
 
                         recordingCanvas.save()
-                        recordingCanvas.scale(letterScale, letterScale, letterCenterX, y.toFloat())
+                        recordingCanvas.scale(scale * letterScale, scale * letterScale, letterCenterX, y.toFloat())
                         glowLetterPaint.alpha = (baseGlowAlpha * emphasis).toInt().coerceIn(0, 255)
                         recordingCanvas.drawText(
                             text,
@@ -425,7 +444,7 @@ class WordMotionSpan(
                 val letterCenterX = (letterLeft + letterRight) * 0.5f
 
                 canvas.save()
-                canvas.scale(letterScale, letterScale, letterCenterX, y.toFloat())
+                canvas.scale(scale * letterScale, scale * letterScale, letterCenterX, y.toFloat())
                 canvas.drawText(
                     text,
                     codePointStarts[i],
@@ -493,6 +512,25 @@ class WordMotionSpan(
         try {
             wordSpan.applyDrawState(paint)
             val shader = paint.shader
+
+            if (wordSpan.bakeNeutral) {
+                if (shader != null) {
+                    computeWordLayerBounds(x, top, bottom, measuredAdvance, paint.textSize, layerBounds)
+                    layerPaint.alpha = 255
+                    canvas.saveLayer(layerBounds, layerPaint)
+                    paint.color = Color.WHITE
+                    paint.shader = null
+                    canvas.drawText(text, start, end, x, y.toFloat(), paint)
+                    maskPaint.shader = shader
+                    canvas.drawRect(layerBounds, maskPaint)
+                    maskPaint.shader = null
+                    canvas.restore()
+                } else if (paint.alpha > 0) {
+                    canvas.drawText(text, start, end, x, y.toFloat(), paint)
+                }
+                return
+            }
+
             val motionProg = wordSpan.motionProgress
 
             computeWordLayerBounds(x, top, bottom, measuredAdvance, paint.textSize, layerBounds)
