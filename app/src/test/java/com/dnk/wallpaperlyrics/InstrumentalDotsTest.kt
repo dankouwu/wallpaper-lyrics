@@ -83,7 +83,7 @@ class InstrumentalDotsTest {
         val peakScale = Tuning.DOT_SCALE_PEAK.defaultValue
         val liftFraction = Tuning.DOT_LIFT_FRACTION.defaultValue
 
-        assertTrue("Dot peak scale ($peakScale) must be <= 1.20f", peakScale <= 1.20f)
+        assertTrue("Dot peak scale ($peakScale) must be <= 1.30f", peakScale <= 1.30f)
         assertTrue("Dot peak scale ($peakScale) must be >= 1.00f", peakScale >= 1.00f)
         assertTrue("Dot lift fraction ($liftFraction) must be <= 0.40f", liftFraction <= 0.40f)
         assertTrue("Dot lift fraction ($liftFraction) must be >= 0.00f", liftFraction >= 0.00f)

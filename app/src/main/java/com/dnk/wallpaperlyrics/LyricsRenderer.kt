@@ -7,6 +7,7 @@ import android.text.Spanned
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.text.style.CharacterStyle
+import android.text.style.ScaleXSpan
 import android.text.style.UpdateAppearance
 import android.graphics.text.LineBreaker
 import androidx.core.content.res.ResourcesCompat
@@ -44,14 +45,30 @@ object LyricsRenderer {
                 alpha = 255
             }
 
+            val spacing = Tuning.wordSpacing
+            val applySpacing = Math.abs(spacing - 1.0f) > 0.0001f
+            val spannedText = SpannableStringBuilder(line.content)
+            if (applySpacing) {
+                for (i in line.content.indices) {
+                    if (line.content[i] == ' ') {
+                        spannedText.setSpan(
+                            ScaleXSpan(spacing),
+                            i,
+                            i + 1,
+                            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                        )
+                    }
+                }
+            }
+
             // 1. Build temporary layout with plain text to measure word coordinates
-            val tempLayout = StaticLayout.Builder.obtain(line.content, 0, line.content.length, linePaint, maxTextWidth)
+            val textForMeasure = if (applySpacing) spannedText else line.content
+            val tempLayout = StaticLayout.Builder.obtain(textForMeasure, 0, textForMeasure.length, linePaint, maxTextWidth)
                 .setAlignment(Layout.Alignment.ALIGN_CENTER)
                 .setLineSpacing(0f, 1.15f)
                 .build()
 
             // 2. Measure coordinates and create spans
-            val spannedText = SpannableStringBuilder(line.content)
             val hasRealWordSync = line.words != null && line.words.isNotEmpty() && !line.words.any { it.isEstimated }
             val measuredWords = if (hasRealWordSync) {
                 line.words!!.flatMap { word ->
@@ -158,7 +175,7 @@ object LyricsRenderer {
             } else null
 
             // 3. Build the final layout using the spannedText
-            val textToUse: CharSequence = if (measuredWords != null) spannedText else line.content
+            val textToUse: CharSequence = if (measuredWords != null || applySpacing) spannedText else line.content
             val layout = StaticLayout.Builder.obtain(textToUse, 0, textToUse.length, linePaint, maxTextWidth)
                 .setAlignment(Layout.Alignment.ALIGN_CENTER)
                 .setLineSpacing(0f, 1.15f)
@@ -196,6 +213,7 @@ object LyricsRenderer {
                 span.progress = 0f
                 span.motionProgress = 0f
                 span.inactiveAlpha = 255
+                span.bakeNeutral = true
             }
 
             // Bake inactive bitmap from layout (spanned layout with neutral opaque spans: fully opaque white)
@@ -206,6 +224,7 @@ object LyricsRenderer {
 
             spans?.forEach { span ->
                 span.inactiveAlpha = INACTIVE_LYRIC_ALPHA
+                span.bakeNeutral = false
             }
         }
 

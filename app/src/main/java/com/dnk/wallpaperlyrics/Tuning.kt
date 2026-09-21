@@ -41,18 +41,19 @@ object Tuning {
     }
 
     // Group 1: Word motion curves
-    val WORD_SCALE_START = Tunable("wordScaleStart", "Scale start", "Size a word pulls in to as it starts, before it swells.", GROUP_WORD_MOTION, 0.80f, 1.20f, 0.97f)
-    val WORD_SCALE_PEAK = Tunable("wordScalePeak", "Scale peak", "Biggest size a word reaches on its swell.", GROUP_WORD_MOTION, 1.00f, 1.30f, 1.025f)
+    val WORD_SCALE_START = Tunable("wordScaleStart", "Scale start", "Size an unsung word sits at, matching an inactive line.", GROUP_WORD_MOTION, 0.80f, 1.20f, 0.95f)
+    val WORD_SCALE_PEAK = Tunable("wordScalePeak", "Scale peak", "Biggest size a word reaches on its swell.", GROUP_WORD_MOTION, 1.00f, 1.30f, 1.00f)
+    val WORD_SCALE_SETTLE = Tunable("wordScaleSettle", "Scale settle", "Size a word settles at once it has been sung, and stays at.", GROUP_WORD_MOTION, 0.90f, 1.20f, 0.98f)
     val WORD_SCALE_PEAK_POS = Tunable("wordScalePeakPosition", "Scale peak position", "Where in the word's motion the swell peaks. 0.6 is 60 percent through.", GROUP_WORD_MOTION, 0.10f, 0.90f, 0.60f)
     val WORD_SCALE_EASE_IN_FRACTION = Tunable("wordScaleEaseInFraction", "Scale ease-in fraction", "How much of the rise is spent dipping in before the swell. Higher is a slower, softer dip.", GROUP_WORD_MOTION, 0.05f, 0.50f, 0.20f)
     val RIPPLE_EASE_IN_FRACTION = Tunable("rippleEaseInFraction", "Ripple ease-in fraction", "Fades the letter ripple in and out at the ends of a word so it does not start or stop with a jolt. Higher fades more and costs the first and last letters some emphasis.", GROUP_WORD_MOTION, 0.05f, 0.50f, 0.15f)
     val WORD_LIFT_PEAK_FRACTION = Tunable("wordLiftPeakFraction", "Lift peak fraction", "How far a word lifts off the line, as a fraction of text size.", GROUP_WORD_MOTION, 0.00f, 0.20f, 0.05f)
-    val WORD_LIFT_PEAK_POS = Tunable("wordLiftPeakPosition", "Lift peak position", "Where in the word's motion the lift peaks.", GROUP_WORD_MOTION, 0.10f, 0.90f, 0.55f)
+    val WORD_LIFT_PEAK_POS = Tunable("wordLiftPeakPosition", "Lift peak position", "Where in the word's motion the lift peaks.", GROUP_WORD_MOTION, 0.10f, 0.90f, 0.58f)
     val WORD_GLOW_RISE_END = Tunable("wordGlowRiseEnd", "Glow rise end", "Point where the glow has finished fading in.", GROUP_WORD_MOTION, 0.05f, 0.50f, 0.20f)
     val WORD_GLOW_HOLD_END = Tunable("wordGlowHoldEnd", "Glow hold end", "Point where the glow starts fading out. It holds at full between the two.", GROUP_WORD_MOTION, 0.30f, 0.90f, 0.55f)
     val WORD_GLOW_ALPHA_MULT = Tunable("wordGlowAlphaMultiplier", "Glow alpha multiplier", "Glow strength. 0 turns the glow off.", GROUP_WORD_MOTION, 0f, 255f, 0f)
     val HELD_WORD_MIN_DURATION_MS = Tunable("heldWordMinDurationMs", "Held word threshold (ms)", "A word sung at least this long animates letter by letter. Shorter words swell as one block.", GROUP_WORD_MOTION, 200f, 3000f, 575f, isInteger = true)
-    val HELD_WORD_LETTER_SCALE_PEAK = Tunable("heldWordLetterScalePeak", "Held letter scale peak", "Biggest size a single letter reaches as the ripple passes over it.", GROUP_WORD_MOTION, 1.00f, 1.40f, 1.14f)
+    val HELD_WORD_LETTER_SCALE_PEAK = Tunable("heldWordLetterScalePeak", "Held letter scale peak", "Biggest size a single letter reaches as the ripple passes over it.", GROUP_WORD_MOTION, 1.00f, 1.40f, 1.04f)
     val LETTER_FALLOFF_POWER = Tunable("letterFalloffPower", "Letter falloff power", "How tightly the ripple hugs the letter being sung. Higher leaves the neighbours almost still.", GROUP_WORD_MOTION, 1f, 6f, 3f, isInteger = true)
     val GLOW_BLUR_RADIUS_FRACTION = Tunable("glowBlurRadiusFraction", "Glow blur radius fraction", "Width of the glow blur, as a fraction of text size.", GROUP_WORD_MOTION, 0.02f, 0.30f, 0.10f)
     val WORD_MOTION_MIN_DURATION_MS = Tunable("wordMotionMinDurationMs", "Motion min duration (ms)", "Words sung this fast get the smallest motion. Nothing shrinks further below it.", GROUP_WORD_MOTION, 50f, 400f, 150f, isInteger = true)
@@ -62,6 +63,7 @@ object Tuning {
     val WORD_RISE_DURATION_MS = Tunable("wordRiseDurationMs", "Word rise duration (ms)", "Time from the start of motion to the top of the swell. Fixed in ms, so tempo does not squash it.", GROUP_WORD_MOTION, 80f, 800f, 220f, isInteger = true)
     val WORD_LEAD_IN_MS = Tunable("wordLeadInMs", "Word lead-in (ms)", "How early motion starts before the word is sung, so the peak lands on the beat.", GROUP_WORD_MOTION, 0f, 300f, 100f, isInteger = true)
     val WORD_SETTLE_DURATION_MS = Tunable("wordSettleDurationMs", "Word settle duration (ms)", "Time the word takes to fall from its peak back to normal size.", GROUP_WORD_MOTION, 150f, 1200f, 420f, isInteger = true)
+    val WORD_SPACING = Tunable("wordSpacing", "Word spacing", "Width of the gap between words, as a multiple of a normal space.", GROUP_WORD_MOTION, 1.00f, 3.00f, 1.15f)
 
     // Group 2: Background colour
     val CHROMA_EXPONENT = Tunable("bg_saturation", "Chroma exponent", "Overall colour strength of the background. Drag right for more saturated.", GROUP_BACKGROUND_COLOUR, AuroraRenderer.MIN_CHROMA_EXPONENT, AuroraRenderer.MAX_CHROMA_EXPONENT, AuroraRenderer.DEFAULT_CHROMA_EXPONENT, inverted = true)
@@ -93,14 +95,15 @@ object Tuning {
     val REFERENCE_DISTANCE_PX = Tunable("referenceDistancePx", "Reference distance (px)", "Distance treated as a normal glide. Longer moves take proportionally more time.", GROUP_LYRIC_TIMING, 50f, 500f, 158f)
 
     // Group 5: Instrumental dots
-    val DOT_SCALE_PEAK = Tunable("dotScalePeak", "Dot scale peak", "Biggest a dot gets as its turn comes round.", GROUP_INSTRUMENTAL_DOTS, 1.00f, 1.40f, 1.15f)
-    val DOT_LIFT_FRACTION = Tunable("dotLiftFraction", "Dot lift fraction", "How far a dot lifts, as a fraction of its radius.", GROUP_INSTRUMENTAL_DOTS, 0.00f, 0.50f, 0.25f)
+    val DOT_SCALE_PEAK = Tunable("dotScalePeak", "Dot scale peak", "Biggest a dot gets as its turn comes round.", GROUP_INSTRUMENTAL_DOTS, 1.00f, 1.40f, 1.25f)
+    val DOT_LIFT_FRACTION = Tunable("dotLiftFraction", "Dot lift fraction", "How far a dot lifts, as a fraction of its radius.", GROUP_INSTRUMENTAL_DOTS, 0.00f, 0.50f, 0.40f)
     val DOT_COUNT = Tunable("dotCount", "Dot count", "How many dots show during an instrumental break.", GROUP_INSTRUMENTAL_DOTS, 1f, 8f, 3f, isInteger = true)
-    val DOT_OVERLAP = Tunable("dotOverlap", "Dot overlap", "How much neighbouring dots share their turn, in percent. 0 is strictly one at a time.", GROUP_INSTRUMENTAL_DOTS, 0f, 100f, 0f)
+    val DOT_OVERLAP = Tunable("dotOverlap", "Dot overlap", "How much neighbouring dots share their turn, in percent. 0 is strictly one at a time.", GROUP_INSTRUMENTAL_DOTS, 0f, 100f, 35.00f)
 
     val allParams: List<Tunable> = listOf(
         WORD_SCALE_START,
         WORD_SCALE_PEAK,
+        WORD_SCALE_SETTLE,
         WORD_SCALE_PEAK_POS,
         WORD_SCALE_EASE_IN_FRACTION,
         RIPPLE_EASE_IN_FRACTION,
@@ -120,6 +123,7 @@ object Tuning {
         WORD_RISE_DURATION_MS,
         WORD_LEAD_IN_MS,
         WORD_SETTLE_DURATION_MS,
+        WORD_SPACING,
         CHROMA_EXPONENT,
         LINEAR_BOOST,
         BACKGROUND_DEPTH,
@@ -165,6 +169,10 @@ object Tuning {
     var wordScalePeak: Float
         get() = WORD_SCALE_PEAK.value
         set(v) { WORD_SCALE_PEAK.value = v }
+
+    var wordScaleSettle: Float
+        get() = WORD_SCALE_SETTLE.value
+        set(v) { WORD_SCALE_SETTLE.value = v }
 
     var wordScalePeakPosition: Float
         get() = WORD_SCALE_PEAK_POS.value
@@ -241,6 +249,10 @@ object Tuning {
     var wordSettleDurationMs: Long
         get() = WORD_SETTLE_DURATION_MS.value.toLong()
         set(v) { WORD_SETTLE_DURATION_MS.value = v.toFloat() }
+
+    var wordSpacing: Float
+        get() = WORD_SPACING.value
+        set(v) { WORD_SPACING.value = v }
 
     // Direct accessors: Group 2 (Background colour)
     var chromaExponent: Float
@@ -410,9 +422,16 @@ object Tuning {
     fun exportKotlin(): String {
         val sb = StringBuilder()
         sb.append("// Debug Tuning Dump\n")
+        val modified = allParams.filter { it.isModified }
+        if (modified.isEmpty()) {
+            sb.append("// No values changed from defaults\n")
+            return sb.toString()
+        }
         for (groupName in groups) {
+            val groupParams = modified.filter { it.group == groupName }
+            if (groupParams.isEmpty()) continue
             sb.append("// Group: ").append(groupName).append("\n")
-            for (p in allParams.filter { it.group == groupName }) {
+            for (p in groupParams) {
                 val isIntType = p.key == "preRollMaxLift" || p.key == "dotCount"
                 val typeStr = if (isIntType) "Int" else if (p.isInteger) "Long" else "Float"
                 val valStr = if (isIntType) {
@@ -429,12 +448,8 @@ object Tuning {
                 } else {
                     formatFloat(p.defaultValue)
                 }
-                val marker = if (p.isModified) {
-                    " // modified (default: $defStr)"
-                } else {
-                    " // default"
-                }
-                sb.append("val ").append(p.key).append(": ").append(typeStr).append(" = ").append(valStr).append(marker).append("\n")
+                sb.append("val ").append(p.key).append(": ").append(typeStr).append(" = ").append(valStr)
+                    .append(" // default ").append(defStr).append("\n")
             }
         }
         return sb.toString()
