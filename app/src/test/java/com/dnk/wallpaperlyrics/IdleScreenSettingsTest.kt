@@ -196,13 +196,13 @@ class IdleScreenSettingsTest {
     }
 
     @Test
-    fun `idleTitle with notification access and empty string returns default title`() {
-        assertEquals(IdleScreenSettings.DEFAULT_IDLE_TITLE, IdleScreenSettings.idleTitle(true, ""))
+    fun `idleTitle with notification access and empty string stays empty`() {
+        assertEquals("", IdleScreenSettings.idleTitle(true, ""))
     }
 
     @Test
-    fun `idleTitle with notification access and whitespace returns default title`() {
-        assertEquals(IdleScreenSettings.DEFAULT_IDLE_TITLE, IdleScreenSettings.idleTitle(true, "   "))
+    fun `idleTitle with notification access and whitespace stays blank`() {
+        assertEquals("   ", IdleScreenSettings.idleTitle(true, "   "))
     }
 
     @Test

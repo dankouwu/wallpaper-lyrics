@@ -53,7 +53,9 @@ object IdleScreenSettings {
         if (!hasNotificationAccess) {
             return SETUP_TITLE
         }
-        return resolveIdleTitle(configuredTitle.takeIf { it.isNotBlank() })
+        // Already resolved from prefs, where only an unset key means the default. An empty
+        // string is the user clearing the field and must stay empty.
+        return configuredTitle
     }
 
     fun idleSubtitle(hasNotificationAccess: Boolean): String {
