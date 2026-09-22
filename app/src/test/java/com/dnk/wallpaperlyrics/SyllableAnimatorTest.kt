@@ -549,58 +549,89 @@ class SyllableAnimatorTest {
     }
 
     @Test
-    fun easeOutGlideRestAtEndpoints() {
-        assertEquals(0f, SyllableAnimator.easeOutGlide(0f), 0.0001f)
-        assertEquals(1f, SyllableAnimator.easeOutGlide(1f), 0.0001f)
-        assertEquals(0f, SyllableAnimator.easeOutGlide(-0.5f), 0.0001f)
-        assertEquals(1f, SyllableAnimator.easeOutGlide(1.5f), 0.0001f)
+    fun springPositionAtZeroDtReturnsInitialDisplacement() {
+        val x0 = 100f
+        val v0 = 50f
+        val omega = 4.74f / 0.42f
+        assertEquals(x0, SyllableAnimator.springPosition(x0, v0, omega, 0f), 0.0001f)
     }
 
     @Test
-    fun easeOutGlideIsMonotonicallyIncreasingAcrossSweep() {
-        var prev = SyllableAnimator.easeOutGlide(0f)
-        val steps = 100
-        for (i in 1..steps) {
-            val p = i.toFloat() / steps.toFloat()
-            val current = SyllableAnimator.easeOutGlide(p)
-            assertTrue("Expected current ($current) > prev ($prev) at p=$p", current > prev)
-            prev = current
+    fun springPositionCriticallyDampedDoesNotOvershootFromRest() {
+        val omega = 4.74f / 0.42f
+        val dt = 1f / 60f
+        var x = 100f
+        var v = 0f
+        var elapsed = 0f
+        while (elapsed < 0.42f) {
+            val nextX = SyllableAnimator.springPosition(x, v, omega, dt)
+            val nextV = SyllableAnimator.springVelocity(x, v, omega, dt)
+            assertTrue("Displacement should never be negative on the way: $nextX", nextX >= 0f)
+            x = nextX
+            v = nextV
+            elapsed += dt
         }
+        assertTrue("Displacement after 0.42s must be between 0 and 5.5: $x", x in 0f..5.5f)
     }
 
     @Test
-    fun easeOutGlideFrontLoadsLikeAnEaseOut() {
-        val mid = SyllableAnimator.easeOutGlide(0.5f)
-        assertTrue(mid > 0.5f)
-        assertEquals(1f - Math.pow(0.5, 1.5).toFloat(), mid, 0.0001f)
+    fun springPositionStableUnderHugeDt() {
+        val omega = 4.74f / 0.42f
+        val pos = SyllableAnimator.springPosition(100f, 0f, omega, 10f)
+        assertEquals(0f, pos, 0.001f)
+    }
+
+    @Test
+    fun springSimulationIndependentOfFrameRate() {
+        fun run(dt: Float): Float {
+            val omega = 4.74f / 0.42f
+            var x = 100f
+            var v = 0f
+            var elapsed = 0f
+            while (elapsed < 0.42f) {
+                val nextX = SyllableAnimator.springPosition(x, v, omega, dt)
+                val nextV = SyllableAnimator.springVelocity(x, v, omega, dt)
+                x = nextX
+                v = nextV
+                elapsed += dt
+            }
+            return x
+        }
+
+        val run60 = run(1f / 60f)
+        val run120 = run(1f / 120f)
+        val run30 = run(1f / 30f)
+
+        assertEquals(run60, run120, 0.5f)
+        assertEquals(run60, run30, 0.5f)
     }
 
     @Test
     fun glideDurationMsReturnsBaseDurationForReferenceDistance() {
-        assertEquals(200f, SyllableAnimator.glideDurationMs(158f), 0.0001f)
+        assertEquals(420f, SyllableAnimator.glideDurationMs(158f), 0.0001f)
     }
 
     @Test
     fun glideDurationMsClampsToMaxCapForLongDistance() {
-        assertEquals(320f, SyllableAnimator.glideDurationMs(488f), 0.0001f)
-        assertEquals(320f, SyllableAnimator.glideDurationMs(422f), 0.0001f)
-        assertEquals(320f, SyllableAnimator.glideDurationMs(1000f), 0.0001f)
+        assertEquals(672f, SyllableAnimator.glideDurationMs(488f), 0.0001f)
+        assertEquals(672f, SyllableAnimator.glideDurationMs(422f), 0.0001f)
+        assertEquals(672f, SyllableAnimator.glideDurationMs(1000f), 0.0001f)
     }
 
     @Test
     fun glideDurationMsScalesSmoothlyForIntermediateDistance() {
         val duration = SyllableAnimator.glideDurationMs(290f)
-        assertTrue(duration > 200f)
-        assertTrue(duration < 320f)
-        val expected = 200f * Math.sqrt((290.0 / 158.0)).toFloat()
+        assertTrue(duration > 420f)
+        assertTrue(duration < 672f)
+        val expected = 420f * Math.sqrt((290.0 / 158.0)).toFloat()
         assertEquals(expected, duration, 0.001f)
     }
 
     @Test
     fun glideDurationMsHandlesZeroNegativeAndNaNInputsSafely() {
-        assertEquals(200f, SyllableAnimator.glideDurationMs(0f), 0.0001f)
-        assertEquals(200f, SyllableAnimator.glideDurationMs(-100f), 0.0001f)
-        assertEquals(200f, SyllableAnimator.glideDurationMs(Float.NaN), 0.0001f)
+        assertEquals(420f, SyllableAnimator.glideDurationMs(0f), 0.0001f)
+        assertEquals(420f, SyllableAnimator.glideDurationMs(-100f), 0.0001f)
+        assertEquals(420f, SyllableAnimator.glideDurationMs(Float.NaN), 0.0001f)
     }
 
     @Test
@@ -1802,6 +1833,85 @@ class SyllableAnimatorTest {
                 )
             }
         }
+    }
+
+    @Test
+    fun testLineReleaseTimeWithHoldMaxZeroEqualsNextLineStartTime() {
+        val words = listOf(
+            LyricWord(startTime = 1000L, endTime = 1400L, text = "hello", startIndex = 0, endIndex = 5)
+        )
+        val release = SyllableAnimator.getLineReleaseTime(
+            words = words,
+            lineEndTime = 1400L,
+            nextStartTime = 1500L,
+            nextNextStartTime = 3000L,
+            holdMax = 0L
+        )
+        assertEquals(1500L, release)
+
+        val releaseNullWords = SyllableAnimator.getLineReleaseTime(
+            words = null,
+            lineEndTime = 1400L,
+            nextStartTime = 1500L,
+            holdMax = 0L
+        )
+        assertEquals(1500L, releaseNullWords)
+    }
+
+    @Test
+    fun testLineReleaseTimeWithWordEnding100msBeforeNextLineStarts() {
+        val nextStartTime = 2000L
+        val wordEnd = nextStartTime - 100L
+        val wordStart = wordEnd - 100L
+        val words = listOf(
+            LyricWord(startTime = wordStart, endTime = wordEnd, text = "word", startIndex = 0, endIndex = 4)
+        )
+        val holdMax = 650L
+        val release = SyllableAnimator.getLineReleaseTime(
+            words = words,
+            lineEndTime = wordEnd,
+            nextStartTime = nextStartTime,
+            nextNextStartTime = 5000L,
+            holdMax = holdMax
+        )
+        assertTrue("Release ($release) must be after next start ($nextStartTime)", release > nextStartTime)
+        assertTrue("Release ($release) must be at most next start + holdMax (${nextStartTime + holdMax})", release <= nextStartTime + holdMax)
+    }
+
+    @Test
+    fun testLineReleaseTimeNeverPassesLineAfterNextStartTime() {
+        val nextStartTime = 2000L
+        val wordEnd = nextStartTime - 100L
+        val wordStart = wordEnd - 100L
+        val words = listOf(
+            LyricWord(startTime = wordStart, endTime = wordEnd, text = "word", startIndex = 0, endIndex = 4)
+        )
+        val nextNextStartTime = 2100L
+        val release = SyllableAnimator.getLineReleaseTime(
+            words = words,
+            lineEndTime = wordEnd,
+            nextStartTime = nextStartTime,
+            nextNextStartTime = nextNextStartTime,
+            holdMax = 650L
+        )
+        assertTrue("Release ($release) must not pass next-next start ($nextNextStartTime)", release <= nextNextStartTime)
+        assertEquals(nextNextStartTime, release)
+    }
+
+    @Test
+    fun testLineReleaseTimeWhenWordsSettleBeforeNextLineStarts() {
+        val words = listOf(
+            LyricWord(startTime = 1000L, endTime = 1100L, text = "early", startIndex = 0, endIndex = 5)
+        )
+        val nextStartTime = 5000L
+        val release = SyllableAnimator.getLineReleaseTime(
+            words = words,
+            lineEndTime = 1100L,
+            nextStartTime = nextStartTime,
+            nextNextStartTime = 8000L,
+            holdMax = 650L
+        )
+        assertEquals(nextStartTime, release)
     }
 }
 

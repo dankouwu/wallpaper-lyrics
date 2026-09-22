@@ -91,8 +91,9 @@ object Tuning {
     val WORD_MOTION_TRAIL_MAX_MS = Tunable("wordMotionTrailMaxMs", "Motion trail max (ms)", "Longest trail a word can get.", GROUP_LYRIC_TIMING, 50f, 1000f, 250f, isInteger = true)
     val PRE_ROLL_MAX_LIFT = Tunable("preRollMaxLift", "Pre-roll max lift", "Extra brightness a line gains while it waits for its first word.", GROUP_LYRIC_TIMING, 0f, 150f, 50f, isInteger = true)
     val PRE_ROLL_SETTLE_MS = Tunable("preRollSettleMs", "Pre-roll settle (ms)", "Time that extra brightness takes to fade once the first word lands.", GROUP_LYRIC_TIMING, 0f, 500f, 150f, isInteger = true)
-    val BASE_GLIDE_MS = Tunable("baseGlideMs", "Base glide (ms)", "Base time a line takes to glide to its new position.", GROUP_LYRIC_TIMING, 50f, 600f, 200f)
+    val BASE_GLIDE_MS = Tunable("baseGlideMs", "Base glide (ms)", "Time the scroll takes to reach a new line. Longer is softer.", GROUP_LYRIC_TIMING, 100f, 1000f, 420f)
     val REFERENCE_DISTANCE_PX = Tunable("referenceDistancePx", "Reference distance (px)", "Distance treated as a normal glide. Longer moves take proportionally more time.", GROUP_LYRIC_TIMING, 50f, 500f, 158f)
+    val LINE_HOLD_MAX_MS = Tunable("lineHoldMaxMs", "Line hold max (ms)", "Longest time the view waits on a line for its last word to settle before scrolling to the next one. 0 scrolls as soon as the next line starts.", GROUP_LYRIC_TIMING, 0f, 1200f, 800f, isInteger = true)
 
     // Group 5: Instrumental dots
     val DOT_SCALE_PEAK = Tunable("dotScalePeak", "Dot scale peak", "Biggest a dot gets as its turn comes round.", GROUP_INSTRUMENTAL_DOTS, 1.00f, 1.40f, 1.25f)
@@ -147,6 +148,7 @@ object Tuning {
         PRE_ROLL_SETTLE_MS,
         BASE_GLIDE_MS,
         REFERENCE_DISTANCE_PX,
+        LINE_HOLD_MAX_MS,
         DOT_SCALE_PEAK,
         DOT_LIFT_FRACTION,
         DOT_COUNT,
@@ -348,6 +350,10 @@ object Tuning {
     var referenceDistancePx: Float
         get() = REFERENCE_DISTANCE_PX.value
         set(v) { REFERENCE_DISTANCE_PX.value = v }
+
+    var lineHoldMaxMs: Long
+        get() = LINE_HOLD_MAX_MS.value.toLong()
+        set(v) { LINE_HOLD_MAX_MS.value = v.toFloat() }
 
     // Direct accessors: Group 5 (Instrumental dots)
     var dotScalePeak: Float
