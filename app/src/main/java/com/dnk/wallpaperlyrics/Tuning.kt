@@ -89,7 +89,7 @@ object Tuning {
     val WORD_MOTION_TRAIL_FRACTION = Tunable("wordMotionTrailFraction", "Motion trail fraction", "Trail of motion kept after the sweep ends, as a fraction of the word's length.", GROUP_LYRIC_TIMING, 0.0f, 1.0f, 0.35f)
     val WORD_MOTION_TRAIL_MIN_MS = Tunable("wordMotionTrailMinMs", "Motion trail min (ms)", "Shortest trail a word can get.", GROUP_LYRIC_TIMING, 0f, 500f, 120f, isInteger = true)
     val WORD_MOTION_TRAIL_MAX_MS = Tunable("wordMotionTrailMaxMs", "Motion trail max (ms)", "Longest trail a word can get.", GROUP_LYRIC_TIMING, 50f, 1000f, 250f, isInteger = true)
-    val PRE_ROLL_MAX_LIFT = Tunable("preRollMaxLift", "Pre-roll max lift", "Extra brightness a line gains while it waits for its first word.", GROUP_LYRIC_TIMING, 0f, 150f, 50f, isInteger = true)
+    val PRE_ROLL_MAX_LIFT = Tunable("preRollMaxLift", "Pre-roll max lift", "Extra brightness a line gains while it waits for its first word.", GROUP_LYRIC_TIMING, 0f, 150f, 0f, isInteger = true)
     val PRE_ROLL_SETTLE_MS = Tunable("preRollSettleMs", "Pre-roll settle (ms)", "Time that extra brightness takes to fade once the first word lands.", GROUP_LYRIC_TIMING, 0f, 500f, 150f, isInteger = true)
     val BASE_GLIDE_MS = Tunable("baseGlideMs", "Base glide (ms)", "Time the scroll takes to reach a new line. Longer is softer.", GROUP_LYRIC_TIMING, 100f, 1000f, 420f)
     val REFERENCE_DISTANCE_PX = Tunable("referenceDistancePx", "Reference distance (px)", "Distance treated as a normal glide. Longer moves take proportionally more time.", GROUP_LYRIC_TIMING, 50f, 500f, 158f)

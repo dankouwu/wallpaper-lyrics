@@ -638,8 +638,8 @@ class SyllableAnimatorTest {
     fun preRollHandoverAlphaHasNoStepAtFirstWordOnset() {
         val lineStart = 1000L
         val onset = 1400L
-        val alphaBeforeOnset = SyllableAnimator.getPreRollInactiveAlpha(onset - 1, lineStart, onset)
-        val alphaAtOnset = SyllableAnimator.getPreRollInactiveAlpha(onset, lineStart, onset)
+        val alphaBeforeOnset = SyllableAnimator.getPreRollInactiveAlpha(onset - 1, lineStart, onset, maxLift = 50)
+        val alphaAtOnset = SyllableAnimator.getPreRollInactiveAlpha(onset, lineStart, onset, maxLift = 50)
         val step = Math.abs(alphaAtOnset - alphaBeforeOnset)
         assertTrue(
             "Alpha difference across handover must be at most 2, but was $step (before=$alphaBeforeOnset, at=$alphaAtOnset)",
@@ -652,11 +652,11 @@ class SyllableAnimatorTest {
         val lineStart = 1000L
         val onset = 1400L
         val settleDuration = SyllableAnimator.PRE_ROLL_SETTLE_MS
-        var prevAlpha = SyllableAnimator.getPreRollInactiveAlpha(onset, lineStart, onset, settleDuration)
+        var prevAlpha = SyllableAnimator.getPreRollInactiveAlpha(onset, lineStart, onset, settleDuration, maxLift = 50)
         val steps = 100
         for (i in 1..steps) {
             val t = onset + (i.toFloat() / steps.toFloat() * settleDuration).toLong()
-            val currentAlpha = SyllableAnimator.getPreRollInactiveAlpha(t, lineStart, onset, settleDuration)
+            val currentAlpha = SyllableAnimator.getPreRollInactiveAlpha(t, lineStart, onset, settleDuration, maxLift = 50)
             assertTrue(
                 "Expected currentAlpha ($currentAlpha) <= prevAlpha ($prevAlpha) at t=$t",
                 currentAlpha <= prevAlpha
