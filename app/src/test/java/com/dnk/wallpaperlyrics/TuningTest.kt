@@ -329,8 +329,8 @@ class TuningTest {
 
     @Test
     fun testPreRollMaxLiftDefaultEqualsHardcodedConstant() {
-        assertEquals(50f, Tuning.PRE_ROLL_MAX_LIFT.defaultValue, 0.0001f)
-        assertEquals(50, Tuning.preRollMaxLift)
+        assertEquals(0f, Tuning.PRE_ROLL_MAX_LIFT.defaultValue, 0.0001f)
+        assertEquals(0, Tuning.preRollMaxLift)
     }
 
     @Test
@@ -447,9 +447,9 @@ class TuningTest {
     @Test
     fun testSyllableAnimatorPreRollInactiveAlphaUsesTuningDefaults() {
         // pre-roll gap = 1400 - 1000 = 400. At pos=1200, progress = 0.5.
-        // alpha = 80 + (50 * 0.5) = 105
+        // The default lift is 0, so the line stays at the inactive alpha.
         val defaultAlpha = SyllableAnimator.getPreRollInactiveAlpha(1200L, 1000L, 1400L)
-        assertEquals(105, defaultAlpha)
+        assertEquals(80, defaultAlpha)
 
         Tuning.preRollMaxLift = 100
         val modifiedAlpha = SyllableAnimator.getPreRollInactiveAlpha(1200L, 1000L, 1400L)
