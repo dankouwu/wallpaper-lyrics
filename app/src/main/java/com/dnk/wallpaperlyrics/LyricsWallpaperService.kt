@@ -647,7 +647,9 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
         private var scrollY = 0f
-        private var targetScrollY = 0f
+        private var scrollVelocity = 0f
+        private var scrollOmega = 0f
+        private var lastFocusIndex = -1
         private var lastFrameTimeNanos = 0L
 
         // Line-change ramp: tracks when currentIndex last changed so word progress
@@ -784,21 +786,11 @@ class LyricsWallpaperService : WallpaperService() {
             val adjustedPos = position - totalOffset + leadTime
 
             val bsIdx = lines.binarySearch { it.startTime.compareTo(adjustedPos) }
-            var currentIndex = if (bsIdx >= 0) bsIdx else (-bsIdx - 2).coerceAtLeast(0)
+            val currentIndex = if (bsIdx >= 0) bsIdx else (-bsIdx - 2).coerceAtLeast(0)
 
-            val currentOffset = offsets[currentIndex]
-            val prevOffset = if (currentIndex > 0) offsets[currentIndex - 1] else currentOffset
-            val glideDistance = Math.abs(currentOffset - prevOffset)
-            val baseGlideMs = Tuning.baseGlideMs
-            val referenceDistancePx = Tuning.referenceDistancePx
-            val glideDuration = SyllableAnimator.glideDurationMs(glideDistance, baseGlideMs, referenceDistancePx)
-            
-            val entryProgress = ((adjustedPos - lines[currentIndex].startTime) / glideDuration).coerceIn(0f, 1f)
-            val easedGlide = SyllableAnimator.easeOutGlide(entryProgress)
-            
-            val target = prevOffset + (currentOffset - prevOffset) * easedGlide
-            scrollY = target
-            targetScrollY = target
+            scrollY = offsets[currentIndex]
+            scrollVelocity = 0f
+            lastFocusIndex = -1
         }
 
         private val screenStateReceiver = object : BroadcastReceiver() {
@@ -1813,6 +1805,8 @@ class LyricsWallpaperService : WallpaperService() {
                 var initialIndex = lines.indexOfLast { it.startTime <= initialPos }
                 if (initialIndex == -1) initialIndex = 0
                 scrollY = offsets[initialIndex]
+                scrollVelocity = 0f
+                lastFocusIndex = -1
 
                 preuploadInitialBitmaps(initialIndex, bitmaps)
             }
@@ -1848,25 +1842,62 @@ class LyricsWallpaperService : WallpaperService() {
 
                 val transitionDuration = 200f
 
-                // Synchronized Glide
-                val currentOffset = offsets[currentIndex]
-                val prevOffset = if (currentIndex > 0) offsets[currentIndex - 1] else currentOffset
-                val glideDistance = Math.abs(currentOffset - prevOffset)
-                val baseGlideMs = Tuning.baseGlideMs
-                val referenceDistancePx = Tuning.referenceDistancePx
-                val glideDuration = SyllableAnimator.glideDurationMs(glideDistance, baseGlideMs, referenceDistancePx)
+                val holdMax = Tuning.lineHoldMaxMs
+                val wordOverlapMs = Tuning.wordOverlapMs
+                val wordMinAnimationMs = Tuning.wordMinAnimationMs
+                val wordMotionTrailFraction = Tuning.wordMotionTrailFraction
+                val wordMotionTrailMinMs = Tuning.wordMotionTrailMinMs
+                val wordMotionTrailMaxMs = Tuning.wordMotionTrailMaxMs
+                val wordMotionDurationFloorMs = Tuning.wordMotionDurationFloorMs
+                val wordLeadInMs = Tuning.wordLeadInMs
+                val wordRiseDurationMs = Tuning.wordRiseDurationMs
+                val wordSettleDurationMs = Tuning.wordSettleDurationMs
+                val effectiveFloorMs = SyllableAnimator.getEffectiveMotionFloor(
+                    wordMotionDurationFloorMs,
+                    wordLeadInMs,
+                    wordRiseDurationMs,
+                    wordSettleDurationMs
+                )
 
-                val entryProgress = ((adjustedPos - lines[currentIndex].startTime) / glideDuration).coerceIn(0f, 1f)
-                val easedGlide = SyllableAnimator.easeOutGlide(entryProgress)
+                val prevReleaseTime = if (currentIndex > 0) {
+                    val prevLine = lines[currentIndex - 1]
+                    val nextNextStart = if (currentIndex + 1 < lines.size) lines[currentIndex + 1].startTime else Long.MAX_VALUE
+                    SyllableAnimator.getLineReleaseTime(
+                        prevLine.words,
+                        prevLine.endTime,
+                        lines[currentIndex].startTime,
+                        nextNextStart,
+                        holdMax,
+                        wordMotionTrailFraction,
+                        wordMotionTrailMinMs,
+                        wordMotionTrailMaxMs,
+                        wordOverlapMs,
+                        wordMinAnimationMs,
+                        effectiveFloorMs
+                    )
+                } else {
+                    lines[0].startTime
+                }
 
-                targetScrollY = prevOffset + (currentOffset - prevOffset) * easedGlide
+                val focusIndex = if (currentIndex > 0 && adjustedPos < prevReleaseTime) currentIndex - 1 else currentIndex
+                val scrollTarget = offsets[focusIndex]
 
-                // Smooth scroll toward target. A spring (k=3600) was tried but is numerically
-                // unstable at 60fps (sqrt(k)*dt≈0.96 > 0.618 stability bound), causing scroll
-                // to diverge on large jumps. Simple lerp at dt*16 is unconditionally stable,
-                // gives ~62ms lag, and caps dt to avoid spikes on the first frame after wake.
-                val safeDt = dt.coerceAtMost(0.033f) // never extrapolate more than one 30fps frame
-                scrollY += (targetScrollY - scrollY) * (safeDt * 16f).coerceAtMost(1f)
+                if (focusIndex != lastFocusIndex) {
+                    val glideMs = SyllableAnimator.glideDurationMs(
+                        Math.abs(scrollTarget - scrollY),
+                        Tuning.baseGlideMs,
+                        Tuning.referenceDistancePx
+                    )
+                    scrollOmega = 4.74f / (glideMs / 1000f)
+                    lastFocusIndex = focusIndex
+                }
+
+                // Exact solution of a critically damped spring remains stable across frame rate variations and large steps.
+                val safeDt = dt.coerceAtMost(0.033f)
+                val x0 = scrollY - scrollTarget
+                val v0 = scrollVelocity
+                scrollY = scrollTarget + SyllableAnimator.springPosition(x0, v0, scrollOmega, safeDt)
+                scrollVelocity = SyllableAnimator.springVelocity(x0, v0, scrollOmega, safeDt)
 
 
                 // Use saveLayer only during Metadata vs Lyrics transitions
@@ -1898,23 +1929,8 @@ class LyricsWallpaperService : WallpaperService() {
                 val lineRampFraction = ((android.os.SystemClock.elapsedRealtime() - lineChangeElapsedMs)
                     .toFloat() / 200f).coerceIn(0f, 1f)
 
-                val wordOverlapMs = Tuning.wordOverlapMs
-                val wordMinAnimationMs = Tuning.wordMinAnimationMs
-                val wordMotionTrailFraction = Tuning.wordMotionTrailFraction
-                val wordMotionTrailMinMs = Tuning.wordMotionTrailMinMs
-                val wordMotionTrailMaxMs = Tuning.wordMotionTrailMaxMs
                 val preRollSettleMs = Tuning.preRollSettleMs
                 val preRollMaxLift = Tuning.preRollMaxLift
-                val wordMotionDurationFloorMs = Tuning.wordMotionDurationFloorMs
-                val wordLeadInMs = Tuning.wordLeadInMs
-                val wordRiseDurationMs = Tuning.wordRiseDurationMs
-                val wordSettleDurationMs = Tuning.wordSettleDurationMs
-                val effectiveFloorMs = SyllableAnimator.getEffectiveMotionFloor(
-                    wordMotionDurationFloorMs,
-                    wordLeadInMs,
-                    wordRiseDurationMs,
-                    wordSettleDurationMs
-                )
 
                 for (i in (currentIndex - visibleRange)..(currentIndex + visibleRange)) {
                     if (i in layouts.indices) {
@@ -1927,7 +1943,26 @@ class LyricsWallpaperService : WallpaperService() {
 
                         val entryLinear = ((adjustedPos - line.startTime) / transitionDuration).coerceIn(0f, 1f)
                         val exitLinear = if (i < lines.size - 1) {
-                            ((adjustedPos - lines[i+1].startTime) / transitionDuration).coerceIn(0f, 1f)
+                            // A line held until the line after next started is two behind by the
+                            // time it exits, so its exit has to be timed from its own release too.
+                            val releaseTime = when (i) {
+                                currentIndex - 1 -> prevReleaseTime
+                                currentIndex - 2 -> SyllableAnimator.getLineReleaseTime(
+                                    line.words,
+                                    line.endTime,
+                                    lines[i + 1].startTime,
+                                    lines[i + 2].startTime,
+                                    holdMax,
+                                    wordMotionTrailFraction,
+                                    wordMotionTrailMinMs,
+                                    wordMotionTrailMaxMs,
+                                    wordOverlapMs,
+                                    wordMinAnimationMs,
+                                    effectiveFloorMs
+                                )
+                                else -> lines[i + 1].startTime
+                            }
+                            ((adjustedPos - releaseTime) / transitionDuration).coerceIn(0f, 1f)
                         } else 0f
 
                         val easedEntry = 1f - (1f - entryLinear) * (1f - entryLinear)
@@ -2026,7 +2061,7 @@ class LyricsWallpaperService : WallpaperService() {
                                             wordOverlapMs,
                                             wordMinAnimationMs,
                                             effectiveFloorMs,
-                                            maxOverrunMs = transitionDuration.toLong()
+                                            maxOverrunMs = holdMax + transitionDuration.toLong()
                                         )
 
                                         val sweepLinearProgress = when {
@@ -2097,7 +2132,7 @@ class LyricsWallpaperService : WallpaperService() {
                                         wordOverlapMs,
                                         wordMinAnimationMs,
                                         effectiveFloorMs,
-                                        maxOverrunMs = transitionDuration.toLong()
+                                        maxOverrunMs = holdMax + transitionDuration.toLong()
                                     )
 
                                     val motionWindowMs = Math.max(1L, motionEndT - motionStartT)

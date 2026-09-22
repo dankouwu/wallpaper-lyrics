@@ -341,14 +341,21 @@ class TuningTest {
 
     @Test
     fun testBaseGlideMsDefaultEqualsHardcodedConstant() {
-        assertEquals(200f, Tuning.BASE_GLIDE_MS.defaultValue, 0.0001f)
-        assertEquals(200f, Tuning.baseGlideMs, 0.0001f)
+        assertEquals(420f, Tuning.BASE_GLIDE_MS.defaultValue, 0.0001f)
+        assertEquals(420f, Tuning.baseGlideMs, 0.0001f)
     }
 
     @Test
     fun testReferenceDistancePxDefaultEqualsHardcodedConstant() {
         assertEquals(158f, Tuning.REFERENCE_DISTANCE_PX.defaultValue, 0.0001f)
         assertEquals(158f, Tuning.referenceDistancePx, 0.0001f)
+    }
+
+    @Test
+    fun testLineHoldMaxMsDefaultEqualsHardcodedConstant() {
+        assertEquals(800f, Tuning.LINE_HOLD_MAX_MS.defaultValue, 0.0001f)
+        assertEquals(800L, Tuning.lineHoldMaxMs)
+        assertTrue(Tuning.LINE_HOLD_MAX_MS.min < Tuning.LINE_HOLD_MAX_MS.max)
     }
 
     @Test
@@ -407,7 +414,7 @@ class TuningTest {
     @Test
     fun testSyllableAnimatorGlideDurationUsesTuningDefaults() {
         val defaultGlide = SyllableAnimator.glideDurationMs(158f)
-        assertEquals(200f, defaultGlide, 0.001f)
+        assertEquals(420f, defaultGlide, 0.001f)
 
         Tuning.baseGlideMs = 300f
         val modifiedGlide = SyllableAnimator.glideDurationMs(158f)

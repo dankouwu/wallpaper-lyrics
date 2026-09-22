@@ -161,12 +161,15 @@ object SyllableAnimator {
         return if (result.isEmpty()) groups else result
     }
 
-    // Easing curves
-    fun easeOutGlide(x: Float): Float {
-        if (x <= 0f) return 0f
-        if (x >= 1f) return 1f
-        val inv = 1f - x
-        return 1f - Math.pow(inv.toDouble(), 1.5).toFloat()
+    // x0 is the displacement from the target, v0 the velocity, both in px and px per second.
+    fun springPosition(x0: Float, v0: Float, omega: Float, dt: Float): Float {
+        val e = Math.exp((-omega * dt).toDouble()).toFloat()
+        return (x0 + (v0 + omega * x0) * dt) * e
+    }
+
+    fun springVelocity(x0: Float, v0: Float, omega: Float, dt: Float): Float {
+        val e = Math.exp((-omega * dt).toDouble()).toFloat()
+        return (v0 - omega * (v0 + omega * x0) * dt) * e
     }
 
     fun glideDurationMs(
@@ -762,5 +765,53 @@ object SyllableAnimator {
             val decay = 1f - easeInOutCubic(settleProgress)
             (INACTIVE_LYRIC_ALPHA + (maxLift * decay)).toInt().coerceIn(0, 255)
         }
+    }
+
+    /**
+     * Computes the timestamp when the view is allowed to scroll away from a line and start
+     * its exit fade, letting trailing word motion settle before the line is dismissed.
+     */
+    fun getLineReleaseTime(
+        words: List<LyricWord>?,
+        lineEndTime: Long,
+        nextStartTime: Long,
+        nextNextStartTime: Long = Long.MAX_VALUE,
+        holdMax: Long = Tuning.lineHoldMaxMs,
+        trailFraction: Float = Tuning.wordMotionTrailFraction,
+        trailMinMs: Long = Tuning.wordMotionTrailMinMs,
+        trailMaxMs: Long = Tuning.wordMotionTrailMaxMs,
+        overlapMs: Long = Tuning.wordOverlapMs,
+        minAnimationMs: Long = Tuning.wordMinAnimationMs,
+        effectiveFloorMs: Long = getEffectiveMotionFloor()
+    ): Long {
+        if (holdMax <= 0L || words == null || words.isEmpty()) {
+            return nextStartTime
+        }
+        var naturalEnd = Long.MIN_VALUE
+        for (i in 0 until words.size) {
+            val word = words[i]
+            val startT = if (word.fullStartTime == 0L) word.startTime else word.fullStartTime
+            val endT = if (word.fullEndTime == 0L) word.endTime else word.fullEndTime
+            val motionEnd = getMotionWordEnd(
+                startT,
+                endT,
+                lineEndTime,
+                trailFraction,
+                trailMinMs,
+                trailMaxMs,
+                overlapMs,
+                minAnimationMs,
+                effectiveFloorMs,
+                maxOverrunMs = holdMax
+            )
+            if (motionEnd > naturalEnd) {
+                naturalEnd = motionEnd
+            }
+        }
+        var release = naturalEnd.coerceIn(nextStartTime, nextStartTime + holdMax)
+        if (nextNextStartTime != Long.MAX_VALUE && nextNextStartTime >= 0L) {
+            release = Math.min(release, nextNextStartTime)
+        }
+        return Math.max(nextStartTime, release)
     }
 }
