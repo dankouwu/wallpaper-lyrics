@@ -76,11 +76,11 @@ class IdleScreenSettingsTest {
     }
 
     @Test
-    fun `default color constants equal literals formerly hardcoded in wallpaper service`() {
-        assertEquals(0xFFFF0055.toInt(), IdleScreenSettings.DEFAULT_ACCENT)
-        assertEquals(0xFF0A0B1A.toInt(), IdleScreenSettings.DEFAULT_BASE)
-        assertEquals(0xFF7A22FF.toInt(), IdleScreenSettings.DEFAULT_MID)
-        assertEquals(0xFFD6C7FF.toInt(), IdleScreenSettings.DEFAULT_HIGHLIGHT)
+    fun `default idle palette is accent 805D93, base D31277, mid 56BD54, highlight 00DFFF`() {
+        assertEquals(0xFF805D93.toInt(), IdleScreenSettings.DEFAULT_ACCENT)
+        assertEquals(0xFFD31277.toInt(), IdleScreenSettings.DEFAULT_BASE)
+        assertEquals(0xFF56BD54.toInt(), IdleScreenSettings.DEFAULT_MID)
+        assertEquals(0xFF00DFFF.toInt(), IdleScreenSettings.DEFAULT_HIGHLIGHT)
     }
 
     @Test
