@@ -71,12 +71,10 @@ class VersionPaletteTest {
 
     @Test
     fun `neighbouring roles in generated palettes are separated by at least 0 08 in OKLab`() {
-        // Sensible threshold: 0.08 in OKLab distance ensures clear visual separation and prevents near-identical mesh corners
         val minAllowedDistance = 0.08f
         val versions = listOf("2.2.1", "2.3.0", "2.4.0", "2.5.0", "3.0.0", "10.0.0")
         for (version in versions) {
             val palette = VersionPalette.forVersion(version)
-            // Bilinear mesh adjacent corner pairs: (Accent, Base), (Accent, Mid), (Base, Highlight), (Mid, Highlight)
             val adjacentPairs = listOf(
                 Pair(0, 1),
                 Pair(0, 2),
