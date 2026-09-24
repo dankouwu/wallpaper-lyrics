@@ -2142,6 +2142,8 @@ class LyricsWallpaperService : WallpaperService() {
                                     for (word in line.words) {
                                         val span = word.spanRef as? WordGradientSpan ?: continue
                                         span.progress = 0f
+                                        span.linearProgress = 0f
+                                        span.wholeWordLinearProgress = 0f
                                         span.motionProgress = 0f
                                         span.motionWindowMs = 0L
                                         span.exitFade = 0f
@@ -2216,6 +2218,12 @@ class LyricsWallpaperService : WallpaperService() {
                                         }
 
                                         span.progress = targetProgress
+                                        span.linearProgress = if (endProp > startProp) {
+                                            ((sweepLinearProgress - startProp) / (endProp - startProp)).coerceIn(0f, 1f)
+                                        } else {
+                                            sweepLinearProgress
+                                        }
+                                        span.wholeWordLinearProgress = sweepLinearProgress.coerceIn(0f, 1f)
                                         span.motionProgress = motionLinearProgress.coerceIn(0f, 1f)
                                         span.motionWindowMs = motionWindowMs
                                         span.exitFade = 0f
@@ -2268,6 +2276,8 @@ class LyricsWallpaperService : WallpaperService() {
                                     }
 
                                     span.progress = 1f
+                                    span.linearProgress = 1f
+                                    span.wholeWordLinearProgress = 1f
                                     span.motionProgress = motionLinearProgress.coerceIn(0f, 1f)
                                     span.motionWindowMs = if (span.motionProgress > 0f) motionWindowMs else 0L
                                     span.exitFade = easedExit

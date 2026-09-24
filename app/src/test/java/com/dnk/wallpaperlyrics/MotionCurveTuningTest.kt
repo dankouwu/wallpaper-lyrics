@@ -87,8 +87,8 @@ class MotionCurveTuningTest {
 
     @Test
     fun testHeldWordThresholdMatchesPinnedDefaults() {
-        assertFalse(SyllableAnimator.isHeldWord(574L))
-        assertTrue(SyllableAnimator.isHeldWord(575L))
+        assertFalse(SyllableAnimator.isHeldWord(599L))
+        assertTrue(SyllableAnimator.isHeldWord(600L))
         assertFalse(SyllableAnimator.isHeldWord(0L))
         assertFalse(SyllableAnimator.isHeldWord(500L))
         assertTrue(SyllableAnimator.isHeldWord(1500L))

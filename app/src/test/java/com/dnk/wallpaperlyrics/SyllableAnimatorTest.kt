@@ -223,8 +223,8 @@ class SyllableAnimatorTest {
 
     @Test
     fun heldGateDistinguishesSubSecondAndHeldWords() {
-        assertEquals(false, SyllableAnimator.isHeldWord(574L))
-        assertEquals(true, SyllableAnimator.isHeldWord(575L))
+        assertEquals(false, SyllableAnimator.isHeldWord(599L))
+        assertEquals(true, SyllableAnimator.isHeldWord(600L))
         assertEquals(false, SyllableAnimator.isHeldWord(0L))
         assertEquals(false, SyllableAnimator.isHeldWord(500L))
         assertEquals(true, SyllableAnimator.isHeldWord(1500L))
@@ -721,9 +721,9 @@ class SyllableAnimatorTest {
         assertEquals(0, WordMotionSpan.computeBlurredDrawCount(hasGlow = false, isHeld = false, codePointCount = 10))
         assertEquals(0, WordMotionSpan.computeBlurredDrawCount(hasGlow = false, isHeld = true, codePointCount = 10))
 
-        val countSingleLetter = WordMotionSpan.computeBlurredDrawCount(hasGlow = true, isHeld = true, codePointCount = 1)
-        val countTenLetters = WordMotionSpan.computeBlurredDrawCount(hasGlow = true, isHeld = true, codePointCount = 10)
-        val countFiftyLetters = WordMotionSpan.computeBlurredDrawCount(hasGlow = true, isHeld = true, codePointCount = 50)
+        val countSingleLetter = WordMotionSpan.computeBlurredDrawCount(hasGlow = true, isHeld = true, codePointCount = 1, letterAnimation = 1)
+        val countTenLetters = WordMotionSpan.computeBlurredDrawCount(hasGlow = true, isHeld = true, codePointCount = 10, letterAnimation = 1)
+        val countFiftyLetters = WordMotionSpan.computeBlurredDrawCount(hasGlow = true, isHeld = true, codePointCount = 50, letterAnimation = 1)
         val countNonHeld = WordMotionSpan.computeBlurredDrawCount(hasGlow = true, isHeld = false, codePointCount = 10)
 
         assertEquals(1, countSingleLetter)
@@ -731,6 +731,10 @@ class SyllableAnimatorTest {
         assertEquals(1, countFiftyLetters)
         assertEquals(1, countNonHeld)
         assertEquals(countSingleLetter, countTenLetters)
+
+        // Mode 2 never requests glow draws
+        assertEquals(0, WordMotionSpan.computeBlurredDrawCount(hasGlow = true, isHeld = true, codePointCount = 1, letterAnimation = 2))
+        assertEquals(0, WordMotionSpan.computeBlurredDrawCount(hasGlow = true, isHeld = true, codePointCount = 10, letterAnimation = 2))
     }
 
     @Test
@@ -1912,6 +1916,262 @@ class SyllableAnimatorTest {
             holdMax = 650L
         )
         assertEquals(nextStartTime, release)
+    }
+    @Test
+    fun testSequentialLetterFocusEndpointsAndMidpoint() {
+        val counts = listOf(1, 2, 3, 5, 8)
+        val overlaps = listOf(0f, 60f, 300f, 1000f)
+
+        for (count in counts) {
+            for (overlap in overlaps) {
+                val k = 1f + overlap / 100f
+                val d = if (count == 1) 1f else k / (count - 1f + k)
+
+                // Letter 0 focus is 0 at p = 0 and rises from there
+                assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(0f, 0, count, overlap), 0.0001f)
+                assertTrue(SyllableAnimator.getSequentialLetterFocus(0.01f * d, 0, count, overlap) > 0f)
+
+                // Last letter focus is 0 at p = 1
+                assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(1f, count - 1, count, overlap), 0.0001f)
+
+                // Every letter reaches focus 1 exactly at its window midpoint
+                for (i in 0 until count) {
+                    val sI = if (count == 1) 0f else i.toFloat() * (1f - d) / (count - 1f)
+                    val midpoint = sI + 0.5f * d
+                    assertEquals(
+                        "Letter $i of $count with overlap $overlap must reach focus 1 at midpoint $midpoint",
+                        1f,
+                        SyllableAnimator.getSequentialLetterFocus(midpoint, i, count, overlap),
+                        0.0001f
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testSequentialLetterAtProgressOneAllFillsOneAllFocusZero() {
+        val counts = listOf(1, 2, 5, 12)
+        val overlaps = listOf(0f, 300f, 1000f)
+
+        for (count in counts) {
+            for (overlap in overlaps) {
+                for (i in 0 until count) {
+                    val focus = SyllableAnimator.getSequentialLetterFocus(1f, i, count, overlap)
+                    val fill = SyllableAnimator.getSequentialLetterFill(1f, i, count, overlap)
+                    assertEquals(
+                        "At progress 1, focus must be 0 for letter $i of $count with overlap $overlap",
+                        0f,
+                        focus,
+                        0.0001f
+                    )
+                    assertEquals(
+                        "At progress 1, fill must be 1 for letter $i of $count with overlap $overlap",
+                        1f,
+                        fill,
+                        0.0001f
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testSequentialLetterWindowLengthAndSymmetry() {
+        val counts = listOf(2, 4, 7, 10)
+        val overlaps = listOf(0f, 150f, 300f, 1000f)
+
+        for (count in counts) {
+            for (overlap in overlaps) {
+                val k = 1f + overlap / 100f
+                val d = k / (count - 1f + k)
+                val windowLength0 = d
+
+                for (i in 0 until count) {
+                    val sI = i.toFloat() * (1f - d) / (count - 1f)
+                    val midpoint = sI + 0.5f * d
+                    val end = sI + d
+
+                    // Rise time equals fall time
+                    val riseTime = midpoint - sI
+                    val fallTime = end - midpoint
+                    assertEquals(0.5f * d, riseTime, 0.0001f)
+                    assertEquals(0.5f * d, fallTime, 0.0001f)
+                    assertEquals(riseTime, fallTime, 0.0001f)
+
+                    // Window length equals the first letter's
+                    val windowLength = end - sI
+                    assertEquals(windowLength0, windowLength, 0.0001f)
+
+                    // Boundary checks
+                    assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(sI, i, count, overlap), 0.0001f)
+                    assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(end, i, count, overlap), 0.0001f)
+                    if (sI > 0.001f) {
+                        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(sI - 0.001f, i, count, overlap), 0.0001f)
+                    }
+                    if (end < 0.999f) {
+                        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(end + 0.001f, i, count, overlap), 0.0001f)
+                    }
+
+                    // Symmetry around midpoint
+                    for (step in 1..10) {
+                        val delta = 0.49f * d * (step.toFloat() / 10f)
+                        val leftFocus = SyllableAnimator.getSequentialLetterFocus(midpoint - delta, i, count, overlap)
+                        val rightFocus = SyllableAnimator.getSequentialLetterFocus(midpoint + delta, i, count, overlap)
+                        assertEquals(
+                            "Focus must be symmetric around midpoint for letter $i of $count at delta $delta",
+                            leftFocus,
+                            rightFocus,
+                            0.0001f
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testSequentialLetterFocusZeroOverlapBackToBack() {
+        val counts = listOf(2, 4, 6, 8)
+        val steps = 10000
+
+        for (count in counts) {
+            for (step in 0..steps) {
+                val p = step.toFloat() / steps.toFloat()
+                // Ignore exact boundaries
+                val isBoundary = (0..count).any { Math.abs(p - it.toFloat() / count.toFloat()) < 1e-4f }
+                if (isBoundary) continue
+
+                var activeCount = 0
+                for (i in 0 until count) {
+                    val focus = SyllableAnimator.getSequentialLetterFocus(p, i, count, 0f)
+                    if (focus > 0.0001f) {
+                        activeCount++
+                    }
+                }
+                assertTrue(
+                    "At progress $p with overlap 0 for count $count, at most one letter may have focus > 0, found $activeCount",
+                    activeCount <= 1
+                )
+            }
+        }
+    }
+
+    @Test
+    fun testSequentialLetterFillMonotonicAndFocusContinuous() {
+        val counts = listOf(1, 2, 5, 8)
+        val overlaps = listOf(0f, 300f, 1000f)
+        val steps = 5000
+
+        for (count in counts) {
+            for (overlap in overlaps) {
+                for (i in 0 until count) {
+                    var prevFill = -1f
+                    var prevFocus = -1f
+
+                    for (step in 0..steps) {
+                        val p = step.toFloat() / steps.toFloat()
+                        val fill = SyllableAnimator.getSequentialLetterFill(p, i, count, overlap)
+                        val focus = SyllableAnimator.getSequentialLetterFocus(p, i, count, overlap)
+
+                        assertTrue(
+                            "Fill must be monotonic non decreasing: at p=$p fill=$fill was less than prev=$prevFill for letter $i of $count overlap $overlap",
+                            fill >= prevFill - 0.00001f
+                        )
+                        assertTrue("Fill must be in range 0..1: $fill", fill in -0.0001f..1.0001f)
+
+                        if (prevFocus >= 0f) {
+                            val jump = Math.abs(focus - prevFocus)
+                            assertTrue(
+                                "Focus jump $jump at p=$p for letter $i of $count overlap $overlap must be smaller than epsilon",
+                                jump < 0.05f
+                            )
+                        }
+
+                        prevFill = fill
+                        prevFocus = focus
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testSequentialLetterEdgeCasesCountAndNaN() {
+        // Count 1
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(0f, 0, 1, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(1f, 0, 1, 300f), 0.0001f)
+        assertEquals(1f, SyllableAnimator.getSequentialLetterFocus(0.5f, 0, 1, 300f), 0.0001f)
+
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFill(0f, 0, 1, 300f), 0.0001f)
+        assertEquals(1f, SyllableAnimator.getSequentialLetterFill(0.5f, 0, 1, 300f), 0.0001f)
+        assertEquals(1f, SyllableAnimator.getSequentialLetterFill(1f, 0, 1, 300f), 0.0001f)
+
+        // Count 0 and invalid indices
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(0.5f, 0, 0, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(0.5f, -1, 3, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(0.5f, 3, 3, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFill(0.5f, 0, 0, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFill(0.5f, -1, 3, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFill(0.5f, 3, 3, 300f), 0.0001f)
+
+        // NaN inputs
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(Float.NaN, 0, 3, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(0.5f, 0, 3, Float.NaN), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFill(Float.NaN, 0, 3, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFill(0.5f, 0, 3, Float.NaN), 0.0001f)
+
+        // Out of range progress clamped to 0..1
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(-0.5f, 0, 3, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFocus(1.5f, 2, 3, 300f), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSequentialLetterFill(-0.5f, 0, 3, 300f), 0.0001f)
+        assertEquals(1f, SyllableAnimator.getSequentialLetterFill(1.5f, 0, 3, 300f), 0.0001f)
+    }
+
+    @Test
+    fun testSequentialLetterScaleAndLiftPeaks() {
+        val heldScalePeak = Tuning.heldWordLetterScalePeak
+        val textSize = 50f
+        val liftFraction = Tuning.wordLiftPeakFraction
+        val durationMs = 1200L
+        val amplitude = SyllableAnimator.getMotionAmplitude(durationMs)
+        val heldLiftPeak = liftFraction * textSize * amplitude
+        val effectiveLetterPeak = 1f + (heldScalePeak - 1f) * amplitude
+
+        // Focus = 0 (at rest)
+        val focusRest = 0f
+        val scaleRest = 1f + (effectiveLetterPeak - 1f) * focusRest
+        val liftRest = heldLiftPeak * focusRest
+        assertEquals(1f, scaleRest, 0.0001f)
+        assertEquals(0f, liftRest, 0.0001f)
+
+        // Focus = 1 (at peak)
+        val focusPeak = 1f
+        val scalePeak = 1f + (effectiveLetterPeak - 1f) * focusPeak
+        val liftPeak = heldLiftPeak * focusPeak
+        assertEquals(effectiveLetterPeak, scalePeak, 0.0001f)
+        assertEquals(heldLiftPeak, liftPeak, 0.0001f)
+    }
+
+    @Test
+    fun testSequentialHandoffAtProgressOneMatchesSettledState() {
+        val counts = listOf(1, 2, 4, 7, 10)
+        val inactiveAlpha = INACTIVE_LYRIC_ALPHA
+        val activeAlpha = 230
+        val alphaDiff = (activeAlpha - inactiveAlpha).toFloat()
+
+        for (count in counts) {
+            for (i in 0 until count) {
+                val focusAt1 = SyllableAnimator.getSequentialLetterFocus(1f, i, count)
+                val fillAt1 = SyllableAnimator.getSequentialLetterFill(1f, i, count)
+
+                assertEquals("Focus at progress 1 must be 0 for letter $i of $count", 0f, focusAt1, 0.0001f)
+                assertEquals("Fill at progress 1 must be 1 for letter $i of $count", 1f, fillAt1, 0.0001f)
+
+                val letterAlpha = (inactiveAlpha + alphaDiff * fillAt1).toInt()
+                assertEquals("Alpha at progress 1 must equal activeAlpha", activeAlpha, letterAlpha)
+            }
+        }
     }
 }
 

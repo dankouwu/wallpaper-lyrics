@@ -254,7 +254,7 @@ object SyllableAnimator {
         return rStart + uEased * (rEnd - rStart)
     }
 
-    const val HELD_WORD_MIN_DURATION_MS = 575L
+    const val HELD_WORD_MIN_DURATION_MS = 600L
 
     fun isHeldWord(
         wordDurationMs: Long,
@@ -476,6 +476,243 @@ object SyllableAnimator {
         if (linearProgress.isNaN()) return 0f
         val p = linearProgress.coerceIn(0f, 1f)
         return p * codePointCount - 0.5f
+    }
+
+    private fun smootherstep(u: Float): Float = u * u * u * (u * (u * 6f - 15f) + 10f)
+
+    fun getSequentialLetterFocus(
+        progress: Float,
+        index: Int,
+        count: Int,
+        overlapPercent: Float = Tuning.letterOverlap
+    ): Float {
+        if (count <= 0 || index < 0 || index >= count) return 0.0f
+        if (progress.isNaN() || overlapPercent.isNaN()) return 0.0f
+        val p = progress.coerceIn(0f, 1f)
+        val overlap = overlapPercent.coerceIn(0f, 1000f)
+
+        val sI: Float
+        val d: Float
+        if (count == 1) {
+            sI = 0f
+            d = 1f
+        } else {
+            val n = count.toFloat()
+            val k = 1f + overlap / 100f
+            d = k / (n - 1f + k)
+            sI = index.toFloat() * (1f - d) / (n - 1f)
+        }
+
+        val t = ((p - sI) / d).coerceIn(0f, 1f)
+        val u = (if (t <= 0.5f) t / 0.5f else (1f - t) / 0.5f).coerceIn(0f, 1f)
+        return smootherstep(u)
+    }
+
+    fun getSequentialLetterFill(
+        progress: Float,
+        index: Int,
+        count: Int,
+        overlapPercent: Float = Tuning.letterOverlap
+    ): Float {
+        if (count <= 0 || index < 0 || index >= count) return 0.0f
+        if (progress.isNaN() || overlapPercent.isNaN()) return 0.0f
+        val p = progress.coerceIn(0f, 1f)
+        val overlap = overlapPercent.coerceIn(0f, 1000f)
+
+        val sI: Float
+        val d: Float
+        if (count == 1) {
+            sI = 0f
+            d = 1f
+        } else {
+            val n = count.toFloat()
+            val k = 1f + overlap / 100f
+            d = k / (n - 1f + k)
+            sI = index.toFloat() * (1f - d) / (n - 1f)
+        }
+
+        val t = ((p - sI) / d).coerceIn(0f, 1f)
+        val u = (t / 0.5f).coerceIn(0f, 1f)
+        return smootherstep(u)
+    }
+
+    fun getSpringLetterProgress(
+        linearProgress: Float,
+        wordDurationMs: Long,
+        leadMs: Long = Tuning.letterEndLeadMs
+    ): Float {
+        if (linearProgress.isNaN()) return 0f
+        val p = linearProgress.coerceIn(0f, 1f)
+        val d = wordDurationMs.toFloat()
+        if (d <= 0f) return if (p >= 1f) 1f else 0f
+        val effectiveDuration = Math.max(d - leadMs.toFloat(), d * 0.5f)
+        if (effectiveDuration <= 0f) return 1f
+        return (p * d / effectiveDuration).coerceIn(0f, 1f)
+    }
+
+    fun getSpringActiveLetterIndex(q: Float, codePointCount: Int): Int {
+        if (codePointCount <= 0 || q.isNaN() || q < 0f || q >= 1f) return -1
+        val raw = (q * codePointCount).toInt()
+        return raw.coerceIn(0, codePointCount - 1)
+    }
+
+    fun getSpringActiveLetterProgress(q: Float, codePointCount: Int): Float {
+        if (codePointCount <= 0 || q.isNaN() || q <= 0f) return 0f
+        if (q >= 1f) return 1f
+        val a = (q * codePointCount).toInt().coerceIn(0, codePointCount - 1)
+        val t = q * codePointCount - a
+        return t.coerceIn(0f, 1f)
+    }
+
+    fun getSpringLetterCurve(
+        t: Float,
+        key0: Float,
+        keyPeak: Float,
+        keySung: Float,
+        peakPosition: Float
+    ): Float {
+        if (t.isNaN()) return key0
+        val u = t.coerceIn(0f, 1f)
+        val peakPos = peakPosition.coerceIn(0.01f, 0.99f)
+        return if (u <= peakPos) {
+            val segU = u / peakPos
+            val smooth = segU * segU * (3f - 2f * segU)
+            key0 + (keyPeak - key0) * smooth
+        } else {
+            val segU = (u - peakPos) / (1f - peakPos)
+            val smooth = segU * segU * (3f - 2f * segU)
+            keyPeak + (keySung - keyPeak) * smooth
+        }
+    }
+
+    fun getSpringLetterScaleCurve(
+        t: Float,
+        peak: Float = Tuning.letterScalePeak,
+        sung: Float = Tuning.letterScaleSung
+    ): Float = getSpringLetterCurve(t, 1.00f, peak, sung, 0.7f)
+
+    fun getSpringLetterLiftCurve(
+        t: Float,
+        peak: Float = Tuning.letterLiftPeak,
+        sung: Float = Tuning.letterLiftSung
+    ): Float = getSpringLetterCurve(t, 0.00f, peak, sung, 0.9f)
+
+    fun getSpringLetterTargetScale(
+        q: Float,
+        codePointIndex: Int,
+        codePointCount: Int,
+        scalePeak: Float = Tuning.letterScalePeak,
+        scaleSung: Float = Tuning.letterScaleSung,
+        falloffPower: Float = Tuning.letterFalloffPower
+    ): Float {
+        if (codePointCount <= 0 || q.isNaN() || q <= 0f) return 1.0f
+        if (q >= 1.0f) return scaleSung
+        val a = getSpringActiveLetterIndex(q, codePointCount)
+        if (a < 0) return scaleSung
+        if (codePointIndex > a) return 1.0f
+        val t = getSpringActiveLetterProgress(q, codePointCount)
+        val activeCurve = getSpringLetterScaleCurve(t, scalePeak, scaleSung)
+        if (codePointIndex == a) return activeCurve
+        val d = (a - codePointIndex).toFloat()
+        val falloff = getRippleFalloff(d, falloffPower)
+        return 1.0f + (activeCurve - 1.0f) * falloff
+    }
+
+    fun getSpringLetterTargetLift(
+        q: Float,
+        codePointIndex: Int,
+        codePointCount: Int,
+        textSize: Float,
+        liftPeak: Float = Tuning.letterLiftPeak,
+        liftSung: Float = Tuning.letterLiftSung,
+        falloffPower: Float = Tuning.letterFalloffPower
+    ): Float {
+        if (codePointCount <= 0 || textSize <= 0f || q.isNaN() || q <= 0f) return 0f
+        if (q >= 1.0f) return liftSung * textSize
+        val a = getSpringActiveLetterIndex(q, codePointCount)
+        if (a < 0) return liftSung * textSize
+        if (codePointIndex > a) return 0f
+        val t = getSpringActiveLetterProgress(q, codePointCount)
+        val activeCurveFraction = getSpringLetterLiftCurve(t, liftPeak, liftSung)
+        val activeLift = activeCurveFraction * textSize
+        if (codePointIndex == a) return activeLift
+        val d = (a - codePointIndex).toFloat()
+        val falloff = getRippleFalloff(d, falloffPower)
+        return activeLift * falloff
+    }
+
+    fun stepSpring(
+        currentPos: Float,
+        currentVel: Float,
+        targetPos: Float,
+        frequencyHz: Float,
+        dampingRatio: Float,
+        dtSeconds: Float,
+        outState: FloatArray,
+        offset: Int = 0
+    ) {
+        if (dtSeconds <= 0f || dtSeconds.isNaN()) {
+            outState[offset] = currentPos
+            outState[offset + 1] = currentVel
+            return
+        }
+        if (frequencyHz <= 0f || frequencyHz.isNaN()) {
+            outState[offset] = targetPos
+            outState[offset + 1] = 0f
+            return
+        }
+
+        val dt = Math.min(dtSeconds, 1f / 30f)
+        val x0 = (currentPos - targetPos).toDouble()
+        val v0 = currentVel.toDouble()
+        val omega0 = 2.0 * Math.PI * frequencyHz.toDouble()
+        val zeta = dampingRatio.toDouble()
+
+        val newX: Double
+        val newV: Double
+
+        if (Math.abs(zeta - 1.0) < 1e-4) {
+            val decay = Math.exp(-omega0 * dt)
+            val c2 = v0 + omega0 * x0
+            newX = (x0 + c2 * dt) * decay
+            newV = (v0 - omega0 * c2 * dt) * decay
+        } else if (zeta < 1.0) {
+            val gamma = zeta * omega0
+            val omegaD = omega0 * Math.sqrt(1.0 - zeta * zeta)
+            val decay = Math.exp(-gamma * dt)
+            val c = Math.cos(omegaD * dt)
+            val s = Math.sin(omegaD * dt)
+            val b = (v0 + gamma * x0) / omegaD
+            newX = decay * (x0 * c + b * s)
+            newV = decay * (v0 * c - ((gamma * v0 + omega0 * omega0 * x0) / omegaD) * s)
+        } else {
+            val gamma = zeta * omega0
+            val omegaD = omega0 * Math.sqrt(zeta * zeta - 1.0)
+            val decay = Math.exp(-gamma * dt)
+            val ch = Math.cosh(omegaD * dt)
+            val sh = Math.sinh(omegaD * dt)
+            val b = (v0 + gamma * x0) / omegaD
+            newX = decay * (x0 * ch + b * sh)
+            newV = decay * (v0 * ch - ((gamma * v0 + omega0 * omega0 * x0) / omegaD) * sh)
+        }
+
+        outState[offset] = (targetPos.toDouble() + newX).toFloat()
+        outState[offset + 1] = newV.toFloat()
+    }
+
+    const val SPRING_SETTLE_SCALE_POS_EPSILON = 0.001f
+    const val SPRING_SETTLE_SCALE_VEL_EPSILON = 0.01f
+    const val SPRING_SETTLE_LIFT_POS_EPSILON = 0.1f
+    const val SPRING_SETTLE_LIFT_VEL_EPSILON = 1.0f
+
+    fun isSpringSettled(
+        currentPos: Float,
+        currentVel: Float,
+        targetPos: Float,
+        posEpsilon: Float,
+        velEpsilon: Float
+    ): Boolean {
+        return Math.abs(currentPos - targetPos) <= posEpsilon && Math.abs(currentVel) <= velEpsilon
     }
 
     fun getRippleEnvelope(

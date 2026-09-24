@@ -69,8 +69,8 @@ class TuningTest {
 
     @Test
     fun testHeldWordThresholdMsDefaultEqualsHardcodedConstant() {
-        assertEquals(575f, Tuning.HELD_WORD_MIN_DURATION_MS.defaultValue, 0.0001f)
-        assertEquals(575L, Tuning.heldWordMinDurationMs)
+        assertEquals(600f, Tuning.HELD_WORD_MIN_DURATION_MS.defaultValue, 0.0001f)
+        assertEquals(600L, Tuning.heldWordMinDurationMs)
     }
 
     @Test
@@ -613,6 +613,54 @@ class TuningTest {
         assertEquals("wordSpacing", Tuning.WORD_SPACING.key)
         assertEquals("Word spacing", Tuning.WORD_SPACING.label)
         assertEquals(Tuning.GROUP_WORD_MOTION, Tuning.WORD_SPACING.group)
+    }
+
+    @Test
+    fun testLetterAnimationTunable() {
+        assertEquals(2f, Tuning.LETTER_ANIMATION.defaultValue, 0.0001f)
+        assertEquals(2, Tuning.letterAnimation)
+        assertEquals(0f, Tuning.LETTER_ANIMATION.min, 0.0001f)
+        assertEquals(2f, Tuning.LETTER_ANIMATION.max, 0.0001f)
+        assertEquals("letterAnimation", Tuning.LETTER_ANIMATION.key)
+        assertEquals("Letter animation", Tuning.LETTER_ANIMATION.label)
+        assertEquals(Tuning.GROUP_WORD_MOTION, Tuning.LETTER_ANIMATION.group)
+        assertTrue(Tuning.LETTER_ANIMATION.isInteger)
+        assertEquals(
+            "How held words animate letter by letter. 0 is wave, 1 is sequential, 2 is spring.",
+            Tuning.LETTER_ANIMATION.description
+        )
+        assertFalse(Tuning.isSequentialLetterAnimation)
+        assertTrue(Tuning.isSpringLetterAnimation)
+
+        Tuning.LETTER_ANIMATION.value = 1f
+        assertTrue(Tuning.isSequentialLetterAnimation)
+        assertFalse(Tuning.isSpringLetterAnimation)
+
+        Tuning.LETTER_ANIMATION.value = 0f
+        assertFalse(Tuning.isSequentialLetterAnimation)
+        assertFalse(Tuning.isSpringLetterAnimation)
+
+        Tuning.isSequentialLetterAnimation = true
+        assertEquals(1f, Tuning.LETTER_ANIMATION.value, 0.0001f)
+
+        Tuning.isSpringLetterAnimation = true
+        assertEquals(2f, Tuning.LETTER_ANIMATION.value, 0.0001f)
+    }
+
+    @Test
+    fun testLetterOverlapTunable() {
+        assertEquals(300f, Tuning.LETTER_OVERLAP.defaultValue, 0.0001f)
+        assertEquals(300f, Tuning.letterOverlap, 0.0001f)
+        assertEquals(0f, Tuning.LETTER_OVERLAP.min, 0.0001f)
+        assertEquals(1000f, Tuning.LETTER_OVERLAP.max, 0.0001f)
+        assertEquals("letterOverlap", Tuning.LETTER_OVERLAP.key)
+        assertEquals("Letter overlap", Tuning.LETTER_OVERLAP.label)
+        assertEquals(Tuning.GROUP_WORD_MOTION, Tuning.LETTER_OVERLAP.group)
+        assertFalse(Tuning.LETTER_OVERLAP.isInteger)
+        assertEquals(
+            "How long each letter's turn lasts, in percent of the gap between one letter starting and the next. 0 is strictly one at a time; higher lets more letters move together and slows each one down.",
+            Tuning.LETTER_OVERLAP.description
+        )
     }
 }
 
