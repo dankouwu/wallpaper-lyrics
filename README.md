@@ -7,18 +7,23 @@ An Android live wallpaper that shows the lyrics of whatever you are playing, in 
 [![Fluid background on Android 13+](https://img.shields.io/badge/fluid%20background-Android%2013%2B-5B8DEF)](#the-background)
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-lightgrey)](LICENSE)
 
-<!--
-No screenshots committed yet. Capture with:
-  adb exec-out screencap -p > docs/screenshots/home.png
-Wanted: home screen with lyrics, the metadata view on wake, background settings,
-the idle screen. Add them here rather than shipping broken image tags.
--->
+![Wallpaper Lyrics](.github/previews/banner.png)
 
 ## What it is
 
 A wallpaper, not an app you sit in. The launcher icon opens settings and nothing else. Start something in any player that publishes a media session, go back to the home screen, and the lyrics are already there and already scrolling.
 
-Where the timing data allows it, words light up one at a time instead of whole lines. Musixmatch publishes per word timing for a good part of the catalogue. When a track has none, it falls back to line timing from LRCLIB, which is most tracks.
+Where the timing data allows it, words light up one at a time instead of whole lines. Each word grows as it is sung, overshoots a little and settles slightly larger than the words still waiting, and a word held long enough ripples through its letters. The line stays in focus until its last word has settled, and the view follows on a spring rather than jumping to the next line.
+
+Musixmatch publishes per word timing for a good part of the catalogue. When a track has none, it falls back to line timing, which most tracks have. For the rest, paste your own enhanced LRC or point the app at a custom provider.
+
+## On the phone
+
+<p align="center">
+  <img src=".github/previews/devil_in_a_new_dress.gif" alt="Devil in a New Dress" width="32%">
+  <img src=".github/previews/snooze.gif" alt="Snooze" width="32%">
+  <img src=".github/previews/wheels_fall_off.gif" alt="Wheels Fall Off" width="32%">
+</p>
 
 ## The background
 
@@ -26,18 +31,21 @@ The cover art is scaled to 512px, tinted along its own luminance, blurred twice,
 
 That path needs Android 13, which is where AGSL lands. Android 8 through 12 get animated radial gradient meshes built from a palette sampled off the same artwork. It is a visible downgrade, not a subtle one.
 
+Near white covers have their brightest pixels darkened in OKLab lightness so white lyrics stay readable over them. Darker and saturated covers come through unchanged.
+
 ## What else it does
 
 - Waking the screen shows the lyrics first, then fades in the album art with the title and artist, then goes back to the lyrics.
 - Always On Display has its own setting: the album card over the background, the card on black, or black on its own.
-- Sync offset from -1000 ms to +1000 ms, plus per song offsets that stick to the track, plus an offset for each paired Bluetooth device that applies whenever you play to it.
-- Lyrics you can edit by hand. Paste LRC for the current track when every source has it wrong, or purge the cache and refetch.
+- Sync offset from -1000 ms to +1000 ms, plus per song offsets of up to 10 seconds either way that stick to the track, plus an offset for each paired Bluetooth device that applies whenever you play to it. Sync is manual: nothing listens to the audio, and the app does not ask for the microphone.
+- Lyrics you can edit by hand. Paste LRC for the current track when every source has it wrong, or purge the cache and refetch. Hand edits live in the app's own files, so clearing its cache does not lose them.
 - A custom lyrics endpoint, tried ahead of Musixmatch and LRCLIB, if you run your own.
-- An idle screen with its own title and four color palette for when nothing is playing.
+- An idle screen with its own title and four color palette for when nothing is playing. Clear the title to leave it without text.
+- After a reboot it waits for a player to start. A session Android restores on its own is ignored until it has played once.
 - Static mode, which keeps the blurred artwork and drops the animation when you want the battery back.
 - Optional playback controls in the status bar, and optional Material You highlight colors.
 
-Lyrics land in a file cache, and a miss is remembered for 24 hours so an instrumental stops hitting the network every time it comes round.
+Fetched lyrics are stored in the app's files rather than its cache, so Android reclaiming space does not throw them away. A miss is remembered for 24 hours so an instrumental stops hitting the network every time it comes round.
 
 ## Install
 
@@ -116,12 +124,11 @@ The unit tests cover the parts with no Android in them: LRC parsing, query clean
 
 ## Known limitations
 
-- Word level timing depends on Musixmatch richsync coverage. Plenty of tracks only have line timing, and some have nothing.
+- Word level timing out of the box depends on Musixmatch richsync coverage. Plenty of tracks only have line timing there, and some have nothing. Importing your own enhanced LRC or running a custom provider's REST API fills the gap.
 - The fluid background needs Android 13. Below that it is gradient meshes.
 - Any media session is picked up, but only Spotify, Tidal and KDE Connect are recognised by name and preferred when several are live. A player that reports thin metadata, or none until you tell it to, gives you nothing to look up.
 - Both lyrics sources are third party and unofficial. They go down, they rate limit, and they hand back the wrong track often enough that manual LRC editing exists.
 - Debug signed, so sideload only.
-- No screenshots in the repo yet.
 
 ## Issues
 
