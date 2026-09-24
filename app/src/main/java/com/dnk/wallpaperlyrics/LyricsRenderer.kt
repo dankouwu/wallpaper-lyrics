@@ -211,6 +211,8 @@ object LyricsRenderer {
             val spans = updatedWords?.mapNotNull { it.spanRef as? WordGradientSpan }
             spans?.forEach { span ->
                 span.progress = 0f
+                span.linearProgress = 0f
+                span.wholeWordLinearProgress = 0f
                 span.motionProgress = 0f
                 span.inactiveAlpha = 255
                 span.bakeNeutral = true

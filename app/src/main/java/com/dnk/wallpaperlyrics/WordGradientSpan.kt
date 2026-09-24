@@ -2,6 +2,7 @@ package com.dnk.wallpaperlyrics
 
 import android.graphics.*
 import android.os.Build
+import android.os.SystemClock
 import android.text.TextPaint
 import android.text.style.CharacterStyle
 import android.text.style.ReplacementSpan
@@ -35,6 +36,8 @@ class WordGradientSpan(
             }
         }
     var progress: Float = 0f
+    var linearProgress: Float = 0f
+    var wholeWordLinearProgress: Float = Float.NaN
     var motionProgress: Float = 0f
     var motionWindowMs: Long = 0L
     var activeAlpha: Int = 230
@@ -146,6 +149,13 @@ class WordMotionSpan(
 
     private var currentBlurRadius: Float = computeBlurRadius(textSize)
     private var glowMaskFilter = BlurMaskFilter(currentBlurRadius, BlurMaskFilter.Blur.NORMAL)
+    private val springStates = FloatArray(codePointStarts.size * 4)
+    private var lastDrawTimeMs: Long = 0L
+    private var lastLinearProgress: Float = Float.NaN
+    internal var isSpringSettled: Boolean = false
+    private var letterUnitShader: LinearGradient? = null
+    private var lastShaderActiveAlpha = -1
+    private var lastShaderInactiveAlpha = -1
     private val renderNode: RenderNode? = try {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             RenderNode("WordGlow").apply {
@@ -168,6 +178,7 @@ class WordMotionSpan(
     companion object {
         private val layerBounds = RectF()
         private val layerPaint = Paint()
+        private val letterEdgeMatrix = Matrix()
         private val maskPaint = Paint().apply {
             xfermode = PorterDuffXfermode(PorterDuff.Mode.DST_IN)
         }
@@ -196,8 +207,13 @@ class WordMotionSpan(
             return measuredAdvance * 0.02f + 3f * blurRadius
         }
 
-        fun computeBlurredDrawCount(hasGlow: Boolean, isHeld: Boolean, codePointCount: Int): Int {
-            if (!hasGlow || codePointCount <= 0) return 0
+        fun computeBlurredDrawCount(
+            hasGlow: Boolean,
+            isHeld: Boolean,
+            codePointCount: Int,
+            letterAnimation: Int = Tuning.letterAnimation
+        ): Int {
+            if (!hasGlow || codePointCount <= 0 || (isHeld && letterAnimation == 2)) return 0
             return if (isHeld) 1 else 1
         }
 
@@ -258,7 +274,9 @@ class WordMotionSpan(
             canvas.drawText(text, start, end, x, y.toFloat(), paint)
             return
         }
-        if (progress >= 1f) {
+        val isHeldSpring = SyllableAnimator.isHeldWord(wordDurationMs, Tuning.heldWordMinDurationMs) &&
+            Tuning.isSpringLetterAnimation
+        if (progress >= 1f && (!isHeldSpring || isSpringSettled)) {
             // A word that has not started sits at the rest scale, which is the line frame itself,
             // so it can be drawn untransformed. A settled word sits above the frame and cannot.
             val settled = SyllableAnimator.toLineRelativeScale(
@@ -274,6 +292,18 @@ class WordMotionSpan(
         }
 
         // Read tuning values once per drawGlyphs pass, never per glyph
+        val letterAnimation = Tuning.letterAnimation
+        val isSequential = Tuning.isSequentialLetterAnimation
+        val letterOverlap = Tuning.letterOverlap
+        val endLeadMs = Tuning.letterEndLeadMs
+        val letterScalePeak = Tuning.letterScalePeak
+        val letterScaleSung = Tuning.letterScaleSung
+        val letterLiftPeak = Tuning.letterLiftPeak
+        val letterLiftSung = Tuning.letterLiftSung
+        val letterScaleHz = Tuning.letterScaleSpringHz
+        val letterScaleDamping = Tuning.letterScaleDamping
+        val letterLiftHz = Tuning.letterLiftSpringHz
+        val letterLiftDamping = Tuning.letterLiftDamping
         val glowAlphaMult = Tuning.wordGlowAlphaMultiplier
         val blurFraction = Tuning.glowBlurRadiusFraction
         val scaleStart = Tuning.wordScaleStart
@@ -285,6 +315,7 @@ class WordMotionSpan(
         val settleDurationMs = Tuning.wordSettleDurationMs
         val scaleSettle = Tuning.wordScaleSettle
         val motionWindowMs = wordSpan.motionWindowMs
+        val sungProgress = wordSpan.linearProgress
         val liftFraction = Tuning.wordLiftPeakFraction
         val liftPeakPos = Tuning.wordLiftPeakPosition
         val glowRiseEnd = Tuning.wordGlowRiseEnd
@@ -344,118 +375,351 @@ class WordMotionSpan(
         if (isHeld) {
             val baseLift = lift
             val heldLiftPeak = liftFraction * paint.textSize * amplitude
-            val activePos = SyllableAnimator.getActiveLetterPosition(progress, codePointCount)
-            val rippleEnvelope = SyllableAnimator.getRippleEnvelope(progress, rippleEaseInFraction)
+            val effectiveLetterPeak = 1f + (heldScalePeak - 1f) * amplitude
             val numGlyphs = codePointStarts.size
 
-            if (useGpuGlow) {
-                val intLeft = layerBounds.left.toInt()
-                val intTop = layerBounds.top.toInt()
-                val intRight = Math.ceil(layerBounds.right.toDouble()).toInt()
-                val intBottom = Math.ceil(layerBounds.bottom.toDouble()).toInt()
-                val intWidth = intRight - intLeft
-                val intHeight = intBottom - intTop
-                if (intWidth > 0 && intHeight > 0) {
-                    renderNode!!.setPosition(intLeft, intTop, intRight, intBottom)
-                    val recordingCanvas = renderNode.beginRecording(intWidth, intHeight)
-                    recordingCanvas.translate(-intLeft.toFloat(), -intTop.toFloat())
-                    glowLetterPaint.textSize = paint.textSize
-                    glowLetterPaint.typeface = paint.typeface
-                    recordingCanvas.save()
-                    recordingCanvas.scale(scale, scale, x + measuredAdvance / 2f, y.toFloat())
-                    for (i in 0 until numGlyphs) {
-                        val globalIndex = codePointIndices[i]
-                        val distance = globalIndex.toFloat() - activePos
-                        val falloff = SyllableAnimator.getRippleFalloff(distance, falloffPower)
-                        val emphasis = falloff * rippleEnvelope
-                        val letterLift = heldLiftPeak * emphasis
-                        val letterScale = SyllableAnimator.getHeldWordLetterScale(
-                            progress,
-                            distance,
-                            scaleStart,
-                            heldScalePeak,
-                            scalePeakPos,
-                            falloffPower,
-                            amplitude,
-                            motionWindowMs,
-                            riseDurationMs,
-                            easeInFraction,
-                            settleDurationMs,
-                            rippleEaseInFraction
+            if (letterAnimation != 2) {
+                if (useGpuGlow) {
+                    val intLeft = layerBounds.left.toInt()
+                    val intTop = layerBounds.top.toInt()
+                    val intRight = Math.ceil(layerBounds.right.toDouble()).toInt()
+                    val intBottom = Math.ceil(layerBounds.bottom.toDouble()).toInt()
+                    val intWidth = intRight - intLeft
+                    val intHeight = intBottom - intTop
+                    if (intWidth > 0 && intHeight > 0) {
+                        renderNode!!.setPosition(intLeft, intTop, intRight, intBottom)
+                        val recordingCanvas = renderNode.beginRecording(intWidth, intHeight)
+                        recordingCanvas.translate(-intLeft.toFloat(), -intTop.toFloat())
+                        glowLetterPaint.textSize = paint.textSize
+                        glowLetterPaint.typeface = paint.typeface
+                        recordingCanvas.save()
+                        recordingCanvas.scale(scale, scale, x + measuredAdvance / 2f, y.toFloat())
+                        if (isSequential) {
+                            for (i in 0 until numGlyphs) {
+                                val focus = SyllableAnimator.getSequentialLetterFocus(sungProgress, i, numGlyphs, letterOverlap)
+                                val letterLift = heldLiftPeak * focus
+                                val letterScale = 1f + (effectiveLetterPeak - 1f) * focus
+                                val letterLeft = x + relativeXs[i]
+                                val letterRight = if (i + 1 < numGlyphs) x + relativeXs[i + 1] else x + measuredAdvance.toFloat()
+                                val letterCenterX = (letterLeft + letterRight) * 0.5f
+
+                                recordingCanvas.save()
+                                recordingCanvas.scale(scale * letterScale, scale * letterScale, letterCenterX, y.toFloat())
+                                glowLetterPaint.alpha = (baseGlowAlpha * focus).toInt().coerceIn(0, 255)
+                                recordingCanvas.drawText(
+                                    text,
+                                    codePointStarts[i],
+                                    codePointEnds[i],
+                                    letterLeft,
+                                    y.toFloat() - letterLift,
+                                    glowLetterPaint
+                                )
+                                recordingCanvas.restore()
+                            }
+                        } else {
+                            val activePos = SyllableAnimator.getActiveLetterPosition(progress, codePointCount)
+                            val rippleEnvelope = SyllableAnimator.getRippleEnvelope(progress, rippleEaseInFraction)
+                            for (i in 0 until numGlyphs) {
+                                val globalIndex = codePointIndices[i]
+                                val distance = globalIndex.toFloat() - activePos
+                                val falloff = SyllableAnimator.getRippleFalloff(distance, falloffPower)
+                                val emphasis = falloff * rippleEnvelope
+                                val letterLift = heldLiftPeak * emphasis
+                                val letterScale = SyllableAnimator.getHeldWordLetterScale(
+                                    progress,
+                                    distance,
+                                    scaleStart,
+                                    heldScalePeak,
+                                    scalePeakPos,
+                                    falloffPower,
+                                    amplitude,
+                                    motionWindowMs,
+                                    riseDurationMs,
+                                    easeInFraction,
+                                    settleDurationMs,
+                                    rippleEaseInFraction
+                                )
+                                val letterLeft = x + relativeXs[i]
+                                val letterRight = if (i + 1 < numGlyphs) x + relativeXs[i + 1] else x + measuredAdvance.toFloat()
+                                val letterCenterX = (letterLeft + letterRight) * 0.5f
+
+                                recordingCanvas.save()
+                                recordingCanvas.scale(scale * letterScale, scale * letterScale, letterCenterX, y.toFloat())
+                                glowLetterPaint.alpha = (baseGlowAlpha * emphasis).toInt().coerceIn(0, 255)
+                                recordingCanvas.drawText(
+                                    text,
+                                    codePointStarts[i],
+                                    codePointEnds[i],
+                                    letterLeft,
+                                    y.toFloat() - letterLift,
+                                    glowLetterPaint
+                                )
+                                recordingCanvas.restore()
+                            }
+                        }
+                        recordingCanvas.restore()
+                        renderNode.endRecording()
+                        canvas.drawRenderNode(renderNode)
+                    }
+                } else if (hasGlow) {
+                    glowPaint.alpha = baseGlowAlpha
+                    glowPaint.textSize = paint.textSize
+                    glowPaint.typeface = paint.typeface
+                    glowPaint.maskFilter = glowMaskFilter
+                    canvas.save()
+                    canvas.scale(scale, scale, x + measuredAdvance / 2f, y.toFloat())
+                    canvas.drawText(text, start, end, x, y.toFloat() - baseLift, glowPaint)
+                    canvas.restore()
+                }
+            }
+
+            if (letterAnimation == 2) {
+                val prevShader = paint.shader
+                val prevColor = paint.color
+                try {
+                    val activeAlpha = wordSpan.activeAlpha
+                    val inactiveAlpha = wordSpan.inactiveAlpha
+
+                    if (letterUnitShader == null || lastShaderActiveAlpha != activeAlpha || lastShaderInactiveAlpha != inactiveAlpha) {
+                        letterUnitShader = LinearGradient(
+                            0f, 0f, 1f, 0f,
+                            Color.argb(activeAlpha, 255, 255, 255),
+                            Color.argb(inactiveAlpha, 255, 255, 255),
+                            Shader.TileMode.CLAMP
                         )
+                        lastShaderActiveAlpha = activeAlpha
+                        lastShaderInactiveAlpha = inactiveAlpha
+                    }
+
+                    val linearProg = if (!wordSpan.wholeWordLinearProgress.isNaN()) {
+                        wordSpan.wholeWordLinearProgress
+                    } else {
+                        sungProgress
+                    }
+
+                    val q = SyllableAnimator.getSpringLetterProgress(linearProg, wordDurationMs, endLeadMs)
+                    val isSung = q >= 1f
+                    val a = if (isSung) -1 else SyllableAnimator.getSpringActiveLetterIndex(q, codePointCount)
+                    val t = if (isSung) 1f else SyllableAnimator.getSpringActiveLetterProgress(q, codePointCount)
+
+                    val nowMs = SystemClock.uptimeMillis()
+                    val isFirstDraw = lastDrawTimeMs == 0L
+                    val dtMs = if (isFirstDraw) 0L else (nowMs - lastDrawTimeMs)
+                    val isLargeGap = dtMs > 250L || dtMs < 0L
+                    val isProgressReversed = !lastLinearProgress.isNaN() && linearProg < (lastLinearProgress - 0.001f)
+                    if (isProgressReversed) {
+                        isSpringSettled = false
+                    }
+                    val shouldSnap = isFirstDraw || isLargeGap || isProgressReversed || wordSpan.bakeNeutral
+                    val dtSeconds = if (shouldSnap) 0f else (dtMs / 1000f).coerceIn(0f, 1f / 30f)
+
+                    var allGlyphsSettled = isSung
+                    for (i in 0 until numGlyphs) {
+                        val k = codePointIndices[i]
+                        val offset = i * 4
+                        val targetScale = SyllableAnimator.getSpringLetterTargetScale(
+                            q, k, codePointCount, letterScalePeak, letterScaleSung, falloffPower
+                        )
+                        val targetLift = SyllableAnimator.getSpringLetterTargetLift(
+                            q, k, codePointCount, paint.textSize, letterLiftPeak, letterLiftSung, falloffPower
+                        )
+
+                        if (shouldSnap) {
+                            springStates[offset] = targetScale
+                            springStates[offset + 1] = 0f
+                            springStates[offset + 2] = targetLift
+                            springStates[offset + 3] = 0f
+                        } else {
+                            if (dtSeconds > 0f) {
+                                SyllableAnimator.stepSpring(
+                                    springStates[offset],
+                                    springStates[offset + 1],
+                                    targetScale,
+                                    letterScaleHz,
+                                    letterScaleDamping,
+                                    dtSeconds,
+                                    springStates,
+                                    offset
+                                )
+                                SyllableAnimator.stepSpring(
+                                    springStates[offset + 2],
+                                    springStates[offset + 3],
+                                    targetLift,
+                                    letterLiftHz,
+                                    letterLiftDamping,
+                                    dtSeconds,
+                                    springStates,
+                                    offset + 2
+                                )
+                            }
+                        }
+
+                        if (allGlyphsSettled) {
+                            val scaleSettled = SyllableAnimator.isSpringSettled(
+                                springStates[offset],
+                                springStates[offset + 1],
+                                targetScale,
+                                SyllableAnimator.SPRING_SETTLE_SCALE_POS_EPSILON,
+                                SyllableAnimator.SPRING_SETTLE_SCALE_VEL_EPSILON
+                            )
+                            val liftSettled = SyllableAnimator.isSpringSettled(
+                                springStates[offset + 2],
+                                springStates[offset + 3],
+                                targetLift,
+                                SyllableAnimator.SPRING_SETTLE_LIFT_POS_EPSILON,
+                                SyllableAnimator.SPRING_SETTLE_LIFT_VEL_EPSILON
+                            )
+                            if (!scaleSettled || !liftSettled) {
+                                allGlyphsSettled = false
+                            }
+                        }
+                    }
+
+                    isSpringSettled = allGlyphsSettled && progress >= 1f
+
+                    lastDrawTimeMs = nowMs
+                    lastLinearProgress = linearProg
+
+                    canvas.save()
+                    canvas.scale(scale, scale, x + measuredAdvance / 2f, y.toFloat())
+                    for (i in 0 until numGlyphs) {
+                        val k = codePointIndices[i]
+                        val offset = i * 4
+                        val letterScale = springStates[offset]
+                        val letterLift = springStates[offset + 2]
+
                         val letterLeft = x + relativeXs[i]
                         val letterRight = if (i + 1 < numGlyphs) x + relativeXs[i + 1] else x + measuredAdvance.toFloat()
                         val letterCenterX = (letterLeft + letterRight) * 0.5f
 
-                        recordingCanvas.save()
-                        recordingCanvas.scale(scale * letterScale, scale * letterScale, letterCenterX, y.toFloat())
-                        glowLetterPaint.alpha = (baseGlowAlpha * emphasis).toInt().coerceIn(0, 255)
-                        recordingCanvas.drawText(
+                        when {
+                            isSung || k < a -> {
+                                paint.shader = null
+                                paint.color = Color.WHITE
+                                paint.alpha = activeAlpha
+                            }
+                            k == a -> {
+                                val w = letterRight - letterLeft
+                                val transWidth = if (w > 0f) 0.2f * w else 1f
+                                val easeT = Math.sin(t * Math.PI * 0.5).toFloat()
+                                val transLeft = (letterLeft - 0.2f * w) + easeT * (1.2f * w)
+                                letterEdgeMatrix.setScale(transWidth, 1f)
+                                letterEdgeMatrix.postTranslate(transLeft, 0f)
+                                letterUnitShader!!.setLocalMatrix(letterEdgeMatrix)
+                                paint.color = Color.WHITE
+                                paint.shader = letterUnitShader
+                            }
+                            else -> {
+                                paint.shader = null
+                                paint.color = Color.WHITE
+                                paint.alpha = inactiveAlpha
+                            }
+                        }
+
+                        canvas.save()
+                        canvas.scale(letterScale, letterScale, letterCenterX, y.toFloat())
+                        canvas.drawText(
                             text,
                             codePointStarts[i],
                             codePointEnds[i],
                             letterLeft,
                             y.toFloat() - letterLift,
-                            glowLetterPaint
+                            paint
                         )
-                        recordingCanvas.restore()
+                        canvas.restore()
                     }
-                    recordingCanvas.restore()
-                    renderNode.endRecording()
-                    canvas.drawRenderNode(renderNode)
+                    canvas.restore()
+                } finally {
+                    paint.shader = prevShader
+                    paint.color = prevColor
                 }
-            } else if (hasGlow) {
-                glowPaint.alpha = baseGlowAlpha
-                glowPaint.textSize = paint.textSize
-                glowPaint.typeface = paint.typeface
-                glowPaint.maskFilter = glowMaskFilter
+            } else if (isSequential) {
+                val prevShader = paint.shader
+                val prevColor = paint.color
+                try {
+                    paint.shader = null
+                    val inactiveAlpha = wordSpan.inactiveAlpha
+                    val activeAlpha = wordSpan.activeAlpha
+                    val alphaDiff = (activeAlpha - inactiveAlpha).toFloat()
+
+                    canvas.save()
+                    canvas.scale(scale, scale, x + measuredAdvance / 2f, y.toFloat())
+                    for (i in 0 until numGlyphs) {
+                        val focus = SyllableAnimator.getSequentialLetterFocus(sungProgress, i, numGlyphs, letterOverlap)
+                        val fill = SyllableAnimator.getSequentialLetterFill(sungProgress, i, numGlyphs, letterOverlap)
+                        val letterScale = 1f + (effectiveLetterPeak - 1f) * focus
+                        val letterLift = heldLiftPeak * focus
+                        val letterAlpha = (inactiveAlpha + alphaDiff * fill).toInt().coerceIn(0, 255)
+
+                        val letterLeft = x + relativeXs[i]
+                        val letterRight = if (i + 1 < numGlyphs) x + relativeXs[i + 1] else x + measuredAdvance.toFloat()
+                        val letterCenterX = (letterLeft + letterRight) * 0.5f
+
+                        paint.color = Color.WHITE
+                        paint.alpha = letterAlpha
+
+                        canvas.save()
+                        canvas.scale(scale * letterScale, scale * letterScale, letterCenterX, y.toFloat())
+                        canvas.drawText(
+                            text,
+                            codePointStarts[i],
+                            codePointEnds[i],
+                            letterLeft,
+                            y.toFloat() - letterLift,
+                            paint
+                        )
+                        canvas.restore()
+                    }
+                    canvas.restore()
+                } finally {
+                    paint.shader = prevShader
+                    paint.color = prevColor
+                }
+            } else {
+                val activePos = SyllableAnimator.getActiveLetterPosition(progress, codePointCount)
+                val rippleEnvelope = SyllableAnimator.getRippleEnvelope(progress, rippleEaseInFraction)
                 canvas.save()
+                // The word swell belongs to the word and the ripple belongs to the letter.
                 canvas.scale(scale, scale, x + measuredAdvance / 2f, y.toFloat())
-                canvas.drawText(text, start, end, x, y.toFloat() - baseLift, glowPaint)
+                for (i in 0 until numGlyphs) {
+                    val globalIndex = codePointIndices[i]
+                    val distance = globalIndex.toFloat() - activePos
+                    val falloff = SyllableAnimator.getRippleFalloff(distance, falloffPower)
+                    val emphasis = falloff * rippleEnvelope
+                    val letterLift = heldLiftPeak * emphasis
+                    val letterScale = SyllableAnimator.getHeldWordLetterScale(
+                        progress,
+                        distance,
+                        scaleStart,
+                        heldScalePeak,
+                        scalePeakPos,
+                        falloffPower,
+                        amplitude,
+                        motionWindowMs,
+                        riseDurationMs,
+                        easeInFraction,
+                        settleDurationMs,
+                        rippleEaseInFraction
+                    )
+
+                    val letterLeft = x + relativeXs[i]
+                    val letterRight = if (i + 1 < numGlyphs) x + relativeXs[i + 1] else x + measuredAdvance.toFloat()
+                    val letterCenterX = (letterLeft + letterRight) * 0.5f
+
+                    canvas.save()
+                    canvas.scale(scale * letterScale, scale * letterScale, letterCenterX, y.toFloat())
+                    canvas.drawText(
+                        text,
+                        codePointStarts[i],
+                        codePointEnds[i],
+                        letterLeft,
+                        y.toFloat() - letterLift,
+                        paint
+                    )
+                    canvas.restore()
+                }
                 canvas.restore()
             }
-
-            canvas.save()
-            // The word swell belongs to the word and the ripple belongs to the letter.
-            canvas.scale(scale, scale, x + measuredAdvance / 2f, y.toFloat())
-            for (i in 0 until numGlyphs) {
-                val globalIndex = codePointIndices[i]
-                val distance = globalIndex.toFloat() - activePos
-                val falloff = SyllableAnimator.getRippleFalloff(distance, falloffPower)
-                val emphasis = falloff * rippleEnvelope
-                val letterLift = heldLiftPeak * emphasis
-                val letterScale = SyllableAnimator.getHeldWordLetterScale(
-                    progress,
-                    distance,
-                    scaleStart,
-                    heldScalePeak,
-                    scalePeakPos,
-                    falloffPower,
-                    amplitude,
-                    motionWindowMs,
-                    riseDurationMs,
-                    easeInFraction,
-                    settleDurationMs,
-                    rippleEaseInFraction
-                )
-
-                val letterLeft = x + relativeXs[i]
-                val letterRight = if (i + 1 < numGlyphs) x + relativeXs[i + 1] else x + measuredAdvance.toFloat()
-                val letterCenterX = (letterLeft + letterRight) * 0.5f
-
-                canvas.save()
-                canvas.scale(scale * letterScale, scale * letterScale, letterCenterX, y.toFloat())
-                canvas.drawText(
-                    text,
-                    codePointStarts[i],
-                    codePointEnds[i],
-                    letterLeft,
-                    y.toFloat() - letterLift,
-                    paint
-                )
-                canvas.restore()
-            }
-            canvas.restore()
         } else {
             if (useGpuGlow) {
                 val intLeft = layerBounds.left.toInt()
@@ -514,6 +778,9 @@ class WordMotionSpan(
             val shader = paint.shader
 
             if (wordSpan.bakeNeutral) {
+                lastDrawTimeMs = 0L
+                lastLinearProgress = Float.NaN
+                isSpringSettled = false
                 if (shader != null) {
                     computeWordLayerBounds(x, top, bottom, measuredAdvance, paint.textSize, layerBounds)
                     layerPaint.alpha = 255
@@ -535,7 +802,23 @@ class WordMotionSpan(
 
             computeWordLayerBounds(x, top, bottom, measuredAdvance, paint.textSize, layerBounds)
 
-            if (shader != null) {
+            val isHeldSequentialOrSpring = SyllableAnimator.isHeldWord(wordDurationMs, Tuning.heldWordMinDurationMs) &&
+                (Tuning.isSequentialLetterAnimation || Tuning.isSpringLetterAnimation)
+
+            if (isHeldSequentialOrSpring) {
+                layerPaint.alpha = 255
+                canvas.saveLayer(layerBounds, layerPaint)
+                paint.color = if (motionProg >= 1f) {
+                    Color.argb(wordSpan.activeAlpha, 255, 255, 255)
+                } else if (motionProg <= 0f) {
+                    Color.argb(wordSpan.inactiveAlpha, 255, 255, 255)
+                } else {
+                    Color.WHITE
+                }
+                paint.shader = null
+                drawGlyphs(canvas, text, start, end, x, y, paint, motionProg)
+                canvas.restore()
+            } else if (shader != null) {
                 // Mid-sweep word: draw opaque into bounded layer, then apply gradient via DST_IN mask
                 layerPaint.alpha = 255
                 canvas.saveLayer(layerBounds, layerPaint)
