@@ -266,42 +266,274 @@ object AuroraRenderer {
         return tinted
     }
 
-    fun createIdleMesh(colors: IntArray): Bitmap {
-        val w = BACKGROUND_WORK_RESOLUTION
-        val h = BACKGROUND_WORK_RESOLUTION
-        val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val pixels = IntArray(w * h)
+    fun composeIdleField(colors: IntArray, w: Int, h: Int, out: IntArray) {
+        val c0 = (colors.getOrElse(0) { 0xFFFF0055.toInt() }) or 0xff000000.toInt()
+        val c1 = (colors.getOrElse(1) { 0xFF0A0B1A.toInt() }) or 0xff000000.toInt()
+        val c2 = (colors.getOrElse(2) { 0xFF7A22FF.toInt() }) or 0xff000000.toInt()
+        val c3 = (colors.getOrElse(3) { 0xFFD6C7FF.toInt() }) or 0xff000000.toInt()
 
-        val c00 = colors.getOrElse(0) { 0xFFFF0055.toInt() }
-        val c10 = colors.getOrElse(1) { 0xFF0A0B1A.toInt() }
-        val c01 = colors.getOrElse(2) { 0xFF7A22FF.toInt() }
-        val c11 = colors.getOrElse(3) { 0xFFD6C7FF.toInt() }
+        val totalPixels = w * h
+        if (totalPixels <= 0) return
 
-        for (y in 0 until h) {
-            val yf = y.toFloat() / (h - 1)
-            for (x in 0 until w) {
-                val xf = x.toFloat() / (w - 1)
+        if (c0 == c1 && c1 == c2 && c2 == c3) {
+            out.fill(c0, 0, totalPixels)
+            return
+        }
 
-                val r = Math.round(Color.red(c00) * (1f - xf) * (1f - yf) +
-                         Color.red(c10) * xf * (1f - yf) +
-                         Color.red(c01) * (1f - xf) * yf +
-                         Color.red(c11) * xf * yf).coerceIn(0, 255)
-
-                val g = Math.round(Color.green(c00) * (1f - xf) * (1f - yf) +
-                         Color.green(c10) * xf * (1f - yf) +
-                         Color.green(c01) * (1f - xf) * yf +
-                         Color.green(c11) * xf * yf).coerceIn(0, 255)
-
-                val b = Math.round(Color.blue(c00) * (1f - xf) * (1f - yf) +
-                         Color.blue(c10) * xf * (1f - yf) +
-                         Color.blue(c01) * (1f - xf) * yf +
-                         Color.blue(c11) * xf * yf).coerceIn(0, 255)
-
-                pixels[y * w + x] = 0xff000000.toInt() or (r shl 16) or (g shl 8) or b
+        var hash = 0x811c9dc5.toInt()
+        val palette = intArrayOf(c0, c1, c2, c3)
+        for (c in palette) {
+            for (shift in 24 downTo 0 step 8) {
+                val byte = (c ushr shift) and 0xff
+                hash = (hash xor byte) * 16777619
             }
         }
-        bitmap.setPixels(pixels, 0, w, 0, 0, w, h)
-        return bitmap
+
+        var z = hash
+        z = (z xor (z ushr 16)) * 0x85ebca6b.toInt()
+        z = (z xor (z ushr 13)) * 0xc2b2ae35.toInt()
+        var rngState = z xor (z ushr 16)
+
+        fun nextInt(): Int {
+            rngState += 0x9e3779b9.toInt()
+            var s = rngState
+            s = (s xor (s ushr 16)) * 0x85ebca6b.toInt()
+            s = (s xor (s ushr 13)) * 0xc2b2ae35.toInt()
+            return s xor (s ushr 16)
+        }
+
+        fun nextFloat(): Float {
+            return (nextInt() ushr 8) * (1.0f / (1 shl 24))
+        }
+
+        val p = IntArray(256) { it }
+        for (i in 255 downTo 1) {
+            val j = (nextInt() and 0x7fffffff) % (i + 1)
+            val tmp = p[i]
+            p[i] = p[j]
+            p[j] = tmp
+        }
+        val perm = IntArray(512)
+        for (i in 0 until 256) {
+            perm[i] = p[i]
+            perm[i + 256] = p[i]
+        }
+
+        val o1x = nextFloat() * 100f + 13.7f
+        val o1y = nextFloat() * 100f + 27.3f
+        val o2x = nextFloat() * 100f + 41.9f
+        val o2y = nextFloat() * 100f + 59.1f
+
+        val gradX = floatArrayOf(1f, -1f, 0f, 0f, 0.70710678f, -0.70710678f, 0.70710678f, -0.70710678f)
+        val gradY = floatArrayOf(0f, 0f, 1f, -1f, 0.70710678f, 0.70710678f, -0.70710678f, -0.70710678f)
+
+        fun noise2D(x: Float, y: Float): Float {
+            val xFloor = Math.floor(x.toDouble()).toInt()
+            val yFloor = Math.floor(y.toDouble()).toInt()
+            val X = xFloor and 255
+            val Y = yFloor and 255
+            val xf = x - xFloor.toFloat()
+            val yf = y - yFloor.toFloat()
+
+            val u = xf * xf * xf * (xf * (xf * 6f - 15f) + 10f)
+            val v = yf * yf * yf * (yf * (yf * 6f - 15f) + 10f)
+
+            val g00 = perm[perm[X] + Y] and 7
+            val g10 = perm[perm[X + 1] + Y] and 7
+            val g01 = perm[perm[X] + Y + 1] and 7
+            val g11 = perm[perm[X + 1] + Y + 1] and 7
+
+            val d00 = gradX[g00] * xf + gradY[g00] * yf
+            val d10 = gradX[g10] * (xf - 1f) + gradY[g10] * yf
+            val d01 = gradX[g01] * xf + gradY[g01] * (yf - 1f)
+            val d11 = gradX[g11] * (xf - 1f) + gradY[g11] * (yf - 1f)
+
+            val x1 = d00 + u * (d10 - d00)
+            val x2 = d01 + u * (d11 - d01)
+            return x1 + v * (x2 - x1)
+        }
+
+        fun fbm(x: Float, y: Float): Float {
+            var sum = 0f
+            var freq = 1f
+            var amp = 1f
+            var maxAmp = 0f
+            for (oct in 0 until 3) {
+                sum += noise2D(x * freq, y * freq) * amp
+                maxAmp += amp
+                freq *= 2f
+                amp *= 0.5f
+            }
+            return sum / maxAmp
+        }
+
+        val rawV = FloatArray(totalPixels)
+        var minV = Float.MAX_VALUE
+        var maxV = -Float.MAX_VALUE
+
+        val scaleFactor = 1.6f
+        var idx = 0
+        for (y in 0 until h) {
+            val py = (y.toFloat() / h) * scaleFactor
+            for (x in 0 until w) {
+                val px = (x.toFloat() / w) * scaleFactor
+                val qx = fbm(px + o1x, py + o1y)
+                val qy = fbm(px + o2x, py + o2y)
+                val v = fbm(px + 1.2f * qx, py + 1.2f * qy)
+                rawV[idx] = v
+                if (v < minV) minV = v
+                if (v > maxV) maxV = v
+                idx++
+            }
+        }
+
+        val bins = IntArray(1024)
+        val range = maxV - minV
+        if (range > 1e-6f) {
+            for (i in 0 until totalPixels) {
+                val b = ((rawV[i] - minV) / range * 1023f).toInt().coerceIn(0, 1023)
+                bins[b]++
+            }
+        }
+        val cdf = FloatArray(1024)
+        var count = 0
+        for (i in 0 until 1024) {
+            count += bins[i]
+            cdf[i] = count.toFloat() / totalPixels
+        }
+
+        fun colorToOklab(color: Int): FloatArray {
+            val rLin = srgbToLinearTable[(color ushr 16) and 0xff]
+            val gLin = srgbToLinearTable[(color ushr 8) and 0xff]
+            val bLin = srgbToLinearTable[color and 0xff]
+
+            val l = 0.4122214708f * rLin + 0.5363325363f * gLin + 0.0514459929f * bLin
+            val m = 0.2119034982f * rLin + 0.6806995451f * gLin + 0.1073969566f * bLin
+            val s = 0.0883024619f * rLin + 0.2817188376f * gLin + 0.6299787005f * bLin
+
+            val l_ = Math.cbrt(l.toDouble()).toFloat()
+            val m_ = Math.cbrt(m.toDouble()).toFloat()
+            val s_ = Math.cbrt(s.toDouble()).toFloat()
+
+            val L = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_
+            val a = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_
+            val b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_
+            return floatArrayOf(L, a, b)
+        }
+
+        val sortedPalette = palette.toTypedArray().sortedBy { color ->
+            colorToOklab(color)[0]
+        }
+        val k0 = sortedPalette[0]
+        val k1 = sortedPalette[1]
+        val k2 = sortedPalette[2]
+        val k3 = sortedPalette[3]
+
+        val lab0 = colorToOklab(k0)
+        val lab1 = colorToOklab(k1)
+        val lab2 = colorToOklab(k2)
+        val lab3 = colorToOklab(k3)
+
+        fun oklabToSrgb(L: Float, a: Float, b: Float): Int {
+            val l_ = L + 0.3963377774f * a + 0.2158037573f * b
+            val m_ = L - 0.1055613458f * a - 0.0638541728f * b
+            val s_ = L - 0.0894841775f * a - 1.2914855480f * b
+
+            val l = l_ * l_ * l_
+            val m = m_ * m_ * m_
+            val s = s_ * s_ * s_
+
+            var rLin = +4.0767416621f * l - 3.3077115913f * m + 0.2309699292f * s
+            var gLin = -1.2684380046f * l + 2.6097574011f * m - 0.3413193965f * s
+            var bLin = -0.0041960863f * l - 0.7034186147f * m + 1.7076147010f * s
+
+            if (rLin < -0.0001f || rLin > 1.0001f ||
+                gLin < -0.0001f || gLin > 1.0001f ||
+                bLin < -0.0001f || bLin > 1.0001f
+            ) {
+                val chroma = hypot(a, b)
+                if (chroma > 1e-6f) {
+                    val hueA = a / chroma
+                    val hueB = b / chroma
+                    val maxC = maxChromaAt(L, hueA, hueB)
+                    val clampedChroma = min(chroma, maxC)
+                    val finalA = clampedChroma * hueA
+                    val finalB = clampedChroma * hueB
+
+                    val cL_ = L + 0.3963377774f * finalA + 0.2158037573f * finalB
+                    val cM_ = L - 0.1055613458f * finalA - 0.0638541728f * finalB
+                    val cS_ = L - 0.0894841775f * finalA - 1.2914855480f * finalB
+
+                    val cL = cL_ * cL_ * cL_
+                    val cM = cM_ * cM_ * cM_
+                    val cS = cS_ * cS_ * cS_
+
+                    rLin = +4.0767416621f * cL - 3.3077115913f * cM + 0.2309699292f * cS
+                    gLin = -1.2684380046f * cL + 2.6097574011f * cM - 0.3413193965f * cS
+                    bLin = -0.0041960863f * cL - 0.7034186147f * cM + 1.7076147010f * cS
+                }
+            }
+
+            val outR = Math.round(linearToSrgb(rLin) * 255f).coerceIn(0, 255)
+            val outG = Math.round(linearToSrgb(gLin) * 255f).coerceIn(0, 255)
+            val outB = Math.round(linearToSrgb(bLin) * 255f).coerceIn(0, 255)
+            return 0xff000000.toInt() or (outR shl 16) or (outG shl 8) or outB
+        }
+
+        fun blendOklab(
+            from: FloatArray,
+            to: FloatArray,
+            t: Float
+        ): Int {
+            val s = t * t * (3f - 2f * t)
+            val l = from[0] + s * (to[0] - from[0])
+            val a = from[1] + s * (to[1] - from[1])
+            val b = from[2] + s * (to[2] - from[2])
+            return oklabToSrgb(l, a, b)
+        }
+
+        for (i in 0 until totalPixels) {
+            val pVal = if (range <= 1e-6f) {
+                0.5f
+            } else {
+                val norm = ((rawV[i] - minV) / range * 1023f).coerceIn(0f, 1023f)
+                val b = norm.toInt().coerceIn(0, 1023)
+                if (b < 1023) {
+                    val frac = norm - b
+                    val p0 = if (b > 0) cdf[b - 1] else 0f
+                    val p1 = cdf[b]
+                    p0 + frac * (p1 - p0)
+                } else {
+                    cdf[1023]
+                }
+            }
+
+            out[i] = when {
+                pVal <= 0.175f -> k0
+                pVal < 0.325f -> blendOklab(lab0, lab1, (pVal - 0.175f) / 0.150f)
+                pVal <= 0.425f -> k1
+                pVal < 0.575f -> blendOklab(lab1, lab2, (pVal - 0.425f) / 0.150f)
+                pVal <= 0.675f -> k2
+                pVal < 0.825f -> blendOklab(lab2, lab3, (pVal - 0.675f) / 0.150f)
+                else -> k3
+            }
+        }
+    }
+
+    fun createIdleMesh(colors: IntArray): Bitmap {
+        val fieldSize = 128
+        val fieldPixels = IntArray(fieldSize * fieldSize)
+        composeIdleField(colors, fieldSize, fieldSize, fieldPixels)
+        val fieldBitmap = Bitmap.createBitmap(fieldSize, fieldSize, Bitmap.Config.ARGB_8888)
+        fieldBitmap.setPixels(fieldPixels, 0, fieldSize, 0, 0, fieldSize, fieldSize)
+
+        val w = BACKGROUND_WORK_RESOLUTION
+        val h = BACKGROUND_WORK_RESOLUTION
+        val scaled = Bitmap.createScaledBitmap(fieldBitmap, w, h, true)
+        if (scaled !== fieldBitmap) {
+            fieldBitmap.recycle()
+        }
+        return scaled
     }
 
     fun blurBitmap(sentBitmap: Bitmap, radius: Int): Bitmap {

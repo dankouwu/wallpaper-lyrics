@@ -873,6 +873,23 @@ class LyricsWallpaperService : WallpaperService() {
                     "com.dnk.wallpaperlyrics.DEBUG_START_PREVIEW" -> startDebugPreviewDemo(intent)
                     "com.dnk.wallpaperlyrics.DEBUG_PLAY_PREVIEW" -> playDebugPreviewDemo(intent.getLongExtra("offset", 0L))
                     "com.dnk.wallpaperlyrics.DEBUG_END_PREVIEW" -> endDebugPreviewDemo()
+                    "com.dnk.wallpaperlyrics.DEBUG_PALETTE_CHANGED" -> {
+                        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+                        prefIdleAccent = prefs.getInt(IdleScreenSettings.KEY_IDLE_ACCENT, IdleScreenSettings.DEFAULT_ACCENT)
+                        prefIdleBase = prefs.getInt(IdleScreenSettings.KEY_IDLE_BASE, IdleScreenSettings.DEFAULT_BASE)
+                        prefIdleMid = prefs.getInt(IdleScreenSettings.KEY_IDLE_MID, IdleScreenSettings.DEFAULT_MID)
+                        prefIdleHighlight = prefs.getInt(IdleScreenSettings.KEY_IDLE_HIGHLIGHT, IdleScreenSettings.DEFAULT_HIGHLIGHT)
+                        if (currentTitle.isNullOrBlank()) {
+                            targetColors = intArrayOf(
+                                prefIdleAccent,
+                                prefIdleBase,
+                                prefIdleMid,
+                                prefIdleHighlight
+                            )
+                            currentColors = targetColors.copyOf()
+                            applyIdleBackground()
+                        }
+                    }
                 }
             }
         }
@@ -1085,6 +1102,7 @@ class LyricsWallpaperService : WallpaperService() {
                     addAction("com.dnk.wallpaperlyrics.DEBUG_START_PREVIEW")
                     addAction("com.dnk.wallpaperlyrics.DEBUG_PLAY_PREVIEW")
                     addAction("com.dnk.wallpaperlyrics.DEBUG_END_PREVIEW")
+                    addAction("com.dnk.wallpaperlyrics.DEBUG_PALETTE_CHANGED")
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     registerReceiver(debugDemoReceiver, debugFilter, Context.RECEIVER_EXPORTED)
@@ -1688,6 +1706,25 @@ class LyricsWallpaperService : WallpaperService() {
                 idleMesh.recycle()
                 preprocessed.recycle()
                 firstPass.recycle()
+                val exponent = prefBgSaturation
+                val gamutCap = Tuning.gamutCapFraction
+                val linearBoost = Tuning.linearBoost
+                val depth = Tuning.backgroundDepth
+                val depthGateLow = Tuning.depthGateLow
+                val depthGateHigh = Tuning.depthGateHigh
+                AuroraRenderer.boostChroma(
+                    blurred,
+                    exponent,
+                    gamutCap,
+                    linearBoost,
+                    depth,
+                    depthGateLow,
+                    depthGateHigh
+                )
+                val knee = Tuning.lightnessCapKnee
+                val ceiling = Tuning.lightnessCapCeiling
+                val strength = Tuning.lightnessCapStrength
+                AuroraRenderer.capLightness(blurred, knee, ceiling, strength)
                 
                 withContext(Dispatchers.Main) {
                     triggerBgTransition(blurred, capturedGen)

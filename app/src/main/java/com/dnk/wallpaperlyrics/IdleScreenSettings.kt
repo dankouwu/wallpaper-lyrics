@@ -17,10 +17,29 @@ object IdleScreenSettings {
     const val DEFAULT_IDLE_TITLE = "No Music Playing"
     const val SETUP_TITLE = "Notification access needed"
     const val SETUP_SUBTITLE = "Open Wallpaper Lyrics to grant it"
-    const val DEFAULT_ACCENT = 0xFF805D93.toInt()
-    const val DEFAULT_BASE = 0xFFD31277.toInt()
-    const val DEFAULT_MID = 0xFF56BD54.toInt()
-    const val DEFAULT_HIGHLIGHT = 0xFF00DFFF.toInt()
+    fun effectivePaletteVersion(realVersion: String, override: String, isDebug: Boolean): String {
+        val trimmed = override.trim()
+        return if (isDebug && trimmed.isNotEmpty()) trimmed else realVersion
+    }
+
+    private var cachedVersion: String? = null
+    private var cachedPalette: IntArray? = null
+
+    private fun defaultPalette(): IntArray {
+        val version = effectivePaletteVersion(BuildConfig.VERSION_NAME, Tuning.paletteVersionOverride, BuildConfig.DEBUG)
+        var palette = cachedPalette
+        if (palette == null || cachedVersion != version) {
+            palette = VersionPalette.forVersion(version)
+            cachedVersion = version
+            cachedPalette = palette
+        }
+        return palette
+    }
+
+    val DEFAULT_ACCENT: Int get() = defaultPalette()[0]
+    val DEFAULT_BASE: Int get() = defaultPalette()[1]
+    val DEFAULT_MID: Int get() = defaultPalette()[2]
+    val DEFAULT_HIGHLIGHT: Int get() = defaultPalette()[3]
 
     fun parseHexColor(input: String): Int? {
         val trimmed = input.trim()
