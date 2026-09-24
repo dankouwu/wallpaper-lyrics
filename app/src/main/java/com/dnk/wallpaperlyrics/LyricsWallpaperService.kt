@@ -861,6 +861,7 @@ class LyricsWallpaperService : WallpaperService() {
 
         private val debugDemoReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
+                Log.i("WallpaperDemo", "debugDemoReceiver.onReceive action=${intent?.action} isDebugBuild=${isDebugBuild()}")
                 if (!isDebugBuild()) return
                 when (intent?.action) {
                     "com.dnk.wallpaperlyrics.DEBUG_START_EFFORTLESS" -> startDebugEffortlessDemo()
@@ -869,8 +870,90 @@ class LyricsWallpaperService : WallpaperService() {
                     "com.dnk.wallpaperlyrics.DEBUG_METADATA_BEAT" -> {
                         if (isDebugDemoActive()) lastWakeTime = System.currentTimeMillis() - 1000L
                     }
+                    "com.dnk.wallpaperlyrics.DEBUG_START_PREVIEW" -> startDebugPreviewDemo(intent)
+                    "com.dnk.wallpaperlyrics.DEBUG_PLAY_PREVIEW" -> playDebugPreviewDemo(intent.getLongExtra("offset", 0L))
+                    "com.dnk.wallpaperlyrics.DEBUG_END_PREVIEW" -> endDebugPreviewDemo()
                 }
             }
+        }
+
+        // Debug-only capture harness: loads an arbitrary track (title/artist/album/art/lrc
+        // supplied via broadcast extras) so store preview recordings can be made for songs
+        // other than the bundled Effortless demo, without a real media session.
+        private fun startDebugPreviewDemo(intent: Intent?) {
+            Log.i("WallpaperDemo", "startDebugPreviewDemo isDebugBuild=${isDebugBuild()} isPreview=$isPreview intent=$intent")
+            if (!isDebugBuild() || isPreview || intent == null) return
+            val artAsset = intent.getStringExtra("art") ?: return
+            val lrcAsset = intent.getStringExtra("lrc") ?: return
+            val title = intent.getStringExtra("title") ?: "Preview"
+            val artist = intent.getStringExtra("artist") ?: ""
+            val album = intent.getStringExtra("album") ?: ""
+            val durationMs = intent.getLongExtra("duration", 180_000L)
+
+            val art = try {
+                assets.open(artAsset).use { BitmapFactory.decodeStream(it) }
+            } catch (e: Exception) {
+                Log.e("WallpaperDemo", "Unable to load preview artwork", e)
+                return
+            } ?: return
+
+            val lines = try {
+                assets.open(lrcAsset).bufferedReader().use { LyricsManager.parseLrcText(it.readText(), durationMs) }
+            } catch (e: Exception) {
+                Log.e("WallpaperDemo", "Unable to parse preview lrc", e)
+                return
+            } ?: return
+
+            currentTitle = null
+            currentArtist = null
+            val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+            TrackResolution.clearTrack(prefs, isPreview)
+            currentLyrics = null
+            albumArt = null
+            albumArtAspect = 1.0f
+            hasArtForCurrentTrack = false
+            cancelPendingArtRetry()
+            currentArtUri = null
+            inFlightArtUri = null
+            lyricsSearchExhausted = false
+            lyricBitmaps?.forEach { it.recycle() }
+            lyricBitmaps = null
+            lyricLayouts = null
+            lineOffsets = null
+            metadataTitleLayout = null
+            metadataArtistLayout = null
+
+            debugDemoStartRealtime = SystemClock.elapsedRealtime()
+            onMetadataChanged(
+                MediaMetadata.Builder()
+                    .putString(MediaMetadata.METADATA_KEY_TITLE, title)
+                    .putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
+                    .putString(MediaMetadata.METADATA_KEY_ALBUM, album)
+                    .putLong(MediaMetadata.METADATA_KEY_DURATION, durationMs)
+                    .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, art)
+                    .build()
+            )
+            isPlaying = false
+            songStartTime = System.currentTimeMillis()
+            lastWakeTime = 0L
+            currentLyrics = lines
+            lyricsSearchExhausted = true
+            Log.i("WallpaperDemo", "startDebugPreviewDemo committed title=$currentTitle lines=${lines.size}")
+        }
+
+        private fun playDebugPreviewDemo(offsetMs: Long) {
+            if (!isDebugDemoActive()) return
+            val nowRealtime = SystemClock.elapsedRealtime()
+            debugDemoStartRealtime = nowRealtime - offsetMs
+            songStartTime = System.currentTimeMillis() - offsetMs
+            lastWakeTime = 0L
+            isPlaying = true
+        }
+
+        private fun endDebugPreviewDemo() {
+            if (!isDebugDemoActive()) return
+            isPlaying = false
+            lastWakeTime = 0L
         }
 
         private fun startDebugEffortlessDemo() {
@@ -999,6 +1082,9 @@ class LyricsWallpaperService : WallpaperService() {
                     addAction("com.dnk.wallpaperlyrics.DEBUG_PLAY_EFFORTLESS")
                     addAction("com.dnk.wallpaperlyrics.DEBUG_END_EFFORTLESS")
                     addAction("com.dnk.wallpaperlyrics.DEBUG_METADATA_BEAT")
+                    addAction("com.dnk.wallpaperlyrics.DEBUG_START_PREVIEW")
+                    addAction("com.dnk.wallpaperlyrics.DEBUG_PLAY_PREVIEW")
+                    addAction("com.dnk.wallpaperlyrics.DEBUG_END_PREVIEW")
                 }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     registerReceiver(debugDemoReceiver, debugFilter, Context.RECEIVER_EXPORTED)
@@ -1267,7 +1353,7 @@ class LyricsWallpaperService : WallpaperService() {
             if (!prefMetadataOnlyMode) {
                 showToast("Fetching lyrics...")
                 lyricsManager.fetchLyrics(title, artist ?: "", durationMs) { lines, definitive ->
-                    if (currentTitle == title) {
+                    if (currentTitle == title && !isDebugDemoActive()) {
                         currentLyrics = lines
                         if (lines == null && definitive) lyricsSearchExhausted = true
                         if (lines != null) showToast("Lyrics synced!")
