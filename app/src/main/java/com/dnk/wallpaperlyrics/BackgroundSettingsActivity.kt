@@ -21,9 +21,11 @@ import android.widget.EditText
 import android.text.InputType
 import android.view.View
 import android.widget.Button
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
+import android.widget.Toast
 import java.util.Locale
 import com.dnk.wallpaperlyrics.LyricsSettings as LS
 
@@ -379,6 +381,105 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 val (midRow, midSwatch) = addColorRow("Mid", IdleScreenSettings.KEY_IDLE_MID, IdleScreenSettings.DEFAULT_MID)
                 val (highlightRow, highlightSwatch) = addColorRow("Highlight", IdleScreenSettings.KEY_IDLE_HIGHLIGHT, IdleScreenSettings.DEFAULT_HIGHLIGHT)
 
+                fun updateColorViews(accent: Int, base: Int, mid: Int, highlight: Int) {
+                    accentRow.updateValue(IdleScreenSettings.formatHexColor(accent))
+                    (accentSwatch.background as? GradientDrawable)?.setColor(accent)
+
+                    baseRow.updateValue(IdleScreenSettings.formatHexColor(base))
+                    (baseSwatch.background as? GradientDrawable)?.setColor(base)
+
+                    midRow.updateValue(IdleScreenSettings.formatHexColor(mid))
+                    (midSwatch.background as? GradientDrawable)?.setColor(mid)
+
+                    highlightRow.updateValue(IdleScreenSettings.formatHexColor(highlight))
+                    (highlightSwatch.background as? GradientDrawable)?.setColor(highlight)
+
+                    reloadPreviewColors()
+                }
+
+                fun applyIdleColors(accent: Int, base: Int, mid: Int, highlight: Int) {
+                    prefs.edit().apply {
+                        putInt(IdleScreenSettings.KEY_IDLE_ACCENT, accent)
+                        putInt(IdleScreenSettings.KEY_IDLE_BASE, base)
+                        putInt(IdleScreenSettings.KEY_IDLE_MID, mid)
+                        putInt(IdleScreenSettings.KEY_IDLE_HIGHLIGHT, highlight)
+                        apply()
+                    }
+                    updateColorViews(accent, base, mid, highlight)
+                }
+
+                fun extractAndApplyPalette(art: Bitmap, isFetchedBitmap: Boolean) {
+                    kotlin.concurrent.thread(start = true) {
+                        try {
+                            val palette = AuroraRenderer.extractPalette(art)
+                            mediaHandler.post {
+                                isExtractingSongColors = false
+                                if (!isFinishing && !isDestroyed) {
+                                    applyIdleColors(palette.accent, palette.base, palette.mid, palette.highlight)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            mediaHandler.post {
+                                isExtractingSongColors = false
+                            }
+                        } finally {
+                            // Metadata bitmaps belong to the media session: never recycle them.
+                            if (isFetchedBitmap) {
+                                art.recycle()
+                            }
+                        }
+                    }
+                }
+
+                val songColorsRow = LS.SettingsRow(
+                    this@BackgroundSettingsActivity,
+                    LS.IconType.PALETTE,
+                    "Use Song Colors",
+                    currentSongColorsSubtitle(),
+                    LS.TrailingType.NONE,
+                    onClick = {
+                        if (isExtractingSongColors) return@SettingsRow
+
+                        val meta = activeMediaController?.metadata
+                        val title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE)
+                        if (meta == null || title.isNullOrBlank()) {
+                            Toast.makeText(this@BackgroundSettingsActivity, "Nothing is playing", Toast.LENGTH_SHORT).show()
+                            return@SettingsRow
+                        }
+
+                        val rawBitmap = meta.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART)
+                            ?: meta.getBitmap(MediaMetadata.METADATA_KEY_ART)
+
+                        if (rawBitmap != null) {
+                            isExtractingSongColors = true
+                            extractAndApplyPalette(rawBitmap, isFetchedBitmap = false)
+                        } else {
+                            val uriStr = meta.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
+                                ?: meta.getString(MediaMetadata.METADATA_KEY_ART_URI)
+                            if (uriStr.isNullOrBlank()) {
+                                Toast.makeText(this@BackgroundSettingsActivity, "This song has no cover art", Toast.LENGTH_SHORT).show()
+                                return@SettingsRow
+                            }
+
+                            isExtractingSongColors = true
+                            lyricsManager.fetchBitmap(uriStr) { fetchedBitmap ->
+                                if (fetchedBitmap == null) {
+                                    mediaHandler.post {
+                                        isExtractingSongColors = false
+                                        if (!isFinishing && !isDestroyed) {
+                                            Toast.makeText(this@BackgroundSettingsActivity, "This song has no cover art", Toast.LENGTH_SHORT).show()
+                                        }
+                                    }
+                                    return@fetchBitmap
+                                }
+                                extractAndApplyPalette(fetchedBitmap, isFetchedBitmap = true)
+                            }
+                        }
+                    }
+                )
+                useSongColorsRow = songColorsRow
+                addRow(songColorsRow)
+
                 val resetRow = LS.SettingsRow(
                     this@BackgroundSettingsActivity,
                     LS.IconType.RELOAD,
@@ -387,25 +488,18 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     LS.TrailingType.NONE,
                     onClick = {
                         prefs.edit().apply {
-                            putInt(IdleScreenSettings.KEY_IDLE_ACCENT, IdleScreenSettings.DEFAULT_ACCENT)
-                            putInt(IdleScreenSettings.KEY_IDLE_BASE, IdleScreenSettings.DEFAULT_BASE)
-                            putInt(IdleScreenSettings.KEY_IDLE_MID, IdleScreenSettings.DEFAULT_MID)
-                            putInt(IdleScreenSettings.KEY_IDLE_HIGHLIGHT, IdleScreenSettings.DEFAULT_HIGHLIGHT)
+                            remove(IdleScreenSettings.KEY_IDLE_ACCENT)
+                            remove(IdleScreenSettings.KEY_IDLE_BASE)
+                            remove(IdleScreenSettings.KEY_IDLE_MID)
+                            remove(IdleScreenSettings.KEY_IDLE_HIGHLIGHT)
                             apply()
                         }
-                        accentRow.updateValue(IdleScreenSettings.formatHexColor(IdleScreenSettings.DEFAULT_ACCENT))
-                        (accentSwatch.background as? GradientDrawable)?.setColor(IdleScreenSettings.DEFAULT_ACCENT)
-
-                        baseRow.updateValue(IdleScreenSettings.formatHexColor(IdleScreenSettings.DEFAULT_BASE))
-                        (baseSwatch.background as? GradientDrawable)?.setColor(IdleScreenSettings.DEFAULT_BASE)
-
-                        midRow.updateValue(IdleScreenSettings.formatHexColor(IdleScreenSettings.DEFAULT_MID))
-                        (midSwatch.background as? GradientDrawable)?.setColor(IdleScreenSettings.DEFAULT_MID)
-
-                        highlightRow.updateValue(IdleScreenSettings.formatHexColor(IdleScreenSettings.DEFAULT_HIGHLIGHT))
-                        (highlightSwatch.background as? GradientDrawable)?.setColor(IdleScreenSettings.DEFAULT_HIGHLIGHT)
-
-                        reloadPreviewColors()
+                        updateColorViews(
+                            IdleScreenSettings.DEFAULT_ACCENT,
+                            IdleScreenSettings.DEFAULT_BASE,
+                            IdleScreenSettings.DEFAULT_MID,
+                            IdleScreenSettings.DEFAULT_HIGHLIGHT
+                        )
                     }
                 )
                 addRow(resetRow)
@@ -422,15 +516,33 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         }
     }
 
+    private var useSongColorsRow: LS.SettingsRow? = null
+    private var isExtractingSongColors = false
+    private val lyricsManager by lazy { LyricsManager(applicationContext) }
     private var activeMediaController: MediaController? = null
     private var activeSessionsListener: MediaSessionManager.OnActiveSessionsChangedListener? = null
     private val mediaHandler = Handler(Looper.getMainLooper())
     // Playback state is cached so periodic position updates do not trigger session queries.
     private var lastPlaybackState: Int? = null
 
+    private fun currentSongColorsSubtitle(metadata: MediaMetadata? = activeMediaController?.metadata): String {
+        val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
+        return if (!title.isNullOrBlank()) "Match the song that is playing" else "Nothing is playing"
+    }
+
+    private fun updateUseSongColorsSubtitle(metadata: MediaMetadata? = activeMediaController?.metadata) {
+        val subtitle = currentSongColorsSubtitle(metadata)
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            useSongColorsRow?.updateSubtitle(subtitle)
+        } else {
+            mediaHandler.post { useSongColorsRow?.updateSubtitle(subtitle) }
+        }
+    }
+
     private val mediaControllerCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) {
             previewView?.updateSong(hasNotificationAccess = true, metadata = metadata)
+            updateUseSongColorsSubtitle(metadata)
         }
 
         override fun onPlaybackStateChanged(state: PlaybackState?) {
@@ -454,6 +566,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
     private fun startSessionObserver() {
         if (!hasNotificationAccess()) {
             previewView?.updateSong(hasNotificationAccess = false, metadata = null)
+            updateUseSongColorsSubtitle(null)
             return
         }
 
@@ -473,6 +586,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             )
         } catch (e: SecurityException) {
             previewView?.updateSong(hasNotificationAccess = false, metadata = null)
+            updateUseSongColorsSubtitle(null)
             return
         } catch (e: Exception) {}
 
@@ -482,12 +596,14 @@ class BackgroundSettingsActivity : AppCompatActivity() {
     private fun refreshMediaSession() {
         if (!hasNotificationAccess()) {
             previewView?.updateSong(hasNotificationAccess = false, metadata = null)
+            updateUseSongColorsSubtitle(null)
             return
         }
         val componentName = ComponentName(this, NotificationService::class.java)
         val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
         if (mediaSessionManager == null) {
             previewView?.updateSong(hasNotificationAccess = true, metadata = null)
+            updateUseSongColorsSubtitle(null)
             return
         }
 
@@ -503,10 +619,12 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             } catch (e: SecurityException) {
                 mediaHandler.post {
                     previewView?.updateSong(hasNotificationAccess = false, metadata = null)
+                    updateUseSongColorsSubtitle(null)
                 }
             } catch (e: Exception) {
                 mediaHandler.post {
                     previewView?.updateSong(hasNotificationAccess = true, metadata = null)
+                    updateUseSongColorsSubtitle(null)
                 }
             }
         }
@@ -544,6 +662,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         }
 
         previewView?.updateSong(hasNotificationAccess = true, metadata = newController?.metadata)
+        updateUseSongColorsSubtitle(newController?.metadata)
     }
 
     private fun stopSessionObserver() {
@@ -560,6 +679,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         } catch (e: Exception) {}
         activeMediaController = null
         lastPlaybackState = null
+        updateUseSongColorsSubtitle(null)
     }
 
     override fun onResume() {
@@ -579,6 +699,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         super.onDestroy()
         stopSessionObserver()
         previewView?.release()
+        useSongColorsRow = null
     }
 
     private fun getCurrentAlbumColors(): List<Int> {

@@ -4,11 +4,16 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -101,7 +106,190 @@ class DebugTuningActivity : Activity() {
 
         rootLayout.addView(topBar)
 
-        // Render each parameter group
+        val paletteHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 4f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 16f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 4f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 8f)
+            )
+        }
+
+        val paletteTitle = TextView(this).apply {
+            text = "PALETTE VERSION"
+            textSize = 13f
+            setTextColor(Color.parseColor("#F59E0B"))
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        paletteHeaderRow.addView(paletteTitle)
+
+        val paletteCard = LyricsSettings.SettingsCard(this).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#282015"))
+                setStroke(LyricsSettings.dpToPx(this@DebugTuningActivity, 1f), Color.parseColor("#5C4012"))
+                cornerRadius = LyricsSettings.dpToPx(this@DebugTuningActivity, 18f).toFloat()
+            }
+        }
+
+        val paletteRowContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 16f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 12f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 16f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 12f)
+            )
+        }
+
+        val versionEditText = EditText(this).apply {
+            isSingleLine = true
+            maxLines = 1
+            inputType = InputType.TYPE_CLASS_TEXT
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            hint = "Empty uses ${BuildConfig.VERSION_NAME}"
+            setHintTextColor(Color.parseColor("#8E8E93"))
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#1C1C1E"))
+                setStroke(LyricsSettings.dpToPx(this@DebugTuningActivity, 1f), Color.parseColor("#443A2A"))
+                cornerRadius = LyricsSettings.dpToPx(this@DebugTuningActivity, 8f).toFloat()
+            }
+            setPadding(
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 12f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 8f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 12f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 8f)
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setText(Tuning.paletteVersionOverride)
+            setSelection(text.length)
+        }
+        paletteRowContainer.addView(versionEditText)
+
+        val swatchesContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = LyricsSettings.dpToPx(this@DebugTuningActivity, 10f)
+            }
+        }
+
+        val swatchViews = Array(4) {
+            val size = LyricsSettings.dpToPx(this@DebugTuningActivity, 16f)
+            View(this@DebugTuningActivity).apply {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setStroke(LyricsSettings.dpToPx(this@DebugTuningActivity, 1f), Color.parseColor("#555555"))
+                }
+                layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                    rightMargin = LyricsSettings.dpToPx(this@DebugTuningActivity, 6f)
+                }
+            }
+        }
+        for (swatch in swatchViews) {
+            swatchesContainer.addView(swatch)
+        }
+
+        val schemeTextView = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.parseColor("#E5E5EA"))
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                leftMargin = LyricsSettings.dpToPx(this@DebugTuningActivity, 4f)
+            }
+        }
+        swatchesContainer.addView(schemeTextView)
+        paletteRowContainer.addView(swatchesContainer)
+
+        val noteTextView = TextView(this).apply {
+            text = "Applies when the idle colours are at their defaults (Reset Colors)"
+            textSize = 12f
+            setTextColor(Color.parseColor("#8E8E93"))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = LyricsSettings.dpToPx(this@DebugTuningActivity, 8f)
+            }
+        }
+        paletteRowContainer.addView(noteTextView)
+        paletteCard.addView(paletteRowContainer)
+
+        fun updatePaletteDisplay(versionOverride: String) {
+            val effective = IdleScreenSettings.effectivePaletteVersion(BuildConfig.VERSION_NAME, versionOverride, BuildConfig.DEBUG)
+            val palette = VersionPalette.forVersion(effective)
+            for (i in 0 until 4) {
+                (swatchViews[i].background as? GradientDrawable)?.setColor(palette[i])
+            }
+            schemeTextView.text = VersionPalette.schemeForVersion(effective)
+        }
+
+        fun commitPaletteOverride(newOverride: String) {
+            val trimmed = newOverride.trim()
+            Tuning.paletteVersionOverride = trimmed
+            Tuning.save(this@DebugTuningActivity)
+            updatePaletteDisplay(trimmed)
+            val intent = Intent("com.dnk.wallpaperlyrics.DEBUG_PALETTE_CHANGED").apply {
+                setPackage(packageName)
+            }
+            sendBroadcast(intent)
+        }
+
+        updatePaletteDisplay(Tuning.paletteVersionOverride)
+
+        val clearPaletteButton = TextView(this).apply {
+            text = "Clear"
+            textSize = 12f
+            setTextColor(Color.parseColor("#8E8E93"))
+            setPadding(
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 8f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 4f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 8f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 4f)
+            )
+            setOnClickListener {
+                versionEditText.setText("")
+                commitPaletteOverride("")
+                versionEditText.clearFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                imm?.hideSoftInputFromWindow(versionEditText.windowToken, 0)
+            }
+        }
+        paletteHeaderRow.addView(clearPaletteButton)
+
+        versionEditText.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_DONE) {
+                commitPaletteOverride(versionEditText.text.toString())
+                versionEditText.clearFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                imm?.hideSoftInputFromWindow(versionEditText.windowToken, 0)
+                true
+            } else {
+                false
+            }
+        }
+
+        versionEditText.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus && versionEditText.text.toString().trim() != Tuning.paletteVersionOverride) {
+                commitPaletteOverride(versionEditText.text.toString())
+            }
+        }
+
+        rootLayout.addView(paletteHeaderRow)
+        rootLayout.addView(paletteCard)
         for (groupName in Tuning.groups) {
             val groupParams = Tuning.allParams.filter { it.group == groupName }
             if (groupParams.isEmpty()) continue

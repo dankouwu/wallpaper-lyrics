@@ -295,6 +295,8 @@ class BackgroundPreviewView(context: Context) : View(context) {
 
                     val secondPass = AuroraRenderer.blurBitmap(firstPass, 20)
                     firstPass.recycle()
+                    AuroraRenderer.boostChroma(secondPass, bgSaturationExponent)
+                    AuroraRenderer.capLightness(secondPass)
 
                     secondPass
                 }

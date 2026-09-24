@@ -19,6 +19,8 @@ object Tuning {
     const val GROUP_LYRIC_TIMING = "Lyric Timing Windows"
     const val GROUP_INSTRUMENTAL_DOTS = "Instrumental Dots"
 
+    var paletteVersionOverride: String = ""
+
     class Tunable(
         val key: String,
         val label: String,
@@ -381,6 +383,7 @@ object Tuning {
     }
 
     fun resetAll() {
+        paletteVersionOverride = ""
         for (param in allParams) {
             param.reset()
         }
@@ -389,6 +392,7 @@ object Tuning {
     fun load(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val settingsPrefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        paletteVersionOverride = prefs.getString("paletteVersionOverride", "") ?: ""
         for (param in allParams) {
             if (prefs.contains(param.key)) {
                 param.value = prefs.getFloat(param.key, param.defaultValue)
@@ -402,6 +406,11 @@ object Tuning {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val settingsPrefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         val editor = prefs.edit()
+        if (paletteVersionOverride.isBlank()) {
+            editor.remove("paletteVersionOverride")
+        } else {
+            editor.putString("paletteVersionOverride", paletteVersionOverride)
+        }
         for (param in allParams) {
             if (param.isModified) {
                 editor.putFloat(param.key, param.value)
