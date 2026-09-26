@@ -13,8 +13,30 @@ object MediaSessionChoice {
         val hasUsableMetadata: Boolean,
         val playbackState: Int,
         val isCurrent: Boolean = false,
-        val hasEverPlayed: Boolean = true
+        val hasEverPlayed: Boolean = true,
+        val title: String? = null,
+        val artist: String? = null
     )
+
+    fun chooseForPreview(
+        candidates: List<Candidate>,
+        preferred: String,
+        isWallpaperActive: Boolean,
+        publishedTitle: String?,
+        publishedArtist: String?
+    ): Candidate? {
+        if (!isWallpaperActive) {
+            return choose(candidates, preferred)
+        }
+        val cleanTitle = publishedTitle?.trim()
+        val cleanArtist = publishedArtist?.trim()
+        if (cleanTitle.isNullOrEmpty() || cleanArtist.isNullOrEmpty()) {
+            return null
+        }
+        return candidates.firstOrNull { candidate ->
+            candidate.title?.trim() == cleanTitle && candidate.artist?.trim() == cleanArtist
+        }
+    }
 
     fun isEligible(packageName: String, preferred: String): Boolean {
         return matchesPreference(packageName, preferred) &&

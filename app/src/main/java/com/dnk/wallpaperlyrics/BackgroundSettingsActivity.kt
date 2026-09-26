@@ -3,6 +3,7 @@ package com.dnk.wallpaperlyrics
 import android.content.Context
 import android.content.Intent
 import android.content.ComponentName
+import android.content.SharedPreferences
 import android.net.Uri
 import android.media.MediaMetadata
 import android.media.session.MediaController
@@ -114,7 +115,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             headerLayout.addView(backButton)
 
             val titleView = TextView(this).apply {
-                text = "Background Settings"
+                text = "Background & Display"
                 textSize = 24f
                 setTextColor(Color.WHITE)
                 setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD))
@@ -506,6 +507,50 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             }
             rootLayout.addView(card3)
 
+            addSectionHeader("Screen Off")
+            val cardAod = LS.SettingsCard(this).apply {
+                val currentAodPref = prefs.getString(AodMode.KEY, AodMode.toPref(AodMode.METADATA_AND_BACKGROUND)) ?: AodMode.toPref(AodMode.METADATA_AND_BACKGROUND)
+                val aodDisplayValue = when (AodMode.fromPref(currentAodPref)) {
+                    AodMode.METADATA_AND_BACKGROUND -> "Metadata and background"
+                    AodMode.METADATA_ONLY -> "Metadata only"
+                    AodMode.OFF -> "Off"
+                }
+                lateinit var aodRow: LS.SettingsRow
+                aodRow = LS.SettingsRow(
+                    this@BackgroundSettingsActivity,
+                    LS.IconType.CLOCK,
+                    "Always On Display",
+                    "What shows while the screen is off",
+                    LS.TrailingType.VALUE,
+                    aodDisplayValue,
+                    onClick = {
+                        val activePref = prefs.getString(AodMode.KEY, AodMode.toPref(AodMode.METADATA_AND_BACKGROUND)) ?: AodMode.toPref(AodMode.METADATA_AND_BACKGROUND)
+                        val options = listOf(
+                            Pair("Metadata and background", "metadata_background"),
+                            Pair("Metadata only", "metadata"),
+                            Pair("Off", "off")
+                        )
+
+                        SettingsDialogs.showOptionPickerDialog(
+                            this@BackgroundSettingsActivity,
+                            "Always On Display",
+                            options,
+                            activePref
+                        ) { selectedVal ->
+                            prefs.edit().putString(AodMode.KEY, selectedVal).apply()
+                            val newDisplayValue = when (AodMode.fromPref(selectedVal)) {
+                                AodMode.METADATA_AND_BACKGROUND -> "Metadata and background"
+                                AodMode.METADATA_ONLY -> "Metadata only"
+                                AodMode.OFF -> "Off"
+                            }
+                            aodRow.updateValue(newDisplayValue)
+                        }
+                    }
+                )
+                addRow(aodRow)
+            }
+            rootLayout.addView(cardAod)
+
             val scrollView = android.widget.ScrollView(this).apply {
                 isFillViewport = true
             }
@@ -524,6 +569,11 @@ class BackgroundSettingsActivity : AppCompatActivity() {
     private val mediaHandler = Handler(Looper.getMainLooper())
     // Playback state is cached so periodic position updates do not trigger session queries.
     private var lastPlaybackState: Int? = null
+    private val wallpaperTrackListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == TrackResolution.KEY_WALLPAPER_TITLE || key == TrackResolution.KEY_WALLPAPER_ARTIST) {
+            refreshMediaSession()
+        }
+    }
 
     private fun currentSongColorsSubtitle(metadata: MediaMetadata? = activeMediaController?.metadata): String {
         val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE)
@@ -541,8 +591,12 @@ class BackgroundSettingsActivity : AppCompatActivity() {
 
     private val mediaControllerCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) {
-            previewView?.updateSong(hasNotificationAccess = true, metadata = metadata)
-            updateUseSongColorsSubtitle(metadata)
+            if (SettingsDialogs.isWallpaperActive(this@BackgroundSettingsActivity)) {
+                refreshMediaSession()
+            } else {
+                previewView?.updateSong(hasNotificationAccess = true, metadata = metadata)
+                updateUseSongColorsSubtitle(metadata)
+            }
         }
 
         override fun onPlaybackStateChanged(state: PlaybackState?) {
@@ -564,6 +618,9 @@ class BackgroundSettingsActivity : AppCompatActivity() {
     }
 
     private fun startSessionObserver() {
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        prefs.registerOnSharedPreferenceChangeListener(wallpaperTrackListener)
+
         if (!hasNotificationAccess()) {
             previewView?.updateSong(hasNotificationAccess = false, metadata = null)
             updateUseSongColorsSubtitle(null)
@@ -638,15 +695,28 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         val candidates = controllersList.map { controller ->
             val meta = controller.metadata
             val title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE)
+            val artist = meta?.getString(MediaMetadata.METADATA_KEY_ARTIST)
             val state = controller.playbackState?.state ?: PlaybackState.STATE_NONE
             MediaSessionChoice.Candidate(
                 packageName = controller.packageName,
                 hasUsableMetadata = !title.isNullOrBlank(),
                 playbackState = state,
-                isCurrent = controller.sessionToken == activeMediaController?.sessionToken
+                isCurrent = controller.sessionToken == activeMediaController?.sessionToken,
+                title = title,
+                artist = artist
             )
         }
-        val chosen = MediaSessionChoice.choose(candidates, preferred)
+        val isWallpaperActive = SettingsDialogs.isWallpaperActive(this)
+        val publishedTitle = prefs.getString(TrackResolution.KEY_WALLPAPER_TITLE, null)
+        val publishedArtist = prefs.getString(TrackResolution.KEY_WALLPAPER_ARTIST, null)
+
+        val chosen = MediaSessionChoice.chooseForPreview(
+            candidates = candidates,
+            preferred = preferred,
+            isWallpaperActive = isWallpaperActive,
+            publishedTitle = publishedTitle,
+            publishedArtist = publishedArtist
+        )
         val chosenIndex = if (chosen != null) candidates.indexOfFirst { it === chosen } else -1
         val newController = if (chosenIndex >= 0) controllersList.getOrNull(chosenIndex) else null
 
@@ -666,6 +736,9 @@ class BackgroundSettingsActivity : AppCompatActivity() {
     }
 
     private fun stopSessionObserver() {
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        prefs.unregisterOnSharedPreferenceChangeListener(wallpaperTrackListener)
+
         val mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
         activeSessionsListener?.let {
             try {

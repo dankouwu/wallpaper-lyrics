@@ -31,10 +31,10 @@ object LyricsSettings {
     enum class IconType {
         BELL, IMAGE, PALETTE, CORNER, CLOCK, GAUGE, RELOAD, EDIT, DELETE, BLUETOOTH,
         GITHUB, BUG, COPYRIGHT, INFO, CHECK, FILE_STACK, SQUARE_PLAY, SPOTIFY, TIDAL,
-        KDECONNECT, LIST_MUSIC, SLIDERS, ARROW_LEFT, LINK, BRACES, TIMER
+        KDECONNECT, LIST_MUSIC, SLIDERS, ARROW_LEFT, LINK, BRACES, TIMER, EXTERNAL_LINK
     }
 
-    enum class TrailingType { CHEVRON, SWITCH, VALUE, CHECK, NONE }
+    enum class TrailingType { CHEVRON, SWITCH, VALUE, CHECK, EXTERNAL, NONE }
 
     fun dpToPx(context: Context, dp: Float): Int {
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, dp, context.resources.displayMetrics).toInt()
@@ -223,6 +223,11 @@ object LyricsSettings {
                         ))
                         canvas.drawCircle(12f, 14f, 8f, paint)
                     }
+                    IconType.EXTERNAL_LINK -> drawPaths(canvas, listOf(
+                        "M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6",
+                        "m21 3-9 9",
+                        "M15 3h6v6"
+                    ))
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -414,6 +419,18 @@ object LyricsSettings {
                     }
                     trailingView = checkView
                     addView(checkView)
+                    setOnClickListener { onClick?.invoke() }
+                }
+                TrailingType.EXTERNAL -> {
+                    val externalDrawable = CustomIconDrawable(context, IconType.EXTERNAL_LINK)
+                    val externalView = android.widget.ImageView(context).apply {
+                        setImageDrawable(externalDrawable)
+                        layoutParams = LayoutParams(dpToPx(context, 20f), dpToPx(context, 20f)).apply {
+                            gravity = Gravity.CENTER_VERTICAL
+                        }
+                    }
+                    trailingView = externalView
+                    addView(externalView)
                     setOnClickListener { onClick?.invoke() }
                 }
                 TrailingType.NONE -> {

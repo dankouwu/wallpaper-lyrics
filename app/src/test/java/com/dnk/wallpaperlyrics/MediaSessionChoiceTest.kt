@@ -325,5 +325,117 @@ class MediaSessionChoiceTest {
         val resultPlayingBeatsPaused = MediaSessionChoice.choose(listOf(pausedSpotify, playingGeneric), "default")
         assertEquals(playingGeneric, resultPlayingBeatsPaused)
     }
+
+    @Test
+    fun `chooseForPreview with active wallpaper and no published track returns null`() {
+        val candidate = Candidate(
+            packageName = "com.spotify.music",
+            hasUsableMetadata = true,
+            playbackState = MediaSessionChoice.STATE_PLAYING,
+            title = "Song S",
+            artist = "Artist W"
+        )
+        assertNull(
+            MediaSessionChoice.chooseForPreview(
+                candidates = listOf(candidate),
+                preferred = "default",
+                isWallpaperActive = true,
+                publishedTitle = null,
+                publishedArtist = null
+            )
+        )
+        assertNull(
+            MediaSessionChoice.chooseForPreview(
+                candidates = listOf(candidate),
+                preferred = "default",
+                isWallpaperActive = true,
+                publishedTitle = "   ",
+                publishedArtist = "Artist W"
+            )
+        )
+        assertNull(
+            MediaSessionChoice.chooseForPreview(
+                candidates = listOf(candidate),
+                preferred = "default",
+                isWallpaperActive = true,
+                publishedTitle = "Song S",
+                publishedArtist = ""
+            )
+        )
+    }
+
+    @Test
+    fun `chooseForPreview with active wallpaper and published track matches only equal trimmed title and artist`() {
+        val songS = Candidate(
+            packageName = "com.spotify.music",
+            hasUsableMetadata = true,
+            playbackState = 2,
+            title = "Song S ",
+            artist = " Artist W"
+        )
+        val otherSong = Candidate(
+            packageName = "com.spotify.music",
+            hasUsableMetadata = true,
+            playbackState = MediaSessionChoice.STATE_PLAYING,
+            title = "Song L",
+            artist = "Artist W"
+        )
+
+        val result = MediaSessionChoice.chooseForPreview(
+            candidates = listOf(otherSong, songS),
+            preferred = "default",
+            isWallpaperActive = true,
+            publishedTitle = "Song S",
+            publishedArtist = "Artist W"
+        )
+        assertEquals(songS, result)
+    }
+
+    @Test
+    fun `chooseForPreview with active wallpaper and published track returns null if no candidate matches`() {
+        val otherSong = Candidate(
+            packageName = "com.spotify.music",
+            hasUsableMetadata = true,
+            playbackState = MediaSessionChoice.STATE_PLAYING,
+            title = "Song L",
+            artist = "Artist W"
+        )
+
+        val result = MediaSessionChoice.chooseForPreview(
+            candidates = listOf(otherSong),
+            preferred = "default",
+            isWallpaperActive = true,
+            publishedTitle = "Song S",
+            publishedArtist = "Artist W"
+        )
+        assertNull(result)
+    }
+
+    @Test
+    fun `chooseForPreview with inactive wallpaper falls back to standard choose`() {
+        val pausedWithMeta = Candidate(
+            packageName = "com.spotify.music",
+            hasUsableMetadata = true,
+            playbackState = 2,
+            hasEverPlayed = true,
+            title = "Song S",
+            artist = "Artist W"
+        )
+        val playingNoMeta = Candidate(
+            packageName = "com.spotify.music",
+            hasUsableMetadata = false,
+            playbackState = MediaSessionChoice.STATE_PLAYING,
+            hasEverPlayed = true
+        )
+
+        val result = MediaSessionChoice.chooseForPreview(
+            candidates = listOf(playingNoMeta, pausedWithMeta),
+            preferred = "default",
+            isWallpaperActive = false,
+            publishedTitle = null,
+            publishedArtist = null
+        )
+        assertEquals(pausedWithMeta, result)
+    }
 }
 

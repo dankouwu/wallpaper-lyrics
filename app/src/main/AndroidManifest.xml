@@ -66,6 +66,22 @@
             android:name=".BluetoothOffsetActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".VersionActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".PermissionsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".LyricsSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".TimingActivity"
+            android:exported="false" />
+
     </application>
 
 </manifest>
