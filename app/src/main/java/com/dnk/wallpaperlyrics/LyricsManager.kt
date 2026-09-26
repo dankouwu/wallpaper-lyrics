@@ -99,6 +99,19 @@ class LyricsManager(
                         if (nextWord == null || word.endTime != nextWord.startTime) {
                             lineSb.append("<${formatTime(word.endTime)}>")
                         }
+                        if (nextWord != null) {
+                            val hasSpaceBetween = if (word.endIndex in 0..line.content.length &&
+                                nextWord.startIndex in 0..line.content.length &&
+                                word.endIndex <= nextWord.startIndex
+                            ) {
+                                line.content.substring(word.endIndex, nextWord.startIndex).any { it.isWhitespace() }
+                            } else {
+                                true
+                            }
+                            if (hasSpaceBetween) {
+                                lineSb.append(" ")
+                            }
+                        }
                     }
                     sb.append(lineSb.toString()).append("\n")
                 } else {
@@ -108,10 +121,53 @@ class LyricsManager(
             return sb.toString().trim()
         }
 
+        private fun isInstrumentalLine(line: LyricLine): Boolean {
+            return line.isInstrumental || line.content == "♪"
+        }
+
+        fun hasAdjacentInstrumentals(lines: List<LyricLine>): Boolean {
+            for (i in 0 until lines.size - 1) {
+                if (isInstrumentalLine(lines[i]) && isInstrumentalLine(lines[i + 1])) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        fun cleanCachedLyrics(lines: List<LyricLine>, durationMs: Long? = null): List<LyricLine> {
+            if (!hasAdjacentInstrumentals(lines)) {
+                return lines
+            }
+            val rendered = renderLrc(lines)
+            return parseLrcText(rendered, durationMs, isAuthoritative = false, trustWordEnds = true) ?: lines
+        }
+
+        private fun mergeAdjacentInstrumentals(lines: List<LyricLine>): List<LyricLine> {
+            if (lines.isEmpty()) return lines
+            val result = mutableListOf<LyricLine>()
+            for (line in lines) {
+                val last = result.lastOrNull()
+                if (isInstrumentalLine(line) && last != null && isInstrumentalLine(last)) {
+                    val merged = last.copy(
+                        startTime = Math.min(last.startTime, line.startTime),
+                        endTime = Math.max(last.endTime, line.endTime),
+                        content = "♪",
+                        isInstrumental = true,
+                        words = null
+                    )
+                    result[result.size - 1] = merged
+                } else {
+                    result.add(line)
+                }
+            }
+            return result
+        }
+
         fun parseLrcText(
             lrcText: String,
             durationMs: Long? = null,
-            isAuthoritative: Boolean = false
+            isAuthoritative: Boolean = false,
+            trustWordEnds: Boolean = false
         ): List<LyricLine>? {
             val rawLines = mutableListOf<LyricLine>()
             val lineRegex = Regex("\\[(\\d+):(\\d+)\\.(\\d+)\\](.*)")
@@ -131,7 +187,9 @@ class LyricsManager(
                     val startTime = (min * 60 + sec) * 1000 + ms
                     
                     if (isMarker) {
-                        rawLines.add(LyricLine(startTime, 0L, "♪", isInstrumental = true, words = null))
+                        if (isAuthoritative) {
+                            rawLines.add(LyricLine(startTime, 0L, "♪", isInstrumental = true, words = null))
+                        }
                     } else {
                         val tagRegex = Regex("<(\\d+):(\\d+)\\.(\\d+)>")
                         val tagMatches = tagRegex.findAll(remainingPart).toList()
@@ -179,51 +237,55 @@ class LyricsManager(
                                 parsedWords.removeAt(parsedWords.size - 1)
                             }
                             
-                            // Filter out purely blank words and resolve their durations/endTimes
-                            val cleanWords = mutableListOf<LyricWord>()
+                            val visibleIndices = mutableListOf<Int>()
                             for (index in parsedWords.indices) {
-                                val word = parsedWords[index]
-                                if (word.text.trim().isEmpty()) {
-                                    continue
+                                if (parsedWords[index].text.trim().isNotEmpty()) {
+                                    visibleIndices.add(index)
                                 }
-                                
-                                val nextWord = if (index < parsedWords.size - 1) parsedWords[index + 1] else null
-                                val wordEndTime = nextWord?.startTime ?: lastWordEndTime
-                                
-                                cleanWords.add(LyricWord(
-                                    startTime = word.startTime,
-                                    endTime = wordEndTime,
-                                    text = word.text,
-                                    startIndex = 0,
-                                    endIndex = 0
-                                ))
                             }
                             
-                            if (cleanWords.isNotEmpty()) {
+                            if (visibleIndices.isNotEmpty()) {
                                 val words = mutableListOf<LyricWord>()
                                 val sb = StringBuilder()
                                 
-                                for (index in cleanWords.indices) {
-                                    val word = cleanWords[index]
-                                    if (sb.isNotEmpty()) {
-                                        sb.append(" ")
+                                for (vIdx in visibleIndices.indices) {
+                                    val rawIdx = visibleIndices[vIdx]
+                                    val word = parsedWords[rawIdx]
+                                    val trimmedText = word.text.trim()
+                                    
+                                    if (vIdx > 0) {
+                                        val prevRawIdx = visibleIndices[vIdx - 1]
+                                        val prevHasTrailingWs = parsedWords[prevRawIdx].text.lastOrNull()?.isWhitespace() == true
+                                        var inBetweenHasWs = false
+                                        for (k in (prevRawIdx + 1) until rawIdx) {
+                                            if (parsedWords[k].text.any { it.isWhitespace() }) {
+                                                inBetweenHasWs = true
+                                                break
+                                            }
+                                        }
+                                        val nextHasLeadingWs = word.text.firstOrNull()?.isWhitespace() == true
+                                        if (prevHasTrailingWs || inBetweenHasWs || nextHasLeadingWs) {
+                                            sb.append(" ")
+                                        }
                                     }
                                     
                                     val startIndex = sb.length
-                                    val trimmedText = word.text.trim()
                                     sb.append(trimmedText)
                                     val endIndex = sb.length
                                     
-                                    val wordDuration = word.endTime - word.startTime
+                                    val nextRaw = if (rawIdx < parsedWords.size - 1) parsedWords[rawIdx + 1] else null
+                                    val wordEndTime = nextRaw?.startTime ?: lastWordEndTime
+                                    
+                                    val wordDuration = wordEndTime - word.startTime
                                     // Clamps excessively long word durations from provider data where a word's
                                     // end time extends across long pauses to the next word, preventing words
-                                    // from remaining highlighted for seconds. Hand-edited lyrics bypass this
-                                    // heuristic because user-supplied timings are authoritative.
+                                    // from remaining highlighted for seconds. Hand-edited lyrics and trusted word
+                                    // ends bypass this heuristic because user-supplied or pipeline timings are authoritative.
                                     val estimatedWordDuration = (trimmedText.length * 120L + 150L).coerceIn(200L, 800L)
-                                    val finalWordEndTime = if (!isAuthoritative && wordDuration > estimatedWordDuration && word.endTime > word.startTime) {
+                                    val finalWordEndTime = if (!isAuthoritative && !trustWordEnds && wordDuration > estimatedWordDuration && wordEndTime > word.startTime) {
                                         word.startTime + estimatedWordDuration
                                     } else {
-                                        word.endTime
+                                        wordEndTime
                                     }
                                     
                                     words.add(LyricWord(
@@ -239,13 +301,23 @@ class LyricsManager(
                                 rawLines.add(LyricLine(startTime, 0L, content, isInstrumental = false, words = words))
                             } else {
                                 val content = remainingPart.trim()
-                                val finalContent = if (content.isEmpty()) "♪" else content
-                                rawLines.add(LyricLine(startTime, 0L, finalContent, isInstrumental = (finalContent == "♪"), words = null))
+                                if (content.isEmpty()) {
+                                    if (isAuthoritative) {
+                                        rawLines.add(LyricLine(startTime, 0L, "♪", isInstrumental = true, words = null))
+                                    }
+                                } else {
+                                    rawLines.add(LyricLine(startTime, 0L, content, isInstrumental = false, words = null))
+                                }
                             }
                         } else {
                             val content = remainingPart.trim()
-                            val finalContent = if (content.isEmpty()) "♪" else content
-                            rawLines.add(LyricLine(startTime, 0L, finalContent, isInstrumental = (finalContent == "♪"), words = null))
+                            if (content.isEmpty()) {
+                                if (isAuthoritative) {
+                                    rawLines.add(LyricLine(startTime, 0L, "♪", isInstrumental = true, words = null))
+                                }
+                            } else {
+                                rawLines.add(LyricLine(startTime, 0L, content, isInstrumental = false, words = null))
+                            }
                         }
                     }
                 }
@@ -405,7 +477,7 @@ class LyricsManager(
                 ))
             }
             
-            return processedLines
+            return mergeAdjacentInstrumentals(processedLines)
         }
     }
 
@@ -460,7 +532,14 @@ class LyricsManager(
                 return
             }
             is LyricsResolution.Cached -> {
-                callback(resolution.lines, true)
+                val lines = if (hasAdjacentInstrumentals(resolution.lines)) {
+                    val cleaned = cleanCachedLyrics(resolution.lines, if (durationMs > 0) durationMs else null)
+                    storage.saveCache(title, artist, cleaned)
+                    cleaned
+                } else {
+                    resolution.lines
+                }
+                callback(lines, true)
                 return
             }
             is LyricsResolution.Miss -> {
@@ -532,7 +611,7 @@ class LyricsManager(
                                         body
                                     }
                                     
-                                    val parsedLines = parseLrcText(lyricsText, durationMs)
+                                    val parsedLines = parseLrcText(lyricsText, durationMs, trustWordEnds = true)
                                     if (parsedLines != null) {
                                         try {
                                             cacheFile.writeText(gson.toJson(parsedLines))
