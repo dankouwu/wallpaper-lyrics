@@ -9,7 +9,6 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.util.Log
 
 class MediaObserver(
@@ -241,23 +240,4 @@ class MediaObserver(
     }
 
     fun getActivePackageName(): String? = activeController?.packageName
-
-    /**
-     * Compute the extrapolated playback position directly from the live PlaybackState.
-     * This avoids all intermediate caching that can go stale between resync cycles.
-     */
-    fun getCurrentPosition(): Long {
-        val state = activeController?.playbackState ?: return 0L
-        if (state.state != PlaybackState.STATE_PLAYING) return state.position
-
-        val speed = if (state.playbackSpeed > 0f) state.playbackSpeed else 1.0f
-        return if (state.lastPositionUpdateTime > 0L) {
-            val elapsed = SystemClock.elapsedRealtime() - state.lastPositionUpdateTime
-            state.position + (elapsed * speed).toLong()
-        } else {
-            // No timestamp to extrapolate from. The caller falls back to its own
-            // extrapolation in this case.
-            state.position
-        }
-    }
 }

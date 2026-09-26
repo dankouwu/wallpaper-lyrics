@@ -55,19 +55,12 @@ object Tuning {
     val WORD_GLOW_HOLD_END = Tunable("wordGlowHoldEnd", "Glow hold end", "Point where the glow starts fading out. It holds at full between the two.", GROUP_WORD_MOTION, 0.30f, 0.90f, 0.55f)
     val WORD_GLOW_ALPHA_MULT = Tunable("wordGlowAlphaMultiplier", "Glow alpha multiplier", "Glow strength. 0 turns the glow off.", GROUP_WORD_MOTION, 0f, 255f, 0f)
     val HELD_WORD_MIN_DURATION_MS = Tunable("heldWordMinDurationMs", "Held word threshold (ms)", "A word sung at least this long animates letter by letter. Shorter words swell as one block.", GROUP_WORD_MOTION, 200f, 3000f, 600f, isInteger = true)
-    val HELD_WORD_LETTER_SCALE_PEAK = Tunable("heldWordLetterScalePeak", "Held letter scale peak", "Biggest size a single letter reaches as the ripple passes over it.", GROUP_WORD_MOTION, 1.00f, 1.40f, 1.04f)
+    val HELD_WORD_LETTER_SCALE_PEAK = Tunable("heldWordLetterScalePeak", "Held letter scale peak", "Biggest size a single letter reaches as the ripple passes over it. Only used by letter animation 0 and 1; mode 2 uses the normal word scale.", GROUP_WORD_MOTION, 1.00f, 1.40f, 1.04f)
+    val HELD_WORD_LETTER_LIFT_FRACTION = Tunable("heldWordLetterLiftFraction", "Held letter lift", "How far each letter of a held word lifts, as a fraction of text size. Only used by letter animation 2; normal words use Lift peak fraction.", GROUP_WORD_MOTION, 0.00f, 0.30f, 0.05f)
+    val HELD_WORD_LETTER_OVERLAP_MS = Tunable("heldWordLetterOverlapMs", "Held letter overlap (ms)", "How long neighbouring letters of a held word move together, in ms. 0 is back to back. Only used by letter animation 2.", GROUP_WORD_MOTION, 0f, 1000f, 200f, isInteger = true)
     val LETTER_FALLOFF_POWER = Tunable("letterFalloffPower", "Letter falloff power", "How tightly the ripple hugs the letter being sung. Higher leaves the neighbours almost still.", GROUP_WORD_MOTION, 1f, 6f, 3f, isInteger = true)
-    val LETTER_ANIMATION = Tunable("letterAnimation", "Letter animation", "How held words animate letter by letter. 0 is wave, 1 is sequential, 2 is spring.", GROUP_WORD_MOTION, 0f, 2f, 2f, isInteger = true)
-    val LETTER_OVERLAP = Tunable("letterOverlap", "Letter overlap", "How long each letter's turn lasts, in percent of the gap between one letter starting and the next. 0 is strictly one at a time; higher lets more letters move together and slows each one down.", GROUP_WORD_MOTION, 0f, 1000f, 300f)
-    val LETTER_END_LEAD_MS = Tunable("letterEndLeadMs", "Letter end lead (ms)", "How early letters finish their turns before the word ends.", GROUP_WORD_MOTION, 0f, 500f, 250f, isInteger = true)
-    val LETTER_SCALE_PEAK = Tunable("letterScalePeak", "Letter scale peak", "Biggest size a single letter reaches in spring mode.", GROUP_WORD_MOTION, 1.00f, 1.40f, 1.20f)
-    val LETTER_SCALE_SUNG = Tunable("letterScaleSung", "Letter scale sung", "Size a letter settles at once sung in spring mode. Values above rest make the word sit higher until the line leaves.", GROUP_WORD_MOTION, 1.00f, 1.15f, 1.00f)
-    val LETTER_LIFT_PEAK = Tunable("letterLiftPeak", "Letter lift peak", "How far a letter lifts off the line in spring mode, as a fraction of text size.", GROUP_WORD_MOTION, 0.00f, 0.15f, 0.055f)
-    val LETTER_LIFT_SUNG = Tunable("letterLiftSung", "Letter lift sung", "Lift a letter settles at once sung in spring mode, as a fraction of text size. Values above rest make the word sit higher until the line leaves.", GROUP_WORD_MOTION, 0.00f, 0.08f, 0.00f)
-    val LETTER_SCALE_SPRING_HZ = Tunable("letterScaleSpringHz", "Letter scale spring (Hz)", "Oscillation frequency of the letter scale spring.", GROUP_WORD_MOTION, 0.3f, 3.0f, 0.9f)
-    val LETTER_SCALE_DAMPING = Tunable("letterScaleDamping", "Letter scale damping", "Damping ratio of the letter scale spring. Below 1 overshoots.", GROUP_WORD_MOTION, 0.2f, 1.5f, 0.65f)
-    val LETTER_LIFT_SPRING_HZ = Tunable("letterLiftSpringHz", "Letter lift spring (Hz)", "Oscillation frequency of the letter lift spring.", GROUP_WORD_MOTION, 0.3f, 3.0f, 1.45f)
-    val LETTER_LIFT_DAMPING = Tunable("letterLiftDamping", "Letter lift damping", "Damping ratio of the letter lift spring. Below 1 overshoots.", GROUP_WORD_MOTION, 0.2f, 1.5f, 0.40f)
+    val LETTER_ANIMATION = Tunable("letterAnimation", "Letter animation", "How held words animate letter by letter. 0 is wave, 1 is sequential, 2 is normal word curve per letter.", GROUP_WORD_MOTION, 0f, 2f, 2f, isInteger = true)
+    val LETTER_OVERLAP = Tunable("letterOverlap", "Letter overlap", "How long each letter's turn lasts, in percent of the gap between one letter starting and the next. 0 is strictly one at a time; higher lets more letters move together and slows each one down. Only used by letter animation 0 and 1.", GROUP_WORD_MOTION, 0f, 1000f, 300f)
     val GLOW_BLUR_RADIUS_FRACTION = Tunable("glowBlurRadiusFraction", "Glow blur radius fraction", "Width of the glow blur, as a fraction of text size.", GROUP_WORD_MOTION, 0.02f, 0.30f, 0.10f)
     val WORD_MOTION_MIN_DURATION_MS = Tunable("wordMotionMinDurationMs", "Motion min duration (ms)", "Words sung this fast get the smallest motion. Nothing shrinks further below it.", GROUP_WORD_MOTION, 50f, 400f, 150f, isInteger = true)
     val WORD_MOTION_MAX_DURATION_MS = Tunable("wordMotionMaxDurationMs", "Motion max duration (ms)", "Words sung this long or longer get the full motion.", GROUP_WORD_MOTION, 300f, 1000f, 500f, isInteger = true)
@@ -128,18 +121,11 @@ object Tuning {
         WORD_GLOW_ALPHA_MULT,
         HELD_WORD_MIN_DURATION_MS,
         HELD_WORD_LETTER_SCALE_PEAK,
+        HELD_WORD_LETTER_LIFT_FRACTION,
+        HELD_WORD_LETTER_OVERLAP_MS,
         LETTER_FALLOFF_POWER,
         LETTER_ANIMATION,
         LETTER_OVERLAP,
-        LETTER_END_LEAD_MS,
-        LETTER_SCALE_PEAK,
-        LETTER_SCALE_SUNG,
-        LETTER_LIFT_PEAK,
-        LETTER_LIFT_SUNG,
-        LETTER_SCALE_SPRING_HZ,
-        LETTER_SCALE_DAMPING,
-        LETTER_LIFT_SPRING_HZ,
-        LETTER_LIFT_DAMPING,
         GLOW_BLUR_RADIUS_FRACTION,
         WORD_MOTION_MIN_DURATION_MS,
         WORD_MOTION_MAX_DURATION_MS,
@@ -240,6 +226,14 @@ object Tuning {
         get() = HELD_WORD_LETTER_SCALE_PEAK.value
         set(v) { HELD_WORD_LETTER_SCALE_PEAK.value = v }
 
+    var heldWordLetterLiftFraction: Float
+        get() = HELD_WORD_LETTER_LIFT_FRACTION.value
+        set(v) { HELD_WORD_LETTER_LIFT_FRACTION.value = v }
+
+    var heldWordLetterOverlapMs: Long
+        get() = HELD_WORD_LETTER_OVERLAP_MS.value.toLong()
+        set(v) { HELD_WORD_LETTER_OVERLAP_MS.value = v.toFloat() }
+
     var letterFalloffPower: Float
         get() = LETTER_FALLOFF_POWER.value
         set(v) { LETTER_FALLOFF_POWER.value = v }
@@ -259,42 +253,6 @@ object Tuning {
     var letterOverlap: Float
         get() = LETTER_OVERLAP.value
         set(v) { LETTER_OVERLAP.value = v }
-
-    var letterEndLeadMs: Long
-        get() = LETTER_END_LEAD_MS.value.toLong()
-        set(v) { LETTER_END_LEAD_MS.value = v.toFloat() }
-
-    var letterScalePeak: Float
-        get() = LETTER_SCALE_PEAK.value
-        set(v) { LETTER_SCALE_PEAK.value = v }
-
-    var letterScaleSung: Float
-        get() = LETTER_SCALE_SUNG.value
-        set(v) { LETTER_SCALE_SUNG.value = v }
-
-    var letterLiftPeak: Float
-        get() = LETTER_LIFT_PEAK.value
-        set(v) { LETTER_LIFT_PEAK.value = v }
-
-    var letterLiftSung: Float
-        get() = LETTER_LIFT_SUNG.value
-        set(v) { LETTER_LIFT_SUNG.value = v }
-
-    var letterScaleSpringHz: Float
-        get() = LETTER_SCALE_SPRING_HZ.value
-        set(v) { LETTER_SCALE_SPRING_HZ.value = v }
-
-    var letterScaleDamping: Float
-        get() = LETTER_SCALE_DAMPING.value
-        set(v) { LETTER_SCALE_DAMPING.value = v }
-
-    var letterLiftSpringHz: Float
-        get() = LETTER_LIFT_SPRING_HZ.value
-        set(v) { LETTER_LIFT_SPRING_HZ.value = v }
-
-    var letterLiftDamping: Float
-        get() = LETTER_LIFT_DAMPING.value
-        set(v) { LETTER_LIFT_DAMPING.value = v }
 
     var glowBlurRadiusFraction: Float
         get() = GLOW_BLUR_RADIUS_FRACTION.value

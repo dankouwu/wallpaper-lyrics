@@ -254,6 +254,60 @@ object SyllableAnimator {
         return rStart + uEased * (rEnd - rStart)
     }
 
+    fun invertEaseSyllableOut(target: Float): Float {
+        if (target.isNaN() || target <= 0f) return 0f
+        if (target >= 1f) return 1f
+        var low = 0f
+        var high = 1f
+        for (i in 0 until 16) {
+            val mid = (low + high) * 0.5f
+            if (easeSyllableOut(mid) < target) {
+                low = mid
+            } else {
+                high = mid
+            }
+        }
+        return (low + high) * 0.5f
+    }
+
+    fun invertEasedProgress(targetProgress: Float, wordText: String): Float {
+        if (targetProgress.isNaN() || targetProgress <= 0f) return 0f
+        if (targetProgress >= 1f) return 1f
+
+        val info = getSyllableInfo(wordText)
+        val n = info.syllableCount
+
+        if (n <= 1) {
+            return invertEaseSyllableOut(targetProgress)
+        }
+
+        val r = info.bounds
+        var tStart = 0f
+        var tEnd = 1f
+        var syllableIdx = 0
+
+        for (i in 0 until n) {
+            val nextTEnd = if (i + 1 < n) {
+                0.7f * ((i + 1).toFloat() / n) + 0.3f * r[i + 1]
+            } else {
+                1f
+            }
+            if (targetProgress <= r[i + 1] || i == n - 1) {
+                syllableIdx = i
+                tEnd = nextTEnd
+                break
+            }
+            tStart = nextTEnd
+        }
+
+        val rStart = r[syllableIdx]
+        val rEnd = r[syllableIdx + 1]
+        val targetU = if (rEnd > rStart) ((targetProgress - rStart) / (rEnd - rStart)).coerceIn(0f, 1f) else 0f
+        val u = invertEaseSyllableOut(targetU)
+
+        return tStart + u * (tEnd - tStart)
+    }
+
     const val HELD_WORD_MIN_DURATION_MS = 600L
 
     fun isHeldWord(
@@ -536,18 +590,136 @@ object SyllableAnimator {
         return smootherstep(u)
     }
 
+    fun getLetterMotionProgress(
+        timeMs: Float,
+        motionWindowMs: Long,
+        sweepStartOffsetMs: Long,
+        sweepDurationMs: Long,
+        fractionLeft: Float,
+        fractionRight: Float,
+        wordText: String,
+        overlapMs: Long = Tuning.heldWordLetterOverlapMs,
+        peakPosition: Float = Tuning.wordLiftPeakPosition
+    ): Float {
+        if (timeMs.isNaN()) return 0f
+        if (motionWindowMs <= 0L) return 1f
+        val motionWindowF = motionWindowMs.toFloat()
+        if (timeMs >= motionWindowF) return 1f
+
+        val fL = fractionLeft.coerceIn(0f, 1f)
+        val fR = Math.max(fL, fractionRight.coerceIn(0f, 1f))
+        val fC = (fL + fR) * 0.5f
+
+        val pLeftLinear = invertEasedProgress(fL, wordText)
+        val pCenterLinear = invertEasedProgress(fC, wordText)
+        val pRightLinear = invertEasedProgress(fR, wordText)
+
+        val sweepDurF = Math.max(1L, sweepDurationMs).toFloat()
+        val sweepOffsetF = sweepStartOffsetMs.toFloat()
+
+        val tLeft = sweepOffsetF + pLeftLinear * sweepDurF
+        val tCenter = sweepOffsetF + pCenterLinear * sweepDurF
+        val tRight = sweepOffsetF + pRightLinear * sweepDurF
+
+        val halfOverlap = Math.max(0L, overlapMs).toFloat() * 0.5f
+        val rawStart = tLeft - halfOverlap
+        val rawEnd = tRight + halfOverlap
+
+        val minRise = Tuning.wordRiseDurationMs.toFloat()
+        val minSettle = Tuning.wordSettleDurationMs.toFloat()
+
+        val isFirst = fL <= 0f
+        val isLast = fR >= 1f
+
+        var windowStart = Math.max(0f, Math.min(rawStart, tCenter - minRise))
+        var windowEnd = Math.min(motionWindowF, Math.max(rawEnd, tCenter + minSettle))
+        var tPeak = tCenter
+
+        if (isFirst) {
+            windowStart = 0f
+            if (tPeak - windowStart < minRise) {
+                tPeak = Math.min(motionWindowF, windowStart + minRise)
+            }
+            windowEnd = Math.min(motionWindowF, Math.max(rawEnd, tPeak + minSettle))
+        }
+
+        if (isLast) {
+            windowEnd = motionWindowF
+            if (windowEnd - tPeak < minSettle) {
+                tPeak = Math.max(windowStart, windowEnd - minSettle)
+            }
+            windowStart = Math.max(0f, Math.min(rawStart, tPeak - minRise))
+        }
+
+        if (!isFirst && !isLast) {
+            if (tPeak - windowStart < minRise) {
+                tPeak = Math.min(motionWindowF, windowStart + minRise)
+            }
+            windowEnd = Math.min(motionWindowF, Math.max(rawEnd, tPeak + minSettle))
+        }
+
+        windowStart = windowStart.coerceIn(0f, motionWindowF)
+        windowEnd = windowEnd.coerceIn(windowStart, motionWindowF)
+        tPeak = tPeak.coerceIn(windowStart, windowEnd)
+
+        val peakPos = peakPosition.coerceIn(0.01f, 0.99f)
+
+        if (timeMs <= windowStart) return 0f
+        if (timeMs >= windowEnd) return 1f
+
+        return if (timeMs <= tPeak) {
+            val riseDur = tPeak - windowStart
+            if (riseDur <= 0f) {
+                peakPos
+            } else {
+                val u = ((timeMs - windowStart) / riseDur).coerceIn(0f, 1f)
+                u * peakPos
+            }
+        } else {
+            val settleDur = windowEnd - tPeak
+            if (settleDur <= 0f) {
+                1f
+            } else {
+                val v = ((timeMs - tPeak) / settleDur).coerceIn(0f, 1f)
+                peakPos + v * (1f - peakPos)
+            }
+        }
+    }
+
+    fun getLetterMotionProgress(
+        timeMs: Float,
+        motionWindowMs: Long,
+        sweepStartOffsetMs: Long,
+        sweepDurationMs: Long,
+        codePointIndex: Int,
+        codePointCount: Int,
+        wordText: String,
+        overlapMs: Long = Tuning.heldWordLetterOverlapMs,
+        peakPosition: Float = Tuning.wordLiftPeakPosition
+    ): Float {
+        if (codePointCount <= 0) return 1f
+        if (codePointIndex < 0) return 0f
+        if (codePointIndex >= codePointCount) return 1f
+        val fLeft = codePointIndex.toFloat() / codePointCount.toFloat()
+        val fRight = (codePointIndex + 1).toFloat() / codePointCount.toFloat()
+        return getLetterMotionProgress(
+            timeMs = timeMs,
+            motionWindowMs = motionWindowMs,
+            sweepStartOffsetMs = sweepStartOffsetMs,
+            sweepDurationMs = sweepDurationMs,
+            fractionLeft = fLeft,
+            fractionRight = fRight,
+            wordText = wordText,
+            overlapMs = overlapMs,
+            peakPosition = peakPosition
+        )
+    }
+
     fun getSpringLetterProgress(
-        linearProgress: Float,
-        wordDurationMs: Long,
-        leadMs: Long = Tuning.letterEndLeadMs
+        linearProgress: Float
     ): Float {
         if (linearProgress.isNaN()) return 0f
-        val p = linearProgress.coerceIn(0f, 1f)
-        val d = wordDurationMs.toFloat()
-        if (d <= 0f) return if (p >= 1f) 1f else 0f
-        val effectiveDuration = Math.max(d - leadMs.toFloat(), d * 0.5f)
-        if (effectiveDuration <= 0f) return 1f
-        return (p * d / effectiveDuration).coerceIn(0f, 1f)
+        return linearProgress.coerceIn(0f, 1f)
     }
 
     fun getSpringActiveLetterIndex(q: Float, codePointCount: Int): Int {
@@ -562,157 +734,6 @@ object SyllableAnimator {
         val a = (q * codePointCount).toInt().coerceIn(0, codePointCount - 1)
         val t = q * codePointCount - a
         return t.coerceIn(0f, 1f)
-    }
-
-    fun getSpringLetterCurve(
-        t: Float,
-        key0: Float,
-        keyPeak: Float,
-        keySung: Float,
-        peakPosition: Float
-    ): Float {
-        if (t.isNaN()) return key0
-        val u = t.coerceIn(0f, 1f)
-        val peakPos = peakPosition.coerceIn(0.01f, 0.99f)
-        return if (u <= peakPos) {
-            val segU = u / peakPos
-            val smooth = segU * segU * (3f - 2f * segU)
-            key0 + (keyPeak - key0) * smooth
-        } else {
-            val segU = (u - peakPos) / (1f - peakPos)
-            val smooth = segU * segU * (3f - 2f * segU)
-            keyPeak + (keySung - keyPeak) * smooth
-        }
-    }
-
-    fun getSpringLetterScaleCurve(
-        t: Float,
-        peak: Float = Tuning.letterScalePeak,
-        sung: Float = Tuning.letterScaleSung
-    ): Float = getSpringLetterCurve(t, 1.00f, peak, sung, 0.7f)
-
-    fun getSpringLetterLiftCurve(
-        t: Float,
-        peak: Float = Tuning.letterLiftPeak,
-        sung: Float = Tuning.letterLiftSung
-    ): Float = getSpringLetterCurve(t, 0.00f, peak, sung, 0.9f)
-
-    fun getSpringLetterTargetScale(
-        q: Float,
-        codePointIndex: Int,
-        codePointCount: Int,
-        scalePeak: Float = Tuning.letterScalePeak,
-        scaleSung: Float = Tuning.letterScaleSung,
-        falloffPower: Float = Tuning.letterFalloffPower
-    ): Float {
-        if (codePointCount <= 0 || q.isNaN() || q <= 0f) return 1.0f
-        if (q >= 1.0f) return scaleSung
-        val a = getSpringActiveLetterIndex(q, codePointCount)
-        if (a < 0) return scaleSung
-        if (codePointIndex > a) return 1.0f
-        val t = getSpringActiveLetterProgress(q, codePointCount)
-        val activeCurve = getSpringLetterScaleCurve(t, scalePeak, scaleSung)
-        if (codePointIndex == a) return activeCurve
-        val d = (a - codePointIndex).toFloat()
-        val falloff = getRippleFalloff(d, falloffPower)
-        return 1.0f + (activeCurve - 1.0f) * falloff
-    }
-
-    fun getSpringLetterTargetLift(
-        q: Float,
-        codePointIndex: Int,
-        codePointCount: Int,
-        textSize: Float,
-        liftPeak: Float = Tuning.letterLiftPeak,
-        liftSung: Float = Tuning.letterLiftSung,
-        falloffPower: Float = Tuning.letterFalloffPower
-    ): Float {
-        if (codePointCount <= 0 || textSize <= 0f || q.isNaN() || q <= 0f) return 0f
-        if (q >= 1.0f) return liftSung * textSize
-        val a = getSpringActiveLetterIndex(q, codePointCount)
-        if (a < 0) return liftSung * textSize
-        if (codePointIndex > a) return 0f
-        val t = getSpringActiveLetterProgress(q, codePointCount)
-        val activeCurveFraction = getSpringLetterLiftCurve(t, liftPeak, liftSung)
-        val activeLift = activeCurveFraction * textSize
-        if (codePointIndex == a) return activeLift
-        val d = (a - codePointIndex).toFloat()
-        val falloff = getRippleFalloff(d, falloffPower)
-        return activeLift * falloff
-    }
-
-    fun stepSpring(
-        currentPos: Float,
-        currentVel: Float,
-        targetPos: Float,
-        frequencyHz: Float,
-        dampingRatio: Float,
-        dtSeconds: Float,
-        outState: FloatArray,
-        offset: Int = 0
-    ) {
-        if (dtSeconds <= 0f || dtSeconds.isNaN()) {
-            outState[offset] = currentPos
-            outState[offset + 1] = currentVel
-            return
-        }
-        if (frequencyHz <= 0f || frequencyHz.isNaN()) {
-            outState[offset] = targetPos
-            outState[offset + 1] = 0f
-            return
-        }
-
-        val dt = Math.min(dtSeconds, 1f / 30f)
-        val x0 = (currentPos - targetPos).toDouble()
-        val v0 = currentVel.toDouble()
-        val omega0 = 2.0 * Math.PI * frequencyHz.toDouble()
-        val zeta = dampingRatio.toDouble()
-
-        val newX: Double
-        val newV: Double
-
-        if (Math.abs(zeta - 1.0) < 1e-4) {
-            val decay = Math.exp(-omega0 * dt)
-            val c2 = v0 + omega0 * x0
-            newX = (x0 + c2 * dt) * decay
-            newV = (v0 - omega0 * c2 * dt) * decay
-        } else if (zeta < 1.0) {
-            val gamma = zeta * omega0
-            val omegaD = omega0 * Math.sqrt(1.0 - zeta * zeta)
-            val decay = Math.exp(-gamma * dt)
-            val c = Math.cos(omegaD * dt)
-            val s = Math.sin(omegaD * dt)
-            val b = (v0 + gamma * x0) / omegaD
-            newX = decay * (x0 * c + b * s)
-            newV = decay * (v0 * c - ((gamma * v0 + omega0 * omega0 * x0) / omegaD) * s)
-        } else {
-            val gamma = zeta * omega0
-            val omegaD = omega0 * Math.sqrt(zeta * zeta - 1.0)
-            val decay = Math.exp(-gamma * dt)
-            val ch = Math.cosh(omegaD * dt)
-            val sh = Math.sinh(omegaD * dt)
-            val b = (v0 + gamma * x0) / omegaD
-            newX = decay * (x0 * ch + b * sh)
-            newV = decay * (v0 * ch - ((gamma * v0 + omega0 * omega0 * x0) / omegaD) * sh)
-        }
-
-        outState[offset] = (targetPos.toDouble() + newX).toFloat()
-        outState[offset + 1] = newV.toFloat()
-    }
-
-    const val SPRING_SETTLE_SCALE_POS_EPSILON = 0.001f
-    const val SPRING_SETTLE_SCALE_VEL_EPSILON = 0.01f
-    const val SPRING_SETTLE_LIFT_POS_EPSILON = 0.1f
-    const val SPRING_SETTLE_LIFT_VEL_EPSILON = 1.0f
-
-    fun isSpringSettled(
-        currentPos: Float,
-        currentVel: Float,
-        targetPos: Float,
-        posEpsilon: Float,
-        velEpsilon: Float
-    ): Boolean {
-        return Math.abs(currentPos - targetPos) <= posEpsilon && Math.abs(currentVel) <= velEpsilon
     }
 
     fun getRippleEnvelope(

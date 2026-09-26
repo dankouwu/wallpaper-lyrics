@@ -197,6 +197,16 @@ class LyricsWallpaperService : WallpaperService() {
                 return color;
             }
         """
+
+        fun getLineRampFraction(elapsedMs: Long, rampDurationMs: Long = 200L): Float {
+            return getLineRampFraction(elapsedMs.toFloat(), rampDurationMs.toFloat())
+        }
+
+        fun getLineRampFraction(elapsedMs: Float, rampDurationMs: Float = 200f): Float {
+            if (rampDurationMs <= 0f) return 1f
+            val u = (elapsedMs / rampDurationMs).coerceIn(0f, 1f)
+            return 1f - (1f - u) * (1f - u)
+        }
     }
 
     private val persistentNotificationLifecycle = PersistentNotificationLifecycle()
@@ -658,6 +668,7 @@ class LyricsWallpaperService : WallpaperService() {
         // line transition (when the position jumps 100-300ms ahead in a single frame).
         private var prevCurrentIndex: Int = -1
         private var lineChangeElapsedMs: Long = 0L
+        private var frameClockMs: Long = 0L
 
         private var isScreenOff = !(this@LyricsWallpaperService.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isInteractive
         private var lastWakeTime = 0L
@@ -676,38 +687,29 @@ class LyricsWallpaperService : WallpaperService() {
 
         private fun getExtrapolatedPosition(): Long {
             if (isDebugDemoActive()) {
-                return SystemClock.elapsedRealtime() - debugDemoStartRealtime
+                return frameClockMs - debugDemoStartRealtime
             }
             if (!isPlaying) {
                 return lastKnownPlaybackPosition
             }
 
-            // Primary: compute directly from the live PlaybackState (no stale cache)
-            val directPos = mediaObserver.getCurrentPosition()
-
-            // Fallback: use our cached extrapolation variables
-            val now = SystemClock.elapsedRealtime()
-            val timeDiff = now - lastUpdateTime
-            val speed = if (lastKnownPlaybackSpeed > 0f) lastKnownPlaybackSpeed else 1.0f
-            val cachedPos = lastKnownPlaybackPosition + (timeDiff * speed).toLong()
-
-            // Use the direct position if available (non-zero means controller is active)
-            val pos = if (directPos > 0L) directPos else cachedPos
+            val timeDiff = frameClockMs - lastUpdateTime
+            val pos = extrapolatePlaybackPosition(
+                basePosition = lastKnownPlaybackPosition,
+                baseUpdateTime = lastUpdateTime,
+                speed = lastKnownPlaybackSpeed,
+                clockMs = frameClockMs,
+                durationMs = currentDurationMs
+            )
 
             // Periodic diagnostic log (~every 5s) to trace drift
-            if (now - lastDiagLogTime >= 5000L) {
-                lastDiagLogTime = now
-                Log.d("WP-Drift", "pos: direct=${directPos}ms, cached=${cachedPos}ms, " +
-                    "delta=${directPos - cachedPos}ms, using=${pos}ms, " +
-                    "base=${lastKnownPlaybackPosition}ms, timeDiff=${timeDiff}ms, " +
-                    "speed=${lastKnownPlaybackSpeed}")
+            if (frameClockMs - lastDiagLogTime >= 5000L) {
+                lastDiagLogTime = frameClockMs
+                Log.d("WP-Drift", "pos: cached=${pos}ms, base=${lastKnownPlaybackPosition}ms, " +
+                    "timeDiff=${timeDiff}ms, speed=${lastKnownPlaybackSpeed}")
             }
 
-            return if (currentDurationMs > 0) {
-                pos.coerceAtMost(currentDurationMs)
-            } else {
-                pos
-            }
+            return pos
         }
 
         private fun syncPlaybackState() {
@@ -770,6 +772,7 @@ class LyricsWallpaperService : WallpaperService() {
                     }
 
                     if (Math.abs(lastKnownPlaybackPosition - prevPos) > 2000L) {
+                        frameClockMs = SystemClock.elapsedRealtime()
                         snapScrollToPosition()
                     }
                 }
@@ -779,6 +782,9 @@ class LyricsWallpaperService : WallpaperService() {
         private fun snapScrollToPosition() {
             val lines = currentLyrics ?: return
             val offsets = lineOffsets ?: return
+            if (frameClockMs == 0L) {
+                frameClockMs = SystemClock.elapsedRealtime()
+            }
             val position = getExtrapolatedPosition()
             val userOffset = prefSyncOffset.toLong() + songSyncOffset
             val totalOffset = userOffset + detectedBluetoothLatency
@@ -800,6 +806,7 @@ class LyricsWallpaperService : WallpaperService() {
                         isScreenOff = true
                         viewAlpha = 1.0f
                         targetViewAlpha = 1.0f
+                        frameClockMs = SystemClock.elapsedRealtime()
                         snapScrollToPosition()
                         drawFrame(0f)
                         drawFrame(0f)
@@ -810,6 +817,7 @@ class LyricsWallpaperService : WallpaperService() {
                         if (wasOff) {
                             lastWakeTime = System.currentTimeMillis()
                         }
+                        frameClockMs = SystemClock.elapsedRealtime()
                         snapScrollToPosition()
                         drawFrame(0f)
                         drawFrame(0f)
@@ -1189,6 +1197,7 @@ class LyricsWallpaperService : WallpaperService() {
                 completeExpiredTransitions()
 
                 syncPlaybackState()
+                frameClockMs = SystemClock.elapsedRealtime()
                 snapScrollToPosition()
                 drawFrame(0f)
                 drawFrame(0f)
@@ -1217,6 +1226,7 @@ class LyricsWallpaperService : WallpaperService() {
             completeExpiredTransitions()
 
             syncPlaybackState()
+            frameClockMs = SystemClock.elapsedRealtime()
             snapScrollToPosition()
             drawFrame(0f)
             drawFrame(0f)
@@ -1237,6 +1247,12 @@ class LyricsWallpaperService : WallpaperService() {
 
         override fun doFrame(frameTimeNanos: Long) {
             if (!visible) return
+            // Animate from the vsync time, not the clock at draw time: draw time wanders with background cost, frames are shown at a fixed interval.
+            frameClockMs = frameTimeToElapsedRealtimeMs(
+                frameTimeNanos,
+                SystemClock.elapsedRealtimeNanos(),
+                System.nanoTime()
+            )
             val dt = if (lastFrameTimeNanos == 0L) 0.016f else (frameTimeNanos - lastFrameTimeNanos) / 1_000_000_000f
             lastFrameTimeNanos = frameTimeNanos
             drawFrame(dt)
@@ -1401,6 +1417,7 @@ class LyricsWallpaperService : WallpaperService() {
             }
 
             if (isScreenOff) {
+                frameClockMs = SystemClock.elapsedRealtime()
                 drawFrame(0f)
             }
         }
@@ -1606,6 +1623,7 @@ class LyricsWallpaperService : WallpaperService() {
                 }
             }
             if (isScreenOff) {
+                frameClockMs = SystemClock.elapsedRealtime()
                 drawFrame(0f)
             }
         }
@@ -1645,6 +1663,7 @@ class LyricsWallpaperService : WallpaperService() {
                 // On a seek, snap the scroll cursor to the real position instead of
                 // extrapolating from a stale one.
                 if (Math.abs(lastKnownPlaybackPosition - prevPos) > 1000L) {
+                    frameClockMs = SystemClock.elapsedRealtime()
                     snapScrollToPosition()
                 }
             }
@@ -1808,7 +1827,7 @@ class LyricsWallpaperService : WallpaperService() {
                 }
                 if (BuildFlags.DEBUG) {
                     val frameEndNs = System.nanoTime()
-                    val isLineChange = (SystemClock.elapsedRealtime() - lineChangeElapsedMs) <= 200L
+                    val isLineChange = (frameClockMs - lineChangeElapsedMs) <= 200L
                     frameDiagnostics?.recordFrame(frameStartNs, frameEndNs, isLineChange)
                 }
             }
@@ -2046,11 +2065,14 @@ class LyricsWallpaperService : WallpaperService() {
                 // has jumped ahead due to the 1-second position resync.
                 if (currentIndex != prevCurrentIndex) {
                     prevCurrentIndex = currentIndex
-                    lineChangeElapsedMs = android.os.SystemClock.elapsedRealtime()
+                    lineChangeElapsedMs = frameClockMs
                     preuploadUpcomingBitmaps(currentIndex, bitmaps)
                 }
-                val lineRampFraction = ((android.os.SystemClock.elapsedRealtime() - lineChangeElapsedMs)
-                    .toFloat() / 200f).coerceIn(0f, 1f)
+                // Ease-out quadratic ramp caps gate velocity at ~1.33x and transitions smoothly
+                // to 1.0x playback speed at 200ms with no velocity step.
+                val lineRampFraction = getLineRampFraction(
+                    frameClockMs - lineChangeElapsedMs
+                )
 
                 val preRollSettleMs = Tuning.preRollSettleMs
                 val preRollMaxLift = Tuning.preRollMaxLift
@@ -2226,6 +2248,11 @@ class LyricsWallpaperService : WallpaperService() {
                                         span.wholeWordLinearProgress = sweepLinearProgress.coerceIn(0f, 1f)
                                         span.motionProgress = motionLinearProgress.coerceIn(0f, 1f)
                                         span.motionWindowMs = motionWindowMs
+                                        span.sweepStartOffsetMs = startT - motionStartT
+                                        span.sweepDurationMs = effectiveEndT - startT
+                                        span.partStartProp = startProp
+                                        span.partEndProp = endProp
+                                        span.wordText = word.text
                                         span.exitFade = 0f
                                         span.activeAlpha = 230
                                         span.inactiveAlpha = inactiveAlpha
@@ -2252,6 +2279,13 @@ class LyricsWallpaperService : WallpaperService() {
                                         line.startTime,
                                         prevEndT,
                                         wordLeadInMs
+                                    )
+                                    val effectiveEndT = SyllableAnimator.getExtendedWordEnd(
+                                        startT,
+                                        endT,
+                                        line.endTime,
+                                        wordOverlapMs,
+                                        wordMinAnimationMs
                                     )
                                     val motionEndT = SyllableAnimator.getMotionWordEnd(
                                         startT,
@@ -2280,6 +2314,11 @@ class LyricsWallpaperService : WallpaperService() {
                                     span.wholeWordLinearProgress = 1f
                                     span.motionProgress = motionLinearProgress.coerceIn(0f, 1f)
                                     span.motionWindowMs = if (span.motionProgress > 0f) motionWindowMs else 0L
+                                    span.sweepStartOffsetMs = startT - motionStartT
+                                    span.sweepDurationMs = effectiveEndT - startT
+                                    span.partStartProp = word.partStartProp
+                                    span.partEndProp = if (word.partEndProp == 0f) 1f else word.partEndProp
+                                    span.wordText = word.text
                                     span.exitFade = easedExit
                                     span.activeAlpha = currentAlpha
                                     span.inactiveAlpha = INACTIVE_LYRIC_ALPHA
@@ -2675,4 +2714,25 @@ class LyricsWallpaperService : WallpaperService() {
         }
 
     }
+}
+
+fun extrapolatePlaybackPosition(
+    basePosition: Long,
+    baseUpdateTime: Long,
+    speed: Float,
+    clockMs: Long,
+    durationMs: Long = 0L
+): Long {
+    val effectiveSpeed = if (speed > 0f) speed else 1.0f
+    val timeDiff = clockMs - baseUpdateTime
+    val pos = basePosition + (timeDiff * effectiveSpeed).toLong()
+    return if (durationMs > 0L) pos.coerceAtMost(durationMs) else pos
+}
+
+fun frameTimeToElapsedRealtimeMs(
+    frameTimeNanos: Long,
+    elapsedRealtimeNanos: Long,
+    nanoTime: Long
+): Long {
+    return (frameTimeNanos + (elapsedRealtimeNanos - nanoTime)) / 1_000_000L
 }

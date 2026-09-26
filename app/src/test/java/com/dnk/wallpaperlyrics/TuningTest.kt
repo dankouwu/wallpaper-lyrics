@@ -80,6 +80,36 @@ class TuningTest {
     }
 
     @Test
+    fun testHeldWordLetterLiftFractionDefaultEqualsHardcodedConstant() {
+        assertEquals(0.05f, Tuning.HELD_WORD_LETTER_LIFT_FRACTION.defaultValue, 0.0001f)
+        assertEquals(0.05f, Tuning.heldWordLetterLiftFraction, 0.0001f)
+    }
+
+    @Test
+    fun testHeldWordLetterOverlapMsDefaultEqualsHardcodedConstant() {
+        assertEquals(200f, Tuning.HELD_WORD_LETTER_OVERLAP_MS.defaultValue, 0.0001f)
+        assertEquals(200L, Tuning.heldWordLetterOverlapMs)
+        assertEquals(0f, Tuning.HELD_WORD_LETTER_OVERLAP_MS.min, 0.0001f)
+        assertEquals(1000f, Tuning.HELD_WORD_LETTER_OVERLAP_MS.max, 0.0001f)
+        assertTrue(Tuning.HELD_WORD_LETTER_OVERLAP_MS.isInteger)
+    }
+
+    @Test
+    fun testHeldWordLetterOverlapMsRoundTrip() {
+        Tuning.heldWordLetterOverlapMs = 350L
+        assertEquals(350L, Tuning.heldWordLetterOverlapMs)
+        assertEquals(350f, Tuning.HELD_WORD_LETTER_OVERLAP_MS.value, 0.0001f)
+    }
+
+    @Test
+    fun testLetterOverlapDescriptionMentionsAnimation0And1Only() {
+        assertTrue(
+            "letterOverlap description must mention letter animation 0 and 1",
+            Tuning.LETTER_OVERLAP.description.contains("Only used by letter animation 0 and 1")
+        )
+    }
+
+    @Test
     fun testLetterFalloffPowerDefaultEqualsHardcodedConstant() {
         assertEquals(3f, Tuning.LETTER_FALLOFF_POWER.defaultValue, 0.0001f)
         assertEquals(3f, Tuning.letterFalloffPower, 0.0001f)
@@ -626,7 +656,7 @@ class TuningTest {
         assertEquals(Tuning.GROUP_WORD_MOTION, Tuning.LETTER_ANIMATION.group)
         assertTrue(Tuning.LETTER_ANIMATION.isInteger)
         assertEquals(
-            "How held words animate letter by letter. 0 is wave, 1 is sequential, 2 is spring.",
+            "How held words animate letter by letter. 0 is wave, 1 is sequential, 2 is normal word curve per letter.",
             Tuning.LETTER_ANIMATION.description
         )
         assertFalse(Tuning.isSequentialLetterAnimation)
@@ -658,8 +688,84 @@ class TuningTest {
         assertEquals(Tuning.GROUP_WORD_MOTION, Tuning.LETTER_OVERLAP.group)
         assertFalse(Tuning.LETTER_OVERLAP.isInteger)
         assertEquals(
-            "How long each letter's turn lasts, in percent of the gap between one letter starting and the next. 0 is strictly one at a time; higher lets more letters move together and slows each one down.",
+            "How long each letter's turn lasts, in percent of the gap between one letter starting and the next. 0 is strictly one at a time; higher lets more letters move together and slows each one down. Only used by letter animation 0 and 1.",
             Tuning.LETTER_OVERLAP.description
+        )
+    }
+
+    @Test
+    fun testHeldWordLetterOverlapMsTunable() {
+        assertEquals(200f, Tuning.HELD_WORD_LETTER_OVERLAP_MS.defaultValue, 0.0001f)
+        assertEquals(200L, Tuning.heldWordLetterOverlapMs)
+        assertEquals(0f, Tuning.HELD_WORD_LETTER_OVERLAP_MS.min, 0.0001f)
+        assertEquals(1000f, Tuning.HELD_WORD_LETTER_OVERLAP_MS.max, 0.0001f)
+        assertEquals("heldWordLetterOverlapMs", Tuning.HELD_WORD_LETTER_OVERLAP_MS.key)
+        assertEquals("Held letter overlap (ms)", Tuning.HELD_WORD_LETTER_OVERLAP_MS.label)
+        assertEquals(Tuning.GROUP_WORD_MOTION, Tuning.HELD_WORD_LETTER_OVERLAP_MS.group)
+        assertTrue(Tuning.HELD_WORD_LETTER_OVERLAP_MS.isInteger)
+        assertFalse(Tuning.HELD_WORD_LETTER_OVERLAP_MS.inverted)
+        assertEquals(
+            "How long neighbouring letters of a held word move together, in ms. 0 is back to back. Only used by letter animation 2.",
+            Tuning.HELD_WORD_LETTER_OVERLAP_MS.description
+        )
+
+        Tuning.heldWordLetterOverlapMs = 400L
+        assertEquals(400f, Tuning.HELD_WORD_LETTER_OVERLAP_MS.value, 0.0001f)
+        assertEquals(400L, Tuning.heldWordLetterOverlapMs)
+        assertTrue(Tuning.HELD_WORD_LETTER_OVERLAP_MS.isModified)
+
+        Tuning.resetGroup(Tuning.GROUP_WORD_MOTION)
+        assertEquals(200L, Tuning.heldWordLetterOverlapMs)
+        assertFalse(Tuning.HELD_WORD_LETTER_OVERLAP_MS.isModified)
+    }
+
+    @Test
+    fun testHeldWordLetterLiftFractionTunable() {
+        assertEquals(0.05f, Tuning.HELD_WORD_LETTER_LIFT_FRACTION.defaultValue, 0.0001f)
+        assertEquals(0.05f, Tuning.heldWordLetterLiftFraction, 0.0001f)
+        assertEquals(0.00f, Tuning.HELD_WORD_LETTER_LIFT_FRACTION.min, 0.0001f)
+        assertEquals(0.30f, Tuning.HELD_WORD_LETTER_LIFT_FRACTION.max, 0.0001f)
+        assertEquals("heldWordLetterLiftFraction", Tuning.HELD_WORD_LETTER_LIFT_FRACTION.key)
+        assertEquals("Held letter lift", Tuning.HELD_WORD_LETTER_LIFT_FRACTION.label)
+        assertEquals(Tuning.GROUP_WORD_MOTION, Tuning.HELD_WORD_LETTER_LIFT_FRACTION.group)
+        assertFalse(Tuning.HELD_WORD_LETTER_LIFT_FRACTION.isInteger)
+        assertFalse(Tuning.HELD_WORD_LETTER_LIFT_FRACTION.inverted)
+        assertEquals(
+            "How far each letter of a held word lifts, as a fraction of text size. Only used by letter animation 2; normal words use Lift peak fraction.",
+            Tuning.HELD_WORD_LETTER_LIFT_FRACTION.description
+        )
+
+        Tuning.heldWordLetterLiftFraction = 0.15f
+        assertEquals(0.15f, Tuning.HELD_WORD_LETTER_LIFT_FRACTION.value, 0.0001f)
+        assertEquals(0.15f, Tuning.heldWordLetterLiftFraction, 0.0001f)
+        assertTrue(Tuning.HELD_WORD_LETTER_LIFT_FRACTION.isModified)
+
+        Tuning.resetGroup(Tuning.GROUP_WORD_MOTION)
+        assertEquals(0.05f, Tuning.heldWordLetterLiftFraction, 0.0001f)
+        assertFalse(Tuning.HELD_WORD_LETTER_LIFT_FRACTION.isModified)
+    }
+
+    @Test
+    fun testHeldWordLetterLiftFractionPositionInAllParams() {
+        val scalePeakIndex = Tuning.allParams.indexOf(Tuning.HELD_WORD_LETTER_SCALE_PEAK)
+        val liftFractionIndex = Tuning.allParams.indexOf(Tuning.HELD_WORD_LETTER_LIFT_FRACTION)
+        assertTrue("HELD_WORD_LETTER_SCALE_PEAK must be in allParams", scalePeakIndex >= 0)
+        assertEquals(scalePeakIndex + 1, liftFractionIndex)
+    }
+
+    @Test
+    fun testHeldWordLetterOverlapMsPositionInAllParams() {
+        val liftFractionIndex = Tuning.allParams.indexOf(Tuning.HELD_WORD_LETTER_LIFT_FRACTION)
+        val overlapIndex = Tuning.allParams.indexOf(Tuning.HELD_WORD_LETTER_OVERLAP_MS)
+        assertTrue("HELD_WORD_LETTER_LIFT_FRACTION must be in allParams", liftFractionIndex >= 0)
+        assertEquals(liftFractionIndex + 1, overlapIndex)
+    }
+
+    @Test
+    fun testHeldWordLetterScalePeakDescription() {
+        assertEquals(
+            "Biggest size a single letter reaches as the ripple passes over it. Only used by letter animation 0 and 1; mode 2 uses the normal word scale.",
+            Tuning.HELD_WORD_LETTER_SCALE_PEAK.description
         )
     }
 }

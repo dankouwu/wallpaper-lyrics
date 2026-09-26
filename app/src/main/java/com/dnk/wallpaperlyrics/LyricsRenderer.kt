@@ -92,6 +92,11 @@ object LyricsRenderer {
                             word.endIndex,
                             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                         )
+                        val isRtl = if (word.startIndex in 0 until line.content.length) {
+                            tempLayout.isRtlCharAt(word.startIndex)
+                        } else {
+                            false
+                        }
                         addWordMotionSpan(
                             spannedText,
                             line.content,
@@ -101,7 +106,8 @@ object LyricsRenderer {
                             word.startIndex,
                             word.endIndex,
                             word.endTime - word.startTime,
-                            span
+                            span,
+                            isRtl
                         )
 
                         listOf(word.copy(
@@ -135,6 +141,11 @@ object LyricsRenderer {
                                 partEnd,
                                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                             )
+                            val isRtl = if (partStart in 0 until line.content.length) {
+                                tempLayout.isRtlCharAt(partStart)
+                            } else {
+                                false
+                            }
                             addWordMotionSpan(
                                 spannedText,
                                 line.content,
@@ -144,7 +155,8 @@ object LyricsRenderer {
                                 partStart,
                                 partEnd,
                                 word.endTime - word.startTime,
-                                span
+                                span,
+                                isRtl
                             )
 
                             val duration = word.endTime - word.startTime
@@ -242,7 +254,8 @@ object LyricsRenderer {
         partStart: Int,
         partEnd: Int,
         wordDurationMs: Long,
-        wordSpan: WordGradientSpan
+        wordSpan: WordGradientSpan,
+        isRtl: Boolean = false
     ) {
         var codePointCount = 0
         var offset = wordStart
@@ -268,8 +281,6 @@ object LyricsRenderer {
         val codePointEnds = IntArray(partCodePointCount)
         val codePointIndices = IntArray(partCodePointCount)
         val relativeXs = FloatArray(partCodePointCount)
-        val measuredAdvance = Math.round(paint.measureText(content, partStart, partEnd))
-        var relativeX = 0f
         var partCodePointIndex = 0
         var codePointIndex = 0
         offset = wordStart
@@ -280,18 +291,31 @@ object LyricsRenderer {
                 codePointStarts[partCodePointIndex] = offset
                 codePointEnds[partCodePointIndex] = nextOffset
                 codePointIndices[partCodePointIndex] = codePointIndex
-                relativeXs[partCodePointIndex] = relativeX
-                relativeX += paint.measureText(content, offset, nextOffset)
+                relativeXs[partCodePointIndex] = paint.getRunAdvance(
+                    content,
+                    partStart,
+                    partEnd,
+                    partStart,
+                    partEnd,
+                    isRtl,
+                    offset
+                )
                 partCodePointIndex++
             }
             codePointIndex++
             offset = nextOffset
         }
 
-        if (relativeX > 0f) {
-            val advanceScale = measuredAdvance / relativeX
-            for (i in relativeXs.indices) relativeXs[i] *= advanceScale
-        }
+        val totalAdvance = paint.getRunAdvance(
+            content,
+            partStart,
+            partEnd,
+            partStart,
+            partEnd,
+            isRtl,
+            partEnd
+        )
+        val measuredAdvance = Math.round(totalAdvance)
 
         text.setSpan(
             WordMotionSpan(
@@ -303,7 +327,9 @@ object LyricsRenderer {
                 wordDurationMs,
                 relativeXs,
                 measuredAdvance,
-                paint.textSize
+                paint.textSize,
+                isRtl,
+                totalAdvance
             ),
             partStart,
             partEnd,
