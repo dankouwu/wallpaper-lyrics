@@ -1,24 +1,37 @@
 package com.dnk.wallpaperlyrics
 
+import android.Manifest
 import android.app.Activity
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.Window
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.Button
 import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Locale
 
 /**
@@ -27,6 +40,11 @@ import java.util.Locale
  */
 class DebugTuningActivity : Activity() {
 
+    companion object {
+        private const val REQUEST_POST_NOTIFICATIONS = 101
+        private const val REQUEST_PICK_ZIP = 102
+    }
+
     private class ParamRowViews(
         val param: Tuning.Tunable,
         val valueView: TextView,
@@ -34,6 +52,8 @@ class DebugTuningActivity : Activity() {
     )
 
     private val boundViews = mutableListOf<ParamRowViews>()
+    private val activityScope = CoroutineScope(Dispatchers.Main + Job())
+    private var undoRow: LyricsSettings.SettingsRow? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -290,6 +310,169 @@ class DebugTuningActivity : Activity() {
 
         rootLayout.addView(paletteHeaderRow)
         rootLayout.addView(paletteCard)
+
+        val updateHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 4f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 16f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 4f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 8f)
+            )
+        }
+
+        val updateTitle = TextView(this).apply {
+            text = "UPDATE CHECK"
+            textSize = 13f
+            setTextColor(Color.parseColor("#F59E0B"))
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        updateHeaderRow.addView(updateTitle)
+
+        val updateCard = LyricsSettings.SettingsCard(this).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#282015"))
+                setStroke(LyricsSettings.dpToPx(this@DebugTuningActivity, 1f), Color.parseColor("#5C4012"))
+                cornerRadius = LyricsSettings.dpToPx(this@DebugTuningActivity, 18f).toFloat()
+            }
+        }
+
+        val fakeTag = "9.9.9"
+        val releaseUrl = "https://github.com/dankouwu/wallpaper-lyrics/releases/latest"
+
+        updateCard.addRow(
+            LyricsSettings.SettingsRow(
+                this,
+                LyricsSettings.IconType.INFO,
+                "Show update popup",
+                "Preview dialog with fake version $fakeTag",
+                LyricsSettings.TrailingType.NONE,
+                onClick = {
+                    UpdateCheck.showUpdateDialog(
+                        this@DebugTuningActivity,
+                        BuildConfig.VERSION_NAME,
+                        fakeTag,
+                        releaseUrl,
+                        rememberDismissal = false
+                    )
+                }
+            )
+        )
+
+        updateCard.addRow(
+            LyricsSettings.SettingsRow(
+                this,
+                LyricsSettings.IconType.BELL,
+                "Post update notification",
+                "Preview notification with fake version $fakeTag",
+                LyricsSettings.TrailingType.NONE,
+                onClick = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                        checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_POST_NOTIFICATIONS)
+                        Toast.makeText(this@DebugTuningActivity, "Notification permission needed", Toast.LENGTH_SHORT).show()
+                    } else {
+                        UpdateCheck.postUpdateNotification(this@DebugTuningActivity, fakeTag, releaseUrl)
+                    }
+                }
+            )
+        )
+
+        rootLayout.addView(updateHeaderRow)
+        rootLayout.addView(updateCard)
+
+        val importHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 4f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 16f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 4f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 8f)
+            )
+        }
+
+        val importTitle = TextView(this).apply {
+            text = "LYRICS IMPORT"
+            textSize = 13f
+            setTextColor(Color.parseColor("#F59E0B"))
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        importHeaderRow.addView(importTitle)
+
+        val importCard = LyricsSettings.SettingsCard(this).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#282015"))
+                setStroke(LyricsSettings.dpToPx(this@DebugTuningActivity, 1f), Color.parseColor("#5C4012"))
+                cornerRadius = LyricsSettings.dpToPx(this@DebugTuningActivity, 18f).toFloat()
+            }
+        }
+
+        importCard.addRow(
+            LyricsSettings.SettingsRow(
+                this,
+                LyricsSettings.IconType.FILE_STACK,
+                "Import lyrics zip",
+                "Pick an alignment pipeline zip file",
+                LyricsSettings.TrailingType.NONE,
+                onClick = {
+                    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = "application/zip"
+                    }
+                    startActivityForResult(intent, REQUEST_PICK_ZIP)
+                }
+            )
+        )
+
+        val undoRowView = LyricsSettings.SettingsRow(
+            this,
+            LyricsSettings.IconType.RELOAD,
+            "Undo last import",
+            "Checking undo state...",
+            LyricsSettings.TrailingType.NONE,
+            onClick = {
+                val storage = LyricsStorage.forContext(this@DebugTuningActivity)
+                val undoDir = File(filesDir, "lyrics_import_undo")
+                val importer = LyricsZipImporter(storage, undoDir)
+                if (!importer.hasUndo()) {
+                    Toast.makeText(this@DebugTuningActivity, "Nothing to undo", Toast.LENGTH_SHORT).show()
+                    return@SettingsRow
+                }
+                SettingsDialogs.showCustomConfirmDialog(
+                    activity = this@DebugTuningActivity,
+                    title = "Undo last import",
+                    message = "Restore cache files replaced by the last import and delete newly imported tracks?",
+                    confirmText = "Undo"
+                ) {
+                    activityScope.launch {
+                        val success = withContext(Dispatchers.IO) {
+                            importer.undoLastImport()
+                        }
+                        if (success) {
+                            val reloadIntent = Intent("com.dnk.wallpaperlyrics.RELOAD_LYRICS").apply {
+                                setPackage(packageName)
+                            }
+                            sendBroadcast(reloadIntent)
+                            Toast.makeText(this@DebugTuningActivity, "Restored previous lyrics cache", Toast.LENGTH_SHORT).show()
+                        } else {
+                            Toast.makeText(this@DebugTuningActivity, "Nothing to undo", Toast.LENGTH_SHORT).show()
+                        }
+                        updateUndoSubtitle()
+                    }
+                }
+            }
+        )
+        undoRow = undoRowView
+        importCard.addRow(undoRowView)
+        updateUndoSubtitle()
+
+        rootLayout.addView(importHeaderRow)
+        rootLayout.addView(importCard)
         for (groupName in Tuning.groups) {
             val groupParams = Tuning.allParams.filter { it.group == groupName }
             if (groupParams.isEmpty()) continue
@@ -529,5 +712,271 @@ class DebugTuningActivity : Activity() {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("Tuned Motion Values", dump))
         Toast.makeText(this, "Copied tuning block to clipboard", Toast.LENGTH_SHORT).show()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateUndoSubtitle()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        activityScope.coroutineContext[Job]?.cancel()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_PICK_ZIP && resultCode == Activity.RESULT_OK) {
+            val uri = data?.data ?: return
+            startImport(uri)
+        }
+    }
+
+    private fun updateUndoSubtitle() {
+        activityScope.launch {
+            val hasUndo = withContext(Dispatchers.IO) {
+                val undoDir = File(filesDir, "lyrics_import_undo")
+                undoDir.exists() && (undoDir.listFiles()?.isNotEmpty() == true)
+            }
+            undoRow?.updateSubtitle(
+                if (hasUndo) "Restore cache before the last import" else "No previous import to undo"
+            )
+        }
+    }
+
+    private fun startImport(uri: android.net.Uri) {
+        val (progressDialog, progressText) = showProgressDialog()
+        activityScope.launch {
+            var tempFile: File? = null
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    val temp = File(cacheDir, "import_temp_${System.currentTimeMillis()}.zip")
+                    tempFile = temp
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        temp.outputStream().use { output ->
+                            input.copyTo(output)
+                        }
+                    } ?: throw IllegalArgumentException("Could not open picked file")
+
+                    val storage = LyricsStorage.forContext(applicationContext)
+                    val undoDir = File(filesDir, "lyrics_import_undo")
+                    val importer = LyricsZipImporter(storage, undoDir)
+
+                    importer.importZip(temp) { done, total ->
+                        activityScope.launch(Dispatchers.Main) {
+                            progressText.text = "Importing $done of $total"
+                        }
+                    }
+                }
+                progressDialog.dismiss()
+
+                val reloadIntent = Intent("com.dnk.wallpaperlyrics.RELOAD_LYRICS").apply {
+                    setPackage(packageName)
+                }
+                sendBroadcast(reloadIntent)
+
+                updateUndoSubtitle()
+                showImportResultDialog(result)
+            } catch (e: Exception) {
+                progressDialog.dismiss()
+                showImportErrorDialog(e.message ?: "Import failed")
+            } finally {
+                withContext(Dispatchers.IO) {
+                    tempFile?.delete()
+                }
+            }
+        }
+    }
+
+    private fun showProgressDialog(): Pair<Dialog, TextView> {
+        val dialog = Dialog(this).apply {
+            requestWindowFeature(Window.FEATURE_NO_TITLE)
+            setCancelable(false)
+            setCanceledOnTouchOutside(false)
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f)
+            )
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#333333"))
+                cornerRadius = LyricsSettings.dpToPx(this@DebugTuningActivity, 16f).toFloat()
+            }
+        }
+
+        val titleText = TextView(this).apply {
+            text = "Importing lyrics"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            setPadding(0, 0, 0, LyricsSettings.dpToPx(this@DebugTuningActivity, 8f))
+        }
+        container.addView(titleText)
+
+        val progressText = TextView(this).apply {
+            text = "Preparing..."
+            textSize = 14f
+            setTextColor(Color.parseColor("#8E8E93"))
+        }
+        container.addView(progressText)
+
+        dialog.setContentView(container)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setLayout(
+                (resources.displayMetrics.widthPixels * 0.85f).toInt(),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        dialog.show()
+        return Pair(dialog, progressText)
+    }
+
+    private fun showImportResultDialog(result: LyricsZipImporter.ImportResult) {
+        val dialog = Dialog(this).apply {
+            requestWindowFeature(Window.FEATURE_NO_TITLE)
+            setCancelable(true)
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 20f)
+            )
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#333333"))
+                cornerRadius = LyricsSettings.dpToPx(this@DebugTuningActivity, 16f).toFloat()
+            }
+        }
+
+        val titleText = TextView(this).apply {
+            text = "Import complete"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            setPadding(0, 0, 0, LyricsSettings.dpToPx(this@DebugTuningActivity, 10f))
+        }
+        container.addView(titleText)
+
+        val sb = StringBuilder()
+        sb.append("Imported new: ").append(result.importedNew).append("\n")
+        sb.append("Replaced: ").append(result.replaced).append("\n")
+        sb.append("Override active: ").append(result.overrideActive).append("\n")
+        sb.append("Failed: ").append(result.failed)
+
+        if (result.failedTitles.isNotEmpty()) {
+            sb.append("\n\nFailed titles:\n")
+            sb.append(result.failedTitles.joinToString("\n") { "- $it" })
+        }
+
+        val msgScrollView = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val msgText = TextView(this).apply {
+            text = sb.toString()
+            textSize = 14f
+            setTextColor(Color.parseColor("#E5E5EA"))
+            setPadding(0, 0, 0, LyricsSettings.dpToPx(this@DebugTuningActivity, 16f))
+        }
+        msgScrollView.addView(msgText)
+        container.addView(msgScrollView)
+
+        val buttonLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+        val okButton = Button(this).apply {
+            text = "OK"
+            setTextColor(Color.parseColor("#F59E0B"))
+            transformationMethod = null
+            background = null
+            setOnClickListener { dialog.dismiss() }
+        }
+        buttonLayout.addView(okButton)
+        container.addView(buttonLayout)
+
+        dialog.setContentView(container)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setLayout(
+                (resources.displayMetrics.widthPixels * 0.85f).toInt(),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        dialog.show()
+    }
+
+    private fun showImportErrorDialog(errorMessage: String) {
+        val dialog = Dialog(this).apply {
+            requestWindowFeature(Window.FEATURE_NO_TITLE)
+            setCancelable(true)
+        }
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 24f),
+                LyricsSettings.dpToPx(this@DebugTuningActivity, 20f)
+            )
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#333333"))
+                cornerRadius = LyricsSettings.dpToPx(this@DebugTuningActivity, 16f).toFloat()
+            }
+        }
+
+        val titleText = TextView(this).apply {
+            text = "Import failed"
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            setPadding(0, 0, 0, LyricsSettings.dpToPx(this@DebugTuningActivity, 10f))
+        }
+        container.addView(titleText)
+
+        val msgText = TextView(this).apply {
+            text = errorMessage
+            textSize = 14f
+            setTextColor(Color.parseColor("#FF7B72"))
+            setPadding(0, 0, 0, LyricsSettings.dpToPx(this@DebugTuningActivity, 16f))
+        }
+        container.addView(msgText)
+
+        val buttonLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+        }
+        val okButton = Button(this).apply {
+            text = "OK"
+            setTextColor(Color.parseColor("#F59E0B"))
+            transformationMethod = null
+            background = null
+            setOnClickListener { dialog.dismiss() }
+        }
+        buttonLayout.addView(okButton)
+        container.addView(buttonLayout)
+
+        dialog.setContentView(container)
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setLayout(
+                (resources.displayMetrics.widthPixels * 0.85f).toInt(),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        dialog.show()
     }
 }

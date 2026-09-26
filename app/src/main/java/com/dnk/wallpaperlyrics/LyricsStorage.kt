@@ -298,7 +298,7 @@ class LyricsStorage(
         const val FETCHED_DIR_NAME = "lyrics_cache"
         const val CACHE_DIR_NAME = FETCHED_DIR_NAME
         const val OLD_CACHE_DIR_NAME = "lyrics_cache"
-        const val DEFAULT_MAX_FETCHED_ENTRIES = 2000
+        const val DEFAULT_MAX_FETCHED_ENTRIES = 5000
 
         fun create(filesDir: File, cacheDir: File? = null): LyricsStorage {
             val overrides = File(filesDir, OVERRIDES_DIR_NAME).apply { mkdirs() }
