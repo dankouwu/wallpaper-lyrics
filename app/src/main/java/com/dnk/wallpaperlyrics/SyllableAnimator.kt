@@ -254,6 +254,32 @@ object SyllableAnimator {
         return rStart + uEased * (rEnd - rStart)
     }
 
+    fun getSweepLinearProgress(
+        currentPos: Long,
+        startMs: Long,
+        effectiveEndMs: Long
+    ): Float {
+        if (effectiveEndMs <= startMs) return if (currentPos >= startMs) 1f else 0f
+        return when {
+            currentPos >= effectiveEndMs -> 1f
+            currentPos <= startMs -> 0f
+            else -> ((currentPos - startMs).toFloat() / (effectiveEndMs - startMs).toFloat()).coerceIn(0f, 1f)
+        }
+    }
+
+    fun getPartMappedProgress(
+        progress: Float,
+        startProp: Float = 0f,
+        endProp: Float = 1f
+    ): Float {
+        val effectiveEnd = if (endProp == 0f) 1f else endProp
+        return if (effectiveEnd > startProp) {
+            ((progress - startProp) / (effectiveEnd - startProp)).coerceIn(0f, 1f)
+        } else {
+            progress.coerceIn(0f, 1f)
+        }
+    }
+
     fun invertEaseSyllableOut(target: Float): Float {
         if (target.isNaN() || target <= 0f) return 0f
         if (target >= 1f) return 1f
@@ -1066,7 +1092,12 @@ object SyllableAnimator {
                 naturalEnd = motionEnd
             }
         }
+        val lastWord = words.last()
+        val lastSungEnd = if (lastWord.fullEndTime == 0L) lastWord.endTime else lastWord.fullEndTime
         var release = naturalEnd.coerceIn(nextStartTime, nextStartTime + holdMax)
+        if (lastSungEnd < nextNextStartTime) {
+            release = Math.max(release, lastSungEnd)
+        }
         if (nextNextStartTime != Long.MAX_VALUE && nextNextStartTime >= 0L) {
             release = Math.min(release, nextNextStartTime)
         }

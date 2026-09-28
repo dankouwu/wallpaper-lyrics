@@ -2173,6 +2173,92 @@ class SyllableAnimatorTest {
             }
         }
     }
+
+    @Test
+    fun testLineReleaseTimeOverlapPastHoldMaxReturnsAtLeastSungEnd() {
+        val wordStart = 228370L
+        val wordEnd = 229820L
+        val nextStart = 228920L
+        val holdMax = 800L
+        val words = listOf(
+            LyricWord(startTime = wordStart, endTime = wordEnd, text = "gold", startIndex = 0, endIndex = 4)
+        )
+        val release = SyllableAnimator.getLineReleaseTime(
+            words = words,
+            lineEndTime = wordEnd,
+            nextStartTime = nextStart,
+            nextNextStartTime = 235000L,
+            holdMax = holdMax
+        )
+        assertTrue("Release ($release) must be at least sung end ($wordEnd)", release >= wordEnd)
+    }
+
+    @Test
+    fun testLineReleaseTimeNonOverlapPreservesExistingBehavior() {
+        val wordStart = 1000L
+        val wordEnd = 1400L
+        val nextStart = 2000L
+        val words = listOf(
+            LyricWord(startTime = wordStart, endTime = wordEnd, text = "word", startIndex = 0, endIndex = 4)
+        )
+        val release = SyllableAnimator.getLineReleaseTime(
+            words = words,
+            lineEndTime = wordEnd,
+            nextStartTime = nextStart,
+            nextNextStartTime = 5000L,
+            holdMax = 800L
+        )
+        assertEquals(nextStart, release)
+    }
+
+    @Test
+    fun testLineReleaseTimeConflictWithLineAfterNextClampedToLineAfterNext() {
+        val wordStart = 7000L
+        val wordEnd = 10000L
+        val nextStart = 8000L
+        val nextNextStart = 9000L
+        val words = listOf(
+            LyricWord(startTime = wordStart, endTime = wordEnd, text = "held", startIndex = 0, endIndex = 4)
+        )
+        val release = SyllableAnimator.getLineReleaseTime(
+            words = words,
+            lineEndTime = wordEnd,
+            nextStartTime = nextStart,
+            nextNextStartTime = nextNextStart,
+            holdMax = 2000L
+        )
+        assertEquals(nextNextStart, release)
+    }
+
+    @Test
+    fun testSweepLinearProgressFastNumbers() {
+        val wordStart = 53700L
+        val wordEnd = 54600L
+        val overlapMs = Tuning.wordOverlapMs
+        val minAnimMs = Tuning.wordMinAnimationMs
+        val distantLineEnd = 60000L
+        val effectiveEnd = SyllableAnimator.getExtendedWordEnd(
+            startMs = wordStart,
+            endMs = wordEnd,
+            lineEndMs = distantLineEnd,
+            overlapMs = overlapMs,
+            minAnimationMs = minAnimMs
+        )
+        assertEquals(54650L, effectiveEnd)
+
+        val progressAt5420 = SyllableAnimator.getSweepLinearProgress(54200L, wordStart, effectiveEnd)
+        assertTrue("Progress at 54.20s ($progressAt5420) must be between 0 and 1", progressAt5420 > 0f && progressAt5420 < 1f)
+        assertEquals(500f / 950f, progressAt5420, 0.001f)
+
+        val progressAtEnd = SyllableAnimator.getSweepLinearProgress(effectiveEnd, wordStart, effectiveEnd)
+        assertEquals(1f, progressAtEnd, 0.0001f)
+    }
+
+    @Test
+    fun testSweepLinearProgressFinishedAndUnstartedWords() {
+        assertEquals(1f, SyllableAnimator.getSweepLinearProgress(54200L, 52000L, 53000L), 0.0001f)
+        assertEquals(0f, SyllableAnimator.getSweepLinearProgress(54200L, 55000L, 56000L), 0.0001f)
+    }
 }
 
 

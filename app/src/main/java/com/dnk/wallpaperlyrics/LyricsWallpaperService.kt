@@ -2300,6 +2300,12 @@ class LyricsWallpaperService : WallpaperService() {
                                         maxOverrunMs = holdMax + transitionDuration.toLong()
                                     )
 
+                                    val sweepLinearProgress = SyllableAnimator.getSweepLinearProgress(
+                                        adjustedPos,
+                                        startT,
+                                        effectiveEndT
+                                    )
+
                                     val motionWindowMs = Math.max(1L, motionEndT - motionStartT)
                                     val motionLinearProgress = when {
                                         adjustedPos >= motionEndT -> 1f
@@ -2309,15 +2315,20 @@ class LyricsWallpaperService : WallpaperService() {
                                         }
                                     }
 
-                                    span.progress = 1f
-                                    span.linearProgress = 1f
-                                    span.wholeWordLinearProgress = 1f
+                                    val fullWordEasedProgress = SyllableAnimator.getEasedProgress(sweepLinearProgress, word.text)
+
+                                    val startProp = word.partStartProp
+                                    val endProp = if (word.partEndProp == 0f) 1f else word.partEndProp
+
+                                    span.progress = SyllableAnimator.getPartMappedProgress(fullWordEasedProgress, startProp, endProp)
+                                    span.linearProgress = SyllableAnimator.getPartMappedProgress(sweepLinearProgress, startProp, endProp)
+                                    span.wholeWordLinearProgress = sweepLinearProgress.coerceIn(0f, 1f)
                                     span.motionProgress = motionLinearProgress.coerceIn(0f, 1f)
                                     span.motionWindowMs = if (span.motionProgress > 0f) motionWindowMs else 0L
                                     span.sweepStartOffsetMs = startT - motionStartT
                                     span.sweepDurationMs = effectiveEndT - startT
-                                    span.partStartProp = word.partStartProp
-                                    span.partEndProp = if (word.partEndProp == 0f) 1f else word.partEndProp
+                                    span.partStartProp = startProp
+                                    span.partEndProp = endProp
                                     span.wordText = word.text
                                     span.exitFade = easedExit
                                     span.activeAlpha = currentAlpha
