@@ -16,7 +16,7 @@ An Android live wallpaper that shows the lyrics of whatever you are playing, in 
 
 A wallpaper, not an app you sit in. The launcher icon opens settings and nothing else. Start something in any player that publishes a media session, go back to the home screen, and the lyrics are already there and already scrolling.
 
-Where the timing data allows it, words light up one at a time instead of whole lines. Each word grows as it is sung, overshoots a little and settles slightly larger than the words still waiting, and a word held long enough ripples through its letters. The line stays in focus until its last word has settled, and the view follows on a spring rather than jumping to the next line.
+Where the timing data allows it, words light up one at a time instead of whole lines. Each word grows as it is sung, overshoots a little and settles slightly larger than the words still waiting, and the letters of a held word take turns, each one rising as the colour sweep crosses it and overlapping its neighbours. The line stays in focus until its last word has settled, and the view follows on a spring rather than jumping to the next line. When two lines overlap, a line's last word keeps filling in while the next line takes over.
 
 Musixmatch publishes per word timing for a good part of the catalogue. When a track has none, it falls back to line timing, which most tracks have. For the rest, paste your own enhanced LRC or point the app at a custom provider.
 
@@ -41,12 +41,13 @@ Near white covers have their brightest pixels darkened in OKLab lightness so whi
 - Waking the screen shows the lyrics first, then fades in the album art with the title and artist, then goes back to the lyrics.
 - Always On Display has its own setting: the album card over the background, the card on black, or black on its own.
 - Sync offset from -1000 ms to +1000 ms, plus per song offsets of up to 10 seconds either way that stick to the track, plus an offset for each paired Bluetooth device that applies whenever you play to it. Sync is manual: nothing listens to the audio, and the app does not ask for the microphone.
-- Lyrics you can edit by hand. Paste LRC for the current track when every source has it wrong, or purge the cache and refetch. Hand edits live in the app's own files, so clearing its cache does not lose them.
+- Lyrics you can edit by hand. Paste LRC for the current track when every source has it wrong, or purge the cache and refetch. Holding Force Re-fetch Lyrics lets you pick a single provider (Musixmatch word sync, Musixmatch line sync, LRCLIB, or the custom provider when one is set up), with no fallback to the others, and a hit replaces the stored lyrics including a hand edit for that song. Hand edits live in the app's own files, so clearing its cache does not lose them.
 - A custom lyrics endpoint, tried ahead of Musixmatch and LRCLIB, if you run your own.
 - An idle screen with its own title and four color palette for when nothing is playing. Clear the title to leave it without text.
 - After a reboot it waits for a player to start. A session Android restores on its own is ignored until it has played once.
 - Static mode, which keeps the blurred artwork and drops the animation when you want the battery back.
 - Optional playback controls in the status bar, and optional Material You highlight colors.
+- An update check, off by default. When on, it asks the GitHub releases API once a day around 12:00, posts a notification and shows a popup on launch when a newer release exists, once per version, and it never downloads or installs anything itself.
 
 Fetched lyrics are stored in the app's files rather than its cache, so Android reclaiming space does not throw them away. A miss is remembered for 24 hours so an instrumental stops hitting the network every time it comes round.
 
@@ -59,7 +60,7 @@ Then open Wallpaper Lyrics, tap **Activate Live Wallpaper**, and pick **Lyrics W
 From a computer instead:
 
 ```bash
-adb install -r wallpaper-lyrics_2.2.0.apk
+adb install -r wallpaper-lyrics_2.3.0.apk
 ```
 
 > [!WARNING]
