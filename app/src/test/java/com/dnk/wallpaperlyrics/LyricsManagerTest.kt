@@ -910,4 +910,51 @@ class LyricsManagerTest {
             tempDir.deleteRecursively()
         }
     }
+
+    @Test
+    fun `saveCacheAndClearMiss updates cache and removes existing miss file`() {
+        val tempDir = Files.createTempDirectory("lyrics_test").toFile()
+        try {
+            val overridesDir = File(tempDir, "lyrics_overrides").apply { mkdirs() }
+            val cacheDir = File(tempDir, "lyrics_cache").apply { mkdirs() }
+            val storage = LyricsStorage(overridesDir, cacheDir)
+
+            val missFile = storage.getMissFile("Synthetic Song", "Synthetic Artist")
+            missFile.writeText(System.currentTimeMillis().toString())
+            assertTrue(storage.hasValidMiss("Synthetic Song", "Synthetic Artist"))
+
+            val lines = listOf(LyricLine(1000L, 2000L, "Sample text"))
+            storage.saveCacheAndClearMiss("Synthetic Song", "Synthetic Artist", lines)
+
+            assertFalse(missFile.exists())
+            assertFalse(storage.hasValidMiss("Synthetic Song", "Synthetic Artist"))
+            assertEquals(lines, storage.getCache("Synthetic Song", "Synthetic Artist"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `saveCacheAndClearMiss clears existing override so resolveLyrics returns cached lines`() {
+        val tempDir = Files.createTempDirectory("lyrics_test").toFile()
+        try {
+            val overridesDir = File(tempDir, "lyrics_overrides").apply { mkdirs() }
+            val cacheDir = File(tempDir, "lyrics_cache").apply { mkdirs() }
+            val storage = LyricsStorage(overridesDir, cacheDir)
+
+            val overrideLines = listOf(LyricLine(1000L, 2000L, "Override line"))
+            storage.saveOverride("Song A", "Artist A", overrideLines)
+            val overrideFile = storage.getOverrideFile("Song A", "Artist A")
+            assertTrue(overrideFile.exists())
+            assertEquals(LyricsResolution.Override(overrideLines), storage.resolveLyrics("Song A", "Artist A"))
+
+            val fetchedLines = listOf(LyricLine(1000L, 2000L, "Fetched line"))
+            storage.saveCacheAndClearMiss("Song A", "Artist A", fetchedLines)
+
+            assertFalse(overrideFile.exists())
+            assertEquals(LyricsResolution.Cached(fetchedLines), storage.resolveLyrics("Song A", "Artist A"))
+        } finally {
+            tempDir.deleteRecursively()
+        }
+    }
 }

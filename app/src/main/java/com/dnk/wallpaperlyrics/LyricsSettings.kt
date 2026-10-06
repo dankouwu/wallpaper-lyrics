@@ -295,7 +295,8 @@ object LyricsSettings {
         var trailingType: TrailingType = TrailingType.NONE,
         val initialVal: String = "",
         val onCheckedChange: ((Boolean) -> Unit)? = null,
-        val onClick: (() -> Unit)? = null
+        val onClick: (() -> Unit)? = null,
+        val onLongClick: (() -> Boolean)? = null
     ) : LinearLayout(context) {
 
         private var valueBadge: TextView? = null
@@ -309,6 +310,9 @@ object LyricsSettings {
             val padding18 = dpToPx(context, 18f)
             setPadding(padding16, padding18, padding16, padding18)
             isClickable = true
+            if (onLongClick != null) {
+                setOnLongClickListener { onLongClick.invoke() }
+            }
 
             val outVal = TypedValue()
             context.theme.resolveAttribute(android.R.attr.selectableItemBackground, outVal, true)

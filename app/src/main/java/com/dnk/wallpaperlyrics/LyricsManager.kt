@@ -51,6 +51,12 @@ data class SearchResult(
     val syncedLyrics: String?
 )
 
+sealed class SingleProviderResult {
+    data class Success(val lines: List<LyricLine>) : SingleProviderResult()
+    object NoLyrics : SingleProviderResult()
+    object RequestFailed : SingleProviderResult()
+}
+
 class LyricsManager(
     private val context: Context,
     val storage: LyricsStorage = LyricsStorage.forContext(context)
@@ -1011,6 +1017,330 @@ class LyricsManager(
         if (res.syncedLyrics.isNullOrBlank()) return null
         val songDurationMs = res.duration?.times(1000)?.toLong()
         return parseLrcText(res.syncedLyrics, songDurationMs)
+    }
+
+    fun fetchFromProvider(
+        providerId: String,
+        title: String,
+        artist: String,
+        durationMs: Long,
+        callback: (SingleProviderResult) -> Unit
+    ) {
+        when (providerId) {
+            LyricsProviders.ID_MUSIXMATCH_WORDS -> fetchMusixmatchWordsOnly(title, artist, durationMs, callback)
+            LyricsProviders.ID_MUSIXMATCH_LINES -> fetchMusixmatchLinesOnly(title, artist, durationMs, callback)
+            LyricsProviders.ID_LRCLIB -> fetchLrclibOnly(title, artist, durationMs, callback)
+            LyricsProviders.ID_CUSTOM -> fetchCustomProviderOnly(title, artist, durationMs, callback)
+            else -> callback(SingleProviderResult.RequestFailed)
+        }
+    }
+
+    private fun resolveMusixmatchTrack(
+        title: String,
+        artist: String,
+        callback: (SingleProviderResult) -> Unit,
+        onResolved: (token: String, trackId: Int) -> Unit
+    ) {
+        getMusixmatchToken { token ->
+            if (token == null) {
+                callback(SingleProviderResult.RequestFailed)
+                return@getMusixmatchToken
+            }
+
+            val urlBuilder = "${MUSIXMATCH_ROOT}track.search".toHttpUrlOrNull()?.newBuilder()
+            if (urlBuilder == null) {
+                callback(SingleProviderResult.RequestFailed)
+                return@getMusixmatchToken
+            }
+
+            urlBuilder.addQueryParameter("q", "$artist $title")
+            urlBuilder.addQueryParameter("page_size", "5")
+            urlBuilder.addQueryParameter("page", "1")
+            urlBuilder.addQueryParameter("app_id", "web-desktop-app-v1.0")
+            urlBuilder.addQueryParameter("usertoken", token)
+            urlBuilder.addQueryParameter("t", System.currentTimeMillis().toString())
+
+            val request = Request.Builder()
+                .url(urlBuilder.build().toString())
+                .header("User-Agent", USER_AGENT)
+                .build()
+
+            client.newCall(request).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    callback(SingleProviderResult.RequestFailed)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    if (response.code == 429 || response.code >= 500) {
+                        callback(SingleProviderResult.RequestFailed)
+                        return
+                    }
+                    val bodyStr = response.body?.string()
+                    if (!response.isSuccessful || bodyStr == null) {
+                        callback(SingleProviderResult.RequestFailed)
+                        return
+                    }
+
+                    val trackId = try {
+                        val json = gson.fromJson(bodyStr, com.google.gson.JsonObject::class.java)
+                        val header = json.getAsJsonObject("message")?.getAsJsonObject("header")
+                        val statusCode = header?.get("status_code")?.asInt ?: 0
+                        if (statusCode == 401 || statusCode == 402 || statusCode == 403 || statusCode >= 500) {
+                            callback(SingleProviderResult.RequestFailed)
+                            return
+                        }
+                        val trackList = json.getAsJsonObject("message")?.getAsJsonObject("body")?.getAsJsonArray("track_list")
+                        if (trackList == null || trackList.size() == 0) {
+                            callback(SingleProviderResult.NoLyrics)
+                            return
+                        }
+                        trackList.get(0).asJsonObject.getAsJsonObject("track").get("track_id").asInt
+                    } catch (e: Exception) {
+                        callback(SingleProviderResult.RequestFailed)
+                        return
+                    }
+
+                    onResolved(token, trackId)
+                }
+            })
+        }
+    }
+
+    private fun fetchMusixmatchWordsOnly(
+        title: String,
+        artist: String,
+        durationMs: Long,
+        callback: (SingleProviderResult) -> Unit
+    ) {
+        resolveMusixmatchTrack(title, artist, callback) { token, trackId ->
+            val now = System.currentTimeMillis()
+            val richsyncUrl = "${MUSIXMATCH_ROOT}track.richsync.get?track_id=$trackId&app_id=web-desktop-app-v1.0&usertoken=$token&t=$now"
+            val richsyncRequest = Request.Builder()
+                .url(richsyncUrl)
+                .header("User-Agent", USER_AGENT)
+                .build()
+
+            client.newCall(richsyncRequest).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    callback(SingleProviderResult.RequestFailed)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    if (response.code == 429 || response.code >= 500) {
+                        callback(SingleProviderResult.RequestFailed)
+                        return
+                    }
+                    val rBody = response.body?.string()
+                    if (!response.isSuccessful || rBody == null) {
+                        callback(SingleProviderResult.RequestFailed)
+                        return
+                    }
+                    try {
+                        val json = gson.fromJson(rBody, com.google.gson.JsonObject::class.java)
+                        val header = json.getAsJsonObject("message")?.getAsJsonObject("header")
+                        val statusCode = header?.get("status_code")?.asInt ?: 0
+                        if (statusCode == 200) {
+                            val richsyncObj = json.getAsJsonObject("message")?.getAsJsonObject("body")?.getAsJsonObject("richsync")
+                            val richsyncBody = richsyncObj?.get("richsync_body")?.asString
+                            if (!richsyncBody.isNullOrBlank()) {
+                                val parsedRichsync = parseRichsync(richsyncBody)
+                                if (parsedRichsync != null) {
+                                    val parsedLines = parseLrcText(parsedRichsync, durationMs)
+                                    if (!parsedLines.isNullOrEmpty()) {
+                                        callback(SingleProviderResult.Success(parsedLines))
+                                        return
+                                    }
+                                }
+                            }
+                        } else if (statusCode == 401 || statusCode == 402 || statusCode == 403 || statusCode >= 500) {
+                            callback(SingleProviderResult.RequestFailed)
+                            return
+                        }
+                    } catch (e: Exception) {}
+                    callback(SingleProviderResult.NoLyrics)
+                }
+            })
+        }
+    }
+
+    private fun fetchMusixmatchLinesOnly(
+        title: String,
+        artist: String,
+        durationMs: Long,
+        callback: (SingleProviderResult) -> Unit
+    ) {
+        resolveMusixmatchTrack(title, artist, callback) { token, trackId ->
+            val now = System.currentTimeMillis()
+            val subtitleUrl = "${MUSIXMATCH_ROOT}track.subtitle.get?track_id=$trackId&subtitle_format=lrc&app_id=web-desktop-app-v1.0&usertoken=$token&t=$now"
+            val subtitleRequest = Request.Builder()
+                .url(subtitleUrl)
+                .header("User-Agent", USER_AGENT)
+                .build()
+
+            client.newCall(subtitleRequest).enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    callback(SingleProviderResult.RequestFailed)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    if (response.code == 429 || response.code >= 500) {
+                        callback(SingleProviderResult.RequestFailed)
+                        return
+                    }
+                    val sBody = response.body?.string()
+                    if (!response.isSuccessful || sBody == null) {
+                        callback(SingleProviderResult.RequestFailed)
+                        return
+                    }
+                    try {
+                        val json = gson.fromJson(sBody, com.google.gson.JsonObject::class.java)
+                        val header = json.getAsJsonObject("message")?.getAsJsonObject("header")
+                        val statusCode = header?.get("status_code")?.asInt ?: 0
+                        if (statusCode == 200) {
+                            val subtitleObj = json.getAsJsonObject("message")?.getAsJsonObject("body")?.getAsJsonObject("subtitle")
+                            val subtitleBody = subtitleObj?.get("subtitle_body")?.asString
+                            if (!subtitleBody.isNullOrBlank()) {
+                                val parsedLines = parseLrcText(subtitleBody, durationMs)
+                                if (!parsedLines.isNullOrEmpty()) {
+                                    callback(SingleProviderResult.Success(parsedLines))
+                                    return
+                                }
+                            }
+                        } else if (statusCode == 401 || statusCode == 402 || statusCode == 403 || statusCode >= 500) {
+                            callback(SingleProviderResult.RequestFailed)
+                            return
+                        }
+                    } catch (e: Exception) {}
+                    callback(SingleProviderResult.NoLyrics)
+                }
+            })
+        }
+    }
+
+    private fun fetchLrclibOnly(
+        title: String,
+        artist: String,
+        durationMs: Long,
+        callback: (SingleProviderResult) -> Unit
+    ) {
+        val candidates = TrackQuery.buildQueries(title, artist)
+        if (candidates.isEmpty()) {
+            callback(SingleProviderResult.NoLyrics)
+            return
+        }
+        val wantedDurationSec = if (durationMs > 0) durationMs / 1000.0 else null
+        val primary = candidates.first()
+        val url = "https://lrclib.net/api/search?track_name=${URLEncoder.encode(primary.title, "UTF-8")}&artist_name=${URLEncoder.encode(primary.artist, "UTF-8")}"
+
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                callback(SingleProviderResult.RequestFailed)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (response.code == 429 || response.code >= 500) {
+                    callback(SingleProviderResult.RequestFailed)
+                    return
+                }
+                val body = response.body?.string()
+                if (!response.isSuccessful || body == null) {
+                    callback(SingleProviderResult.RequestFailed)
+                    return
+                }
+                val lines = try {
+                    pickFromSearch(body, candidates, wantedDurationSec)
+                } catch (e: Exception) {
+                    null
+                }
+                if (lines != null && lines.isNotEmpty()) {
+                    callback(SingleProviderResult.Success(lines))
+                } else {
+                    callback(SingleProviderResult.NoLyrics)
+                }
+            }
+        })
+    }
+
+    private fun fetchCustomProviderOnly(
+        title: String,
+        artist: String,
+        durationMs: Long,
+        callback: (SingleProviderResult) -> Unit
+    ) {
+        val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val customEnabled = prefs.getBoolean("custom_lyrics_enabled", false)
+        var endpoint = prefs.getString("custom_lyrics_endpoint", "") ?: ""
+        if (!customEnabled || endpoint.isBlank()) {
+            callback(SingleProviderResult.RequestFailed)
+            return
+        }
+
+        if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) {
+            endpoint = "http://$endpoint"
+        }
+        val format = prefs.getString("custom_lyrics_format", "LRC") ?: "LRC"
+        val timeoutSec = prefs.getFloat("custom_lyrics_timeout", 60f).toLong()
+
+        val urlBuilder = endpoint.toHttpUrlOrNull()?.newBuilder()
+        if (urlBuilder == null) {
+            callback(SingleProviderResult.RequestFailed)
+            return
+        }
+
+        urlBuilder.addQueryParameter("artist", artist)
+        urlBuilder.addQueryParameter("title", title)
+        urlBuilder.addQueryParameter("duration", (durationMs / 1000.0).toString())
+        urlBuilder.addQueryParameter("format", format)
+
+        val customClient = client.newBuilder()
+            .connectTimeout(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(timeoutSec, java.util.concurrent.TimeUnit.SECONDS)
+            .build()
+
+        val request = Request.Builder()
+            .url(urlBuilder.build().toString())
+            .header("User-Agent", USER_AGENT)
+            .build()
+
+        customClient.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                callback(SingleProviderResult.RequestFailed)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (response.code == 429 || response.code >= 500) {
+                    callback(SingleProviderResult.RequestFailed)
+                    return
+                }
+                val body = response.body?.string()
+                if (!response.isSuccessful || body == null) {
+                    callback(SingleProviderResult.RequestFailed)
+                    return
+                }
+                try {
+                    val lyricsText = if (format.equals("JSON", ignoreCase = true)) {
+                        val jsonObj = gson.fromJson(body, com.google.gson.JsonObject::class.java)
+                        jsonObj.get("lyrics")?.asString ?: body
+                    } else {
+                        body
+                    }
+                    val parsedLines = parseLrcText(lyricsText, durationMs, trustWordEnds = true)
+                    if (parsedLines != null && parsedLines.isNotEmpty()) {
+                        callback(SingleProviderResult.Success(parsedLines))
+                    } else {
+                        callback(SingleProviderResult.NoLyrics)
+                    }
+                } catch (e: Exception) {
+                    callback(SingleProviderResult.RequestFailed)
+                }
+            }
+        })
     }
 
     private fun showToast(message: String) {

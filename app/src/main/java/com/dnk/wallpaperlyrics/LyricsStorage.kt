@@ -154,6 +154,16 @@ class LyricsStorage(
         }
     }
 
+    fun saveCacheAndClearMiss(title: String, artist: String, lines: List<LyricLine>): Boolean {
+        val saved = saveCache(title, artist, lines)
+        val missFile = getMissFile(title, artist)
+        if (missFile.exists()) {
+            try { missFile.delete() } catch (ignored: Exception) {}
+        }
+        clearOverride(title, artist)
+        return saved
+    }
+
     fun recordMiss(title: String, artist: String, timestampMs: Long = System.currentTimeMillis()): Boolean {
         return try {
             if (!fetchedDir.exists()) {

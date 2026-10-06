@@ -209,13 +209,17 @@ class LyricsSettingsActivity : AppCompatActivity() {
                 this@LyricsSettingsActivity,
                 LS.IconType.RELOAD,
                 "Force Re-fetch Lyrics",
-                "Purge cache and reload active song from server",
+                "Purge cache and reload active song. Hold to pick a provider",
                 LS.TrailingType.CHEVRON,
                 onClick = {
                     sendBroadcast(Intent("com.dnk.wallpaperlyrics.FORCE_RELOAD_LYRICS").apply {
                         setPackage(packageName)
                     })
                     Toast.makeText(this@LyricsSettingsActivity, "Re-fetch command sent", Toast.LENGTH_SHORT).show()
+                },
+                onLongClick = {
+                    openProviderPicker()
+                    true
                 }
             ))
 
@@ -473,5 +477,24 @@ class LyricsSettingsActivity : AppCompatActivity() {
         }
 
         dialog.show()
+    }
+
+    private fun openProviderPicker() {
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val customEnabled = prefs.getBoolean("custom_lyrics_enabled", false)
+        val customEndpoint = prefs.getString("custom_lyrics_endpoint", null)
+        val options = LyricsProviders.getPickerOptions(customEnabled, customEndpoint)
+        SettingsDialogs.showOptionPickerDialog(
+            activity = this,
+            title = "Fetch from provider",
+            options = options,
+            currentValue = "",
+            onOptionSelected = { providerId ->
+                sendBroadcast(Intent("com.dnk.wallpaperlyrics.FETCH_LYRICS_FROM_PROVIDER").apply {
+                    setPackage(packageName)
+                    putExtra("provider", providerId)
+                })
+            }
+        )
     }
 }

@@ -863,6 +863,44 @@ class LyricsWallpaperService : WallpaperService() {
                             }
                         }
                     }
+                } else if (action == "com.dnk.wallpaperlyrics.FETCH_LYRICS_FROM_PROVIDER") {
+                    val providerId = intent.getStringExtra("provider") ?: return
+                    val title = currentTitle
+                    val artist = currentArtist
+                    if (!title.isNullOrBlank()) {
+                        lyricsManager.fetchFromProvider(providerId, title, artist ?: "", currentDurationMs) { result ->
+                            mainHandler.post {
+                                if (currentTitle != title) return@post
+                                when (result) {
+                                    is SingleProviderResult.Success -> {
+                                        engineScope.launch(Dispatchers.IO) {
+                                            lyricsManager.storage.saveCacheAndClearMiss(title, artist ?: "", result.lines)
+                                        }
+                                        currentLyrics = result.lines
+                                        lyricsSearchExhausted = false
+                                        lyricBitmaps?.forEach { it.recycle() }
+                                        lyricBitmaps = null
+                                        lyricLayouts = null
+                                        lineOffsets = null
+                                        titleLayout = null
+                                        artistLayout = null
+                                        metadataTitleLayout = null
+                                        metadataArtistLayout = null
+                                        snapScrollToPosition()
+                                        drawFrame(0f)
+                                        drawFrame(0f)
+                                        showToast("Lyrics loaded from ${LyricsProviders.displayName(providerId)}")
+                                    }
+                                    is SingleProviderResult.NoLyrics -> {
+                                        showToast("${LyricsProviders.displayName(providerId)}: no lyrics found")
+                                    }
+                                    is SingleProviderResult.RequestFailed -> {
+                                        showToast("${LyricsProviders.displayName(providerId)}: request failed")
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1094,6 +1132,7 @@ class LyricsWallpaperService : WallpaperService() {
             val lyricsFilter = IntentFilter().apply {
                 addAction("com.dnk.wallpaperlyrics.FORCE_RELOAD_LYRICS")
                 addAction("com.dnk.wallpaperlyrics.RELOAD_LYRICS")
+                addAction("com.dnk.wallpaperlyrics.FETCH_LYRICS_FROM_PROVIDER")
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(forceReloadLyricsReceiver, lyricsFilter, Context.RECEIVER_NOT_EXPORTED)
