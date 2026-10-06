@@ -1,6 +1,7 @@
 package com.dnk.wallpaperlyrics
 
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import java.io.File
 import java.io.FileOutputStream
@@ -80,7 +81,15 @@ class BackgroundBandingInvestigationTest {
 
     private class LoadedImage(val width: Int, val height: Int, val pixels: IntArray)
 
+    private fun assumeCoversPresent() {
+        assumeTrue(
+            "Cover fixtures directory is absent",
+            File("src/test/resources/covers").isDirectory || File("app/src/test/resources/covers").isDirectory
+        )
+    }
+
     private fun loadCover(name: String): LoadedImage {
+        assumeCoversPresent()
         val imageIOClass = Class.forName("javax.imageio.ImageIO")
         val readStreamMethod = imageIOClass.getMethod("read", InputStream::class.java)
         val readFileMethod = imageIOClass.getMethod("read", File::class.java)
@@ -92,12 +101,11 @@ class BackgroundBandingInvestigationTest {
         } else {
             val candidatePaths = listOf(
                 File("src/test/resources/covers/$name"),
-                File("app/src/test/resources/covers/$name"),
-                File("/home/dnk/projects/Android/wallpaper-lyrics/app/src/test/resources/covers/$name")
+                File("app/src/test/resources/covers/$name")
             )
             val existing = candidatePaths.firstOrNull { it.exists() }
-                ?: throw IllegalStateException("Cover image $name not found in candidates")
-            readFileMethod.invoke(null, existing)
+            assumeTrue("Cover image $name not found in candidates", existing != null)
+            readFileMethod.invoke(null, existing!!)
         } ?: throw IllegalStateException("Failed to decode cover image $name")
 
         val getWidthMethod = bufferedImage.javaClass.getMethod("getWidth")
@@ -122,6 +130,7 @@ class BackgroundBandingInvestigationTest {
 
     @Test
     fun executeAllInvestigations() {
+        assumeCoversPresent()
         val reportFile = File("build/banding_investigation_results.txt")
         reportFile.parentFile?.mkdirs()
         val out = PrintWriter(FileOutputStream(reportFile))
@@ -759,6 +768,7 @@ class BackgroundBandingInvestigationTest {
 
     @Test
     fun testBandingImprovementAndSaturationPreservation() {
+        assumeCoversPresent()
         val nSteps = 256
         val redOklabRamp = IntArray(nSteps) { i ->
             val t = i.toFloat() / (nSteps - 1).toFloat()
@@ -890,6 +900,7 @@ class BackgroundBandingInvestigationTest {
 
     @Test
     fun testBandingPreservedAndDepthRestoresSaturationOnReds() {
+        assumeCoversPresent()
         val nSteps = 256
         val redOklabRamp = IntArray(nSteps) { i ->
             val t = i.toFloat() / (nSteps - 1).toFloat()

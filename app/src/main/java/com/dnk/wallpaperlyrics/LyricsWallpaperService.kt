@@ -1055,7 +1055,7 @@ class LyricsWallpaperService : WallpaperService() {
                 MediaMetadata.Builder()
                     .putString(MediaMetadata.METADATA_KEY_TITLE, "Demo Song")
                     .putString(MediaMetadata.METADATA_KEY_ARTIST, "Demo Artist")
-                    .putString(MediaMetadata.METADATA_KEY_ALBUM, "Not Quite Connected")
+                    .putString(MediaMetadata.METADATA_KEY_ALBUM, "Demo Album")
                     .putLong(MediaMetadata.METADATA_KEY_DURATION, 229_000L)
                     .putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, art)
                     .build()
