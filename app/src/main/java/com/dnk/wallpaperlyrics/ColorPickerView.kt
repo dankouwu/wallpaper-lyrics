@@ -31,8 +31,8 @@ class SaturationValueView @JvmOverloads constructor(
 
     private val handleOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = Color.BLACK
-        strokeWidth = LS.dpToPx(context, 3.5f).toFloat()
+        color = 0x4D000000
+        strokeWidth = LS.dpToPx(context, 4f).toFloat()
     }
 
     private val handleInnerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -154,8 +154,8 @@ class HueSliderView @JvmOverloads constructor(
 
     private val handleOuterPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        color = Color.BLACK
-        strokeWidth = LS.dpToPx(context, 3.5f).toFloat()
+        color = 0x4D000000
+        strokeWidth = LS.dpToPx(context, 4f).toFloat()
     }
 
     private val handleInnerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
