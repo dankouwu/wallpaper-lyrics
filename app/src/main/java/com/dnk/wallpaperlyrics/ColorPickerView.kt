@@ -41,6 +41,8 @@ class SaturationValueView @JvmOverloads constructor(
         strokeWidth = LS.dpToPx(context, 2f).toFloat()
     }
 
+    private val handleOuterExtent = handleRadius + handleOuterPaint.strokeWidth / 2f
+
     private var currentHue: Float = 0f
     private var saturation: Float = 1f
     private var value: Float = 1f
@@ -49,8 +51,8 @@ class SaturationValueView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // Reserve padding equal to handle radius to prevent clipping at extremes
-        trackRect.set(handleRadius, handleRadius, w.toFloat() - handleRadius, h.toFloat() - handleRadius)
+        // Reserve padding equal to handle outer extent to prevent clipping at extremes
+        trackRect.set(handleOuterExtent, handleOuterExtent, w.toFloat() - handleOuterExtent, h.toFloat() - handleOuterExtent)
         updateShaders()
     }
 
@@ -164,6 +166,8 @@ class HueSliderView @JvmOverloads constructor(
         strokeWidth = LS.dpToPx(context, 2f).toFloat()
     }
 
+    private val handleOuterExtent = handleRadius + handleOuterPaint.strokeWidth / 2f
+
     private var hue: Float = 0f
 
     var onHueChanged: ((Float) -> Unit)? = null
@@ -171,8 +175,8 @@ class HueSliderView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         val top = (h.toFloat() - trackHeight) / 2f
-        // Reserve padding equal to handle radius to prevent handle clipping at both ends
-        trackRect.set(handleRadius, top, w.toFloat() - handleRadius, top + trackHeight)
+        // Reserve padding equal to handle outer extent to prevent handle clipping at both ends
+        trackRect.set(handleOuterExtent, top, w.toFloat() - handleOuterExtent, top + trackHeight)
         if (trackRect.width() > 0f) {
             trackPaint.shader = LinearGradient(
                 trackRect.left, 0f, trackRect.right, 0f,
