@@ -1,16 +1,12 @@
 <div align="center">
 
-![Wallpaper Lyrics 2.3.0](.github/previews/version.png)
-
-# Wallpaper Lyrics
+<h1><img src=".github/previews/version.png" alt="Wallpaper Lyrics 2.3.0"></h1>
 
 An Android live wallpaper that shows the lyrics of whatever you are playing, in time with the music, over a background painted from the album art.
 
 [![Latest release](https://img.shields.io/github/v/release/dankouwu/wallpaper-lyrics?sort=semver&display_name=tag&label=download&color=3DDC84)](https://github.com/dankouwu/wallpaper-lyrics/releases/latest) [![Runs on Android 8.0+](https://img.shields.io/badge/runs%20on-Android%208.0%2B-3DDC84?logo=android&logoColor=white)](#install) [![Fluid background on Android 13+](https://img.shields.io/badge/fluid%20background-Android%2013%2B-5B8DEF)](#the-background) [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-lightgrey)](LICENSE)
 
 **[Download](https://github.com/dankouwu/wallpaper-lyrics/releases/latest)** · [Report a bug](https://github.com/dankouwu/wallpaper-lyrics/issues/new?template=bug.yml) · [Suggest a feature](https://github.com/dankouwu/wallpaper-lyrics/issues/new?template=feature.yml)
-
-![Wallpaper Lyrics](.github/previews/banner.png)
 
 </div>
 
@@ -23,6 +19,8 @@ Where the timing data allows it, words light up one at a time instead of whole l
 Musixmatch publishes per word timing for a good part of the catalogue. When a track has none, it falls back to line timing, which most tracks have. For the rest, paste your own enhanced LRC or point the app at a custom provider.
 
 ## On the phone
+
+![Wallpaper Lyrics](.github/previews/banner.png)
 
 <p align="center">
   <img src=".github/previews/preview_1.gif" alt="Wallpaper preview" width="32%">
