@@ -377,7 +377,7 @@ class DebugTuningActivity : Activity() {
         paletteRowContainer.addView(buttonsRow)
 
         val noteTextView = TextView(this).apply {
-            text = "Applies when the idle colours are at their defaults (Reset Colors)"
+            text = "Applies when the idle colors are at their defaults (Reset Colors)"
             textSize = 12f
             setTextColor(Color.parseColor("#8E8E93"))
             layoutParams = LinearLayout.LayoutParams(

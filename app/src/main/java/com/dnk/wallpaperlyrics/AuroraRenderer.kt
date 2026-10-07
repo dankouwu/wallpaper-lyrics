@@ -971,7 +971,7 @@ object AuroraRenderer {
     }
 
     internal fun maxChromaAt(lightness: Float, hueA: Float, hueB: Float): Float {
-        // In sRGB, no realisable colour exceeds chroma 0.45 at any lightness level.
+        // In sRGB, no realisable color exceeds chroma 0.45 at any lightness level.
         var lo = 0f
         var hi = 0.45f
         for (i in 0 until 12) {

@@ -541,12 +541,16 @@ object SettingsDialogs {
         titleRow.addView(closeButton)
         container.addView(titleRow)
 
+        // Deriving hue from RGB loses it whenever value or saturation reaches zero:
+        // dragging the handle into the black corner and back with an RGB source of truth
+        // resets hue to red. Storing HSV directly preserves hue across the entire SV surface.
         val initialHsv = FloatArray(3)
         Color.colorToHSV(initialColor or 0xFF000000.toInt(), initialHsv)
         var currentHue = initialHsv[0]
         var currentSaturation = initialHsv[1]
         var currentValue = initialHsv[2]
 
+        // Single suppression flag to break watcher feedback loops during programmatic setText
         var isProgrammaticUpdate = false
 
         val previewSwatch = View(activity).apply {

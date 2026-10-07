@@ -176,7 +176,7 @@ class IdleScreenSettingsTest {
     }
 
     @Test
-    fun `addSavedColor prepends a new colour`() {
+    fun `addSavedColor prepends a new color`() {
         val existing = listOf(0xFF0A0B1A.toInt(), 0xFF7A22FF.toInt())
         val newColor = 0xFFFF0055.toInt()
         val result = IdleScreenSettings.addSavedColor(existing, newColor)
@@ -184,7 +184,7 @@ class IdleScreenSettingsTest {
     }
 
     @Test
-    fun `addSavedColor moves existing colour to front without duplicating leaving size unchanged`() {
+    fun `addSavedColor moves existing color to front without duplicating leaving size unchanged`() {
         val color1 = 0xFFFF0055.toInt()
         val color2 = 0xFF0A0B1A.toInt()
         val color3 = 0xFF7A22FF.toInt()

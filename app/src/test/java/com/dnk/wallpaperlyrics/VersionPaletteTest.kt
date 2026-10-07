@@ -24,13 +24,13 @@ class VersionPaletteTest {
     )
 
     @Test
-    fun `forVersion 2 2 0 returns pinned four colours`() {
+    fun `forVersion 2 2 0 returns pinned four colors`() {
         val palette = VersionPalette.forVersion("2.2.0")
         assertArrayEquals(pinned220, palette)
     }
 
     @Test
-    fun `forVersion 2 3 0 returns pinned four colours`() {
+    fun `forVersion 2 3 0 returns pinned four colors`() {
         val palette = VersionPalette.forVersion("2.3.0")
         assertArrayEquals(pinned230, palette)
     }
@@ -112,7 +112,7 @@ class VersionPaletteTest {
     )
 
     @Test
-    fun `every generated colour has OKLab L within target plus or minus 0 031`() {
+    fun `every generated color has OKLab L within target plus or minus 0 031`() {
         for (seed in 1..20) {
             val palette = VersionPalette.generate(seed)
             for (role in 0 until 4) {

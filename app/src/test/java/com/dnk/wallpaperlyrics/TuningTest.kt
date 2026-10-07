@@ -238,7 +238,7 @@ class TuningTest {
         assertEquals(1100f, valAt500, 0.0001f)
     }
 
-    // Wave B tests: Background colour parameters
+    // Wave B tests: Background color parameters
     @Test
     fun testChromaExponentDefaultEqualsHardcodedConstant() {
         assertEquals(0.30f, Tuning.CHROMA_EXPONENT.defaultValue, 0.0001f)
@@ -392,7 +392,7 @@ class TuningTest {
     fun testAllGroupsPresent() {
         assertEquals(5, Tuning.groups.size)
         assertTrue(Tuning.groups.contains(Tuning.GROUP_WORD_MOTION))
-        assertTrue(Tuning.groups.contains(Tuning.GROUP_BACKGROUND_COLOUR))
+        assertTrue(Tuning.groups.contains(Tuning.GROUP_BACKGROUND_COLOR))
         assertTrue(Tuning.groups.contains(Tuning.GROUP_SHADER_MOTION))
         assertTrue(Tuning.groups.contains(Tuning.GROUP_LYRIC_TIMING))
         assertTrue(Tuning.groups.contains(Tuning.GROUP_INSTRUMENTAL_DOTS))
@@ -400,7 +400,7 @@ class TuningTest {
 
     @Test
     fun testResetGroupForEveryWaveBGroup() {
-        for (group in listOf(Tuning.GROUP_BACKGROUND_COLOUR, Tuning.GROUP_SHADER_MOTION, Tuning.GROUP_LYRIC_TIMING)) {
+        for (group in listOf(Tuning.GROUP_BACKGROUND_COLOR, Tuning.GROUP_SHADER_MOTION, Tuning.GROUP_LYRIC_TIMING)) {
             val params = Tuning.allParams.filter { it.group == group }
             for (p in params) {
                 p.value = p.max

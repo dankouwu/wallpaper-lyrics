@@ -176,8 +176,8 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 val dynRow = LS.SettingsRow(
                     this@BackgroundSettingsActivity,
                     LS.IconType.PALETTE,
-                    "Album Colours On System Theme",
-                    "Recolour Quick Settings and the launcher to match the current album art",
+                    "Album Colors On System Theme",
+                    "Recolor Quick Settings and the launcher to match the current album art",
                     LS.TrailingType.SWITCH,
                     prefs.getBoolean("dynamic_theming", false).toString(),
                     onCheckedChange = { checked ->

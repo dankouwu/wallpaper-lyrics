@@ -18,7 +18,7 @@ An Android live wallpaper that shows the lyrics of whatever you are playing, in 
 
 A wallpaper, not an app you sit in. The launcher icon opens settings and nothing else. Start something in any player that publishes a media session, go back to the home screen, and the lyrics are already there and already scrolling.
 
-Where the timing data allows it, words light up one at a time instead of whole lines. Each word grows as it is sung, overshoots a little and settles slightly larger than the words still waiting, and the letters of a held word take turns, each one rising as the colour sweep crosses it and overlapping its neighbours. The line stays in focus until its last word has settled, and the view follows on a spring rather than jumping to the next line. When two lines overlap, a line's last word keeps filling in while the next line takes over.
+Where the timing data allows it, words light up one at a time instead of whole lines. Each word grows as it is sung, overshoots a little and settles slightly larger than the words still waiting, and the letters of a held word take turns, each one rising as the color sweep crosses it and overlapping its neighbours. The line stays in focus until its last word has settled, and the view follows on a spring rather than jumping to the next line. When two lines overlap, a line's last word keeps filling in while the next line takes over.
 
 Musixmatch publishes per word timing for a good part of the catalogue. When a track has none, it falls back to line timing, which most tracks have. For the rest, paste your own enhanced LRC or point the app at a custom provider.
 

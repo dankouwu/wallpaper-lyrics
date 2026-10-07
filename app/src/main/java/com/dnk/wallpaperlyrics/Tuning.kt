@@ -14,7 +14,7 @@ object Tuning {
     const val PREFS_NAME = "debug_tuning_overrides"
 
     const val GROUP_WORD_MOTION = "Word Motion Curves"
-    const val GROUP_BACKGROUND_COLOUR = "Background Colour"
+    const val GROUP_BACKGROUND_COLOR = "Background Color"
     const val GROUP_SHADER_MOTION = "Shader & Background Motion"
     const val GROUP_LYRIC_TIMING = "Lyric Timing Windows"
     const val GROUP_INSTRUMENTAL_DOTS = "Instrumental Dots"
@@ -71,17 +71,17 @@ object Tuning {
     val WORD_SETTLE_DURATION_MS = Tunable("wordSettleDurationMs", "Word settle duration (ms)", "Time the word takes to fall from its peak back to normal size.", GROUP_WORD_MOTION, 150f, 1200f, 420f, isInteger = true)
     val WORD_SPACING = Tunable("wordSpacing", "Word spacing", "Width of the gap between words, as a multiple of a normal space.", GROUP_WORD_MOTION, 1.00f, 3.00f, 1.15f)
 
-    // Group 2: Background colour
-    val CHROMA_EXPONENT = Tunable("bg_saturation", "Chroma exponent", "Overall colour strength of the background. Drag right for more saturated.", GROUP_BACKGROUND_COLOUR, AuroraRenderer.MIN_CHROMA_EXPONENT, AuroraRenderer.MAX_CHROMA_EXPONENT, AuroraRenderer.DEFAULT_CHROMA_EXPONENT, inverted = true)
-    val LINEAR_BOOST = Tunable("linearBoost", "Linear chroma boost", "Cap on how hard near grey pixels are pushed. Low keeps whites and greys neutral, high lets them take on a tint.", GROUP_BACKGROUND_COLOUR, 1.0f, 10.0f, AuroraRenderer.DEFAULT_LINEAR_BOOST)
-    val BACKGROUND_DEPTH = Tunable("backgroundDepth", "Background depth", "Darkens the most colourful areas so the background has some depth.", GROUP_BACKGROUND_COLOUR, 0.0f, 0.50f, AuroraRenderer.DEFAULT_BACKGROUND_DEPTH)
-    val DEPTH_GATE_LOW = Tunable("depthGateLow", "Depth gate low", "How colourful a pixel has to be before that darkening starts.", GROUP_BACKGROUND_COLOUR, 0.0f, 1.0f, AuroraRenderer.DEFAULT_DEPTH_GATE_LOW)
-    val DEPTH_GATE_HIGH = Tunable("depthGateHigh", "Depth gate high", "How colourful a pixel has to be to get the full darkening.", GROUP_BACKGROUND_COLOUR, 0.0f, 1.0f, AuroraRenderer.DEFAULT_DEPTH_GATE_HIGH)
-    val GAMUT_CAP_FRACTION = Tunable("gamutCapFraction", "Gamut cap fraction", "Ceiling on colour, as a fraction of the most the screen can show. Below 1 leaves headroom so strong colours do not clip.", GROUP_BACKGROUND_COLOUR, 0.80f, 1.00f, AuroraRenderer.DEFAULT_GAMUT_CAP_FRACTION)
-    val LIGHTNESS_CAP_KNEE = Tunable("lightnessCapKnee", "Lightness cap knee", "Brightness at which bright covers start being eased down.", GROUP_BACKGROUND_COLOUR, 0.40f, 0.80f, AuroraRenderer.LIGHTNESS_CAP_KNEE)
-    val LIGHTNESS_CAP_CEILING = Tunable("lightnessCapCeiling", "Lightness cap ceiling", "Brightest the background is allowed to get, so white lyrics stay readable.", GROUP_BACKGROUND_COLOUR, 0.65f, 0.95f, AuroraRenderer.LIGHTNESS_CAP_CEILING)
-    val LIGHTNESS_CAP_STRENGTH = Tunable("lightnessCapStrength", "Lightness cap strength", "How firmly that brightness cap is applied. 0 turns it off.", GROUP_BACKGROUND_COLOUR, 0.0f, 1.0f, AuroraRenderer.LIGHTNESS_CAP_STRENGTH)
-    val SHADER_DITHER_AMPLITUDE = Tunable("shaderDitherAmplitude", "Shader dither amplitude", "Noise added just before the picture drops to 8 bit, to break up banding in smooth gradients.", GROUP_BACKGROUND_COLOUR, 0.0f, 0.05f, AuroraRenderer.DEFAULT_DITHER_AMPLITUDE)
+    // Group 2: Background color
+    val CHROMA_EXPONENT = Tunable("bg_saturation", "Chroma exponent", "Overall color strength of the background. Drag right for more saturated.", GROUP_BACKGROUND_COLOR, AuroraRenderer.MIN_CHROMA_EXPONENT, AuroraRenderer.MAX_CHROMA_EXPONENT, AuroraRenderer.DEFAULT_CHROMA_EXPONENT, inverted = true)
+    val LINEAR_BOOST = Tunable("linearBoost", "Linear chroma boost", "Cap on how hard near grey pixels are pushed. Low keeps whites and greys neutral, high lets them take on a tint.", GROUP_BACKGROUND_COLOR, 1.0f, 10.0f, AuroraRenderer.DEFAULT_LINEAR_BOOST)
+    val BACKGROUND_DEPTH = Tunable("backgroundDepth", "Background depth", "Darkens the most colorful areas so the background has some depth.", GROUP_BACKGROUND_COLOR, 0.0f, 0.50f, AuroraRenderer.DEFAULT_BACKGROUND_DEPTH)
+    val DEPTH_GATE_LOW = Tunable("depthGateLow", "Depth gate low", "How colorful a pixel has to be before that darkening starts.", GROUP_BACKGROUND_COLOR, 0.0f, 1.0f, AuroraRenderer.DEFAULT_DEPTH_GATE_LOW)
+    val DEPTH_GATE_HIGH = Tunable("depthGateHigh", "Depth gate high", "How colorful a pixel has to be to get the full darkening.", GROUP_BACKGROUND_COLOR, 0.0f, 1.0f, AuroraRenderer.DEFAULT_DEPTH_GATE_HIGH)
+    val GAMUT_CAP_FRACTION = Tunable("gamutCapFraction", "Gamut cap fraction", "Ceiling on color, as a fraction of the most the screen can show. Below 1 leaves headroom so strong colors do not clip.", GROUP_BACKGROUND_COLOR, 0.80f, 1.00f, AuroraRenderer.DEFAULT_GAMUT_CAP_FRACTION)
+    val LIGHTNESS_CAP_KNEE = Tunable("lightnessCapKnee", "Lightness cap knee", "Brightness at which bright covers start being eased down.", GROUP_BACKGROUND_COLOR, 0.40f, 0.80f, AuroraRenderer.LIGHTNESS_CAP_KNEE)
+    val LIGHTNESS_CAP_CEILING = Tunable("lightnessCapCeiling", "Lightness cap ceiling", "Brightest the background is allowed to get, so white lyrics stay readable.", GROUP_BACKGROUND_COLOR, 0.65f, 0.95f, AuroraRenderer.LIGHTNESS_CAP_CEILING)
+    val LIGHTNESS_CAP_STRENGTH = Tunable("lightnessCapStrength", "Lightness cap strength", "How firmly that brightness cap is applied. 0 turns it off.", GROUP_BACKGROUND_COLOR, 0.0f, 1.0f, AuroraRenderer.LIGHTNESS_CAP_STRENGTH)
+    val SHADER_DITHER_AMPLITUDE = Tunable("shaderDitherAmplitude", "Shader dither amplitude", "Noise added just before the picture drops to 8 bit, to break up banding in smooth gradients.", GROUP_BACKGROUND_COLOR, 0.0f, 0.05f, AuroraRenderer.DEFAULT_DITHER_AMPLITUDE)
 
     // Group 3: Shader and background motion
     val VIGNETTE_STRENGTH = Tunable("vignetteStrength", "Vignette strength", "How much the corners of the screen are darkened.", GROUP_SHADER_MOTION, 0.0f, 1.0f, 0.30f)
@@ -167,7 +167,7 @@ object Tuning {
 
     val groups: List<String> = listOf(
         GROUP_WORD_MOTION,
-        GROUP_BACKGROUND_COLOUR,
+        GROUP_BACKGROUND_COLOR,
         GROUP_SHADER_MOTION,
         GROUP_LYRIC_TIMING,
         GROUP_INSTRUMENTAL_DOTS
@@ -290,7 +290,7 @@ object Tuning {
         get() = WORD_SPACING.value
         set(v) { WORD_SPACING.value = v }
 
-    // Direct accessors: Group 2 (Background colour)
+    // Direct accessors: Group 2 (Background color)
     var chromaExponent: Float
         get() = CHROMA_EXPONENT.value
         set(v) { CHROMA_EXPONENT.value = v }

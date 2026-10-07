@@ -310,7 +310,7 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `mean colour is preserved between dithered and undithered fields`() {
+    fun `mean color is preserved between dithered and undithered fields`() {
         val width = 64
         val height = 64
         val c1 = (0xFF shl 24) or (18 shl 16) or (15 shl 8) or 23

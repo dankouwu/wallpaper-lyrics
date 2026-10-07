@@ -13,7 +13,7 @@ body:
       label: Area
       description: Which part of the wallpaper this feature relates to
       options:
-        - Background or colour
+        - Background or color
         - Lyrics or timing
         - Player detection or notification controls
         - Something else

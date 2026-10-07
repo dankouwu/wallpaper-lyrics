@@ -120,7 +120,7 @@ class IdleFieldTest {
     }
 
     @Test
-    fun pureColoursAppear() {
+    fun pureColorsAppear() {
         val out = IntArray(128 * 128)
         AuroraRenderer.composeIdleField(testPalette, 128, 128, out)
         val threshold = 0.01f
@@ -221,7 +221,7 @@ class IdleFieldTest {
     }
 
     @Test
-    fun fourIdenticalColoursGiveExactColourEverywhere() {
+    fun fourIdenticalColorsGiveExactColorEverywhere() {
         val singleColor = 0xFF3B82F6.toInt()
         val palette = intArrayOf(singleColor, singleColor, singleColor, singleColor)
         val out = IntArray(128 * 128)
