@@ -1,5 +1,7 @@
 <div align="center">
 
+![Wallpaper Lyrics 2.3.0](.github/previews/version.png)
+
 # Wallpaper Lyrics
 
 An Android live wallpaper that shows the lyrics of whatever you are playing, in time with the music, over a background painted from the album art.
