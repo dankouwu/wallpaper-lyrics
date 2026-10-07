@@ -4,7 +4,9 @@ import android.app.Activity
 import android.app.Dialog
 import android.content.ComponentName
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.media.session.MediaSessionManager
@@ -512,20 +514,13 @@ object SettingsDialogs {
             setPadding(0, 0, 0, LS.dpToPx(activity, 16f))
         }
 
-        val titleText = TextView(activity).apply {
-            text = title
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-        titleRow.addView(titleText)
-
         val closeButton = ImageView(activity).apply {
             val arrowDrawable = LS.CustomIconDrawable(activity, LS.IconType.ARROW_LEFT)
             setImageDrawable(arrowDrawable)
             val size = LS.dpToPx(activity, 48f)
-            layoutParams = LinearLayout.LayoutParams(size, size)
+            layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                leftMargin = -LS.dpToPx(activity, 12f)
+            }
             setPadding(
                 LS.dpToPx(activity, 12f),
                 LS.dpToPx(activity, 12f),
@@ -539,6 +534,15 @@ object SettingsDialogs {
             setOnClickListener { dialog.dismiss() }
         }
         titleRow.addView(closeButton)
+
+        val titleText = TextView(activity).apply {
+            text = title
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        titleRow.addView(titleText)
         container.addView(titleRow)
 
         // Deriving hue from RGB loses it whenever value or saturation reaches zero:
@@ -860,11 +864,23 @@ object SettingsDialogs {
             setBackgroundResource(outVal.resourceId)
         }
 
-        val plusInner = TextView(activity).apply {
-            text = "+"
-            textSize = 20f
-            setTextColor(Color.parseColor("#E0E0E0"))
-            gravity = Gravity.CENTER
+        val plusInner = object : View(activity) {
+            private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.parseColor("#E0E0E0")
+                style = Paint.Style.STROKE
+                strokeWidth = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1.5f, resources.displayMetrics)
+                strokeCap = Paint.Cap.ROUND
+            }
+            private val halfLen = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 6f, resources.displayMetrics)
+
+            override fun onDraw(canvas: Canvas) {
+                super.onDraw(canvas)
+                val cx = width / 2f
+                val cy = height / 2f
+                canvas.drawLine(cx - halfLen, cy, cx + halfLen, cy, strokePaint)
+                canvas.drawLine(cx, cy - halfLen, cx, cy + halfLen, strokePaint)
+            }
+        }.apply {
             layoutParams = android.widget.FrameLayout.LayoutParams(
                 LS.dpToPx(activity, 28f),
                 LS.dpToPx(activity, 28f)
