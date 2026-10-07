@@ -11,6 +11,12 @@ object VersionPalette {
             0xFFD31277.toInt(),
             0xFF56BD54.toInt(),
             0xFF00DFFF.toInt()
+        ),
+        "2.3.0" to intArrayOf(
+            0xFF5A6F33.toInt(),
+            0xFF00858A.toInt(),
+            0xFFFA812A.toInt(),
+            0xFF86D773.toInt()
         )
     )
 
@@ -25,21 +31,8 @@ object VersionPalette {
     private val TARGET_L = floatArrayOf(0.5355f, 0.5682f, 0.7135f, 0.8300f)
     private val TARGET_C = floatArrayOf(0.0913f, 0.2246f, 0.1731f, 0.1452f)
 
-    fun schemeForVersion(versionName: String): String {
-        val trimmed = versionName.trim()
-        if (PINNED_VERSIONS.containsKey(trimmed)) {
-            return "Pinned"
-        }
-        val seed = fnv1a32(trimmed)
-        val rng = XorShift32(seed)
-        rng.nextFloat()
-        return when (rng.nextInt(4)) {
-            0 -> "Analogous"
-            1 -> "Triadic"
-            2 -> "Split complementary"
-            3 -> "Complementary"
-            else -> "Unknown"
-        }
+    fun isPinned(versionName: String): Boolean {
+        return PINNED_VERSIONS.containsKey(versionName.trim())
     }
 
     fun forVersion(versionName: String): IntArray {
@@ -48,8 +41,24 @@ object VersionPalette {
         if (pinned != null) {
             return pinned.clone()
         }
+        val highest = PINNED_VERSIONS.keys.maxWithOrNull(::compareVersions)
+        return (if (highest != null) PINNED_VERSIONS[highest] else null)?.clone()
+            ?: intArrayOf(0xFF5A6F33.toInt(), 0xFF00858A.toInt(), 0xFFFA812A.toInt(), 0xFF86D773.toInt())
+    }
 
-        val seed = fnv1a32(trimmed)
+    private fun compareVersions(v1: String, v2: String): Int {
+        val p1 = v1.split('.').map { it.takeWhile { ch -> ch.isDigit() }.toIntOrNull() ?: 0 }
+        val p2 = v2.split('.').map { it.takeWhile { ch -> ch.isDigit() }.toIntOrNull() ?: 0 }
+        val length = maxOf(p1.size, p2.size)
+        for (i in 0 until length) {
+            val c1 = p1.getOrElse(i) { 0 }
+            val c2 = p2.getOrElse(i) { 0 }
+            if (c1 != c2) return c1.compareTo(c2)
+        }
+        return 0
+    }
+
+    fun generate(seed: Int): IntArray {
         val rng = XorShift32(seed)
         val h0 = rng.nextFloat() * 360f
         val scheme = SCHEMES[rng.nextInt(4)]
@@ -93,16 +102,6 @@ object VersionPalette {
         }
 
         return result
-    }
-
-    private fun fnv1a32(text: String): Int {
-        var hash = 0x811C9DC5.toInt()
-        val bytes = text.toByteArray(Charsets.UTF_8)
-        for (b in bytes) {
-            hash = hash xor (b.toInt() and 0xFF)
-            hash *= 0x01000193
-        }
-        return hash
     }
 
     private fun inGamut(L: Float, a: Float, b: Float): Boolean {

@@ -19,7 +19,7 @@ object Tuning {
     const val GROUP_LYRIC_TIMING = "Lyric Timing Windows"
     const val GROUP_INSTRUMENTAL_DOTS = "Instrumental Dots"
 
-    var paletteVersionOverride: String = ""
+    var paletteOverride: IntArray = intArrayOf()
 
     class Tunable(
         val key: String,
@@ -415,7 +415,7 @@ object Tuning {
     }
 
     fun resetAll() {
-        paletteVersionOverride = ""
+        paletteOverride = intArrayOf()
         for (param in allParams) {
             param.reset()
         }
@@ -424,7 +424,13 @@ object Tuning {
     fun load(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val settingsPrefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-        paletteVersionOverride = prefs.getString("paletteVersionOverride", "") ?: ""
+        val storedPalette = prefs.getString("paletteOverride", "") ?: ""
+        val parsedPalette = if (storedPalette.isNotBlank()) {
+            storedPalette.split(",").mapNotNull { IdleScreenSettings.parseHexColor(it) }
+        } else {
+            emptyList()
+        }
+        paletteOverride = if (parsedPalette.size == 4) parsedPalette.toIntArray() else intArrayOf()
         for (param in allParams) {
             if (prefs.contains(param.key)) {
                 param.value = prefs.getFloat(param.key, param.defaultValue)
@@ -438,10 +444,10 @@ object Tuning {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val settingsPrefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         val editor = prefs.edit()
-        if (paletteVersionOverride.isBlank()) {
-            editor.remove("paletteVersionOverride")
+        if (paletteOverride.size == 4) {
+            editor.putString("paletteOverride", paletteOverride.joinToString(",") { IdleScreenSettings.formatHexColor(it) })
         } else {
-            editor.putString("paletteVersionOverride", paletteVersionOverride)
+            editor.remove("paletteOverride")
         }
         for (param in allParams) {
             if (param.isModified) {

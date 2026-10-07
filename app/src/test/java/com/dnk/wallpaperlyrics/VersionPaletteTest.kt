@@ -3,10 +3,8 @@ package com.dnk.wallpaperlyrics
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.hypot
 import kotlin.math.sqrt
 
 class VersionPaletteTest {
@@ -18,17 +16,49 @@ class VersionPaletteTest {
         0xFF00DFFF.toInt()
     )
 
-    private val roleTargetL = floatArrayOf(
-        0.5355f, // Accent
-        0.5682f, // Base
-        0.7135f, // Mid
-        0.8300f  // Highlight
+    private val pinned230 = intArrayOf(
+        0xFF5A6F33.toInt(),
+        0xFF00858A.toInt(),
+        0xFFFA812A.toInt(),
+        0xFF86D773.toInt()
     )
 
     @Test
     fun `forVersion 2 2 0 returns pinned four colours`() {
         val palette = VersionPalette.forVersion("2.2.0")
         assertArrayEquals(pinned220, palette)
+    }
+
+    @Test
+    fun `forVersion 2 3 0 returns pinned four colours`() {
+        val palette = VersionPalette.forVersion("2.3.0")
+        assertArrayEquals(pinned230, palette)
+    }
+
+    @Test
+    fun `forVersion with unpinned name returns palette of highest pinned version`() {
+        val palette999 = VersionPalette.forVersion("9.9.9")
+        assertArrayEquals(pinned230, palette999)
+
+        val palette100 = VersionPalette.forVersion("1.0.0")
+        assertArrayEquals(pinned230, palette100)
+    }
+
+    @Test
+    fun `isPinned identifies pinned and unpinned versions`() {
+        assertTrue(VersionPalette.isPinned("2.2.0"))
+        assertTrue(VersionPalette.isPinned("2.3.0"))
+        assertTrue(VersionPalette.isPinned(" 2.3.0 "))
+        assertFalse(VersionPalette.isPinned("2.2.1"))
+        assertFalse(VersionPalette.isPinned("9.9.9"))
+    }
+
+    @Test
+    fun `current build version has a pinned palette`() {
+        assertTrue(
+            "Add four hex codes for ${BuildConfig.VERSION_NAME} to PINNED_VERSIONS in VersionPalette.kt",
+            VersionPalette.isPinned(BuildConfig.VERSION_NAME)
+        )
     }
 
     @Test
@@ -41,28 +71,55 @@ class VersionPaletteTest {
     }
 
     @Test
-    fun `generated palettes are unique across releases and differ from pinned 2 2 0`() {
-        val versions = listOf("2.2.0", "2.2.1", "2.3.0", "2.4.0", "3.0.0", "10.0.0")
-        val palettes = versions.map { VersionPalette.forVersion(it).toList() }
-        val distinctPalettes = palettes.distinct()
-        assertEquals("Each version must produce a distinct palette", versions.size, distinctPalettes.size)
+    fun `generated palettes for seeds 1 to 300 are opaque and neighbouring roles separated by at least 0 08 in OKLab`() {
+        val adjacentPairs = listOf(
+            Pair(0, 1),
+            Pair(0, 2),
+            Pair(1, 3),
+            Pair(2, 3)
+        )
+        for (seed in 1..300) {
+            val palette = VersionPalette.generate(seed)
+            assertEquals(4, palette.size)
+            for (role in 0 until 4) {
+                val alpha = (palette[role] ushr 24) and 0xFF
+                assertEquals("Role $role in seed $seed must be opaque", 0xFF, alpha)
+            }
+            for ((r1, r2) in adjacentPairs) {
+                val dist = oklabDeltaE(palette[r1], palette[r2])
+                assertTrue(
+                    "Adjacent roles $r1 and $r2 in seed $seed too close (OKLab distance $dist < 0.08)",
+                    dist >= 0.08f
+                )
+            }
+        }
     }
 
     @Test
-    fun `every generated colour is opaque and has OKLab L within target plus or minus 0 031`() {
-        val versions = listOf("2.2.1", "2.3.0", "2.4.0", "2.5.0", "3.0.0", "10.0.0")
-        for (version in versions) {
-            val palette = VersionPalette.forVersion(version)
-            assertEquals("Palette must contain 4 roles", 4, palette.size)
-            for (role in 0 until 4) {
-                val color = palette[role]
-                val alpha = (color ushr 24) and 0xFF
-                assertEquals("Color at role $role in version $version must be opaque", 0xFF, alpha)
+    fun `forVersion returns clone protecting internal pinned array from mutation`() {
+        val p1 = VersionPalette.forVersion("2.3.0")
+        val originalColor = p1[0]
+        p1[0] = 0
+        val p2 = VersionPalette.forVersion("2.3.0")
+        assertEquals(originalColor, p2[0])
+    }
 
-                val actualL = oklabL(color)
+    private val roleTargetL = floatArrayOf(
+        0.5355f, // Accent
+        0.5682f, // Base
+        0.7135f, // Mid
+        0.8300f  // Highlight
+    )
+
+    @Test
+    fun `every generated colour has OKLab L within target plus or minus 0 031`() {
+        for (seed in 1..20) {
+            val palette = VersionPalette.generate(seed)
+            for (role in 0 until 4) {
+                val actualL = oklab(palette[role])[0]
                 val targetL = roleTargetL[role]
                 assertTrue(
-                    "Role $role in version $version L=$actualL not within $targetL +/- 0.031",
+                    "Role $role in seed $seed L=$actualL not within $targetL +/- 0.031",
                     Math.abs(actualL - targetL) <= 0.031f
                 )
             }
@@ -70,64 +127,20 @@ class VersionPaletteTest {
     }
 
     @Test
-    fun `neighbouring roles in generated palettes are separated by at least 0 08 in OKLab`() {
-        val minAllowedDistance = 0.08f
-        val versions = listOf("2.2.1", "2.3.0", "2.4.0", "2.5.0", "3.0.0", "10.0.0")
-        for (version in versions) {
-            val palette = VersionPalette.forVersion(version)
-            val adjacentPairs = listOf(
-                Pair(0, 1),
-                Pair(0, 2),
-                Pair(1, 3),
-                Pair(2, 3)
-            )
-            for ((r1, r2) in adjacentPairs) {
-                val dist = oklabDeltaE(palette[r1], palette[r2])
-                assertTrue(
-                    "Adjacent roles $r1 and $r2 in version $version too close (OKLab distance $dist < $minAllowedDistance)",
-                    dist >= minAllowedDistance
-                )
-            }
-        }
+    fun `generate is deterministic for same seed and varies across different seeds`() {
+        val p1 = VersionPalette.generate(42)
+        val p2 = VersionPalette.generate(42)
+        val p3 = VersionPalette.generate(43)
+        assertArrayEquals(p1, p2)
+        assertFalse(p1.contentEquals(p3))
     }
 
     @Test
-    fun `stable snapshot for version 2 3 0 catches accidental algorithm changes`() {
-        val palette = VersionPalette.forVersion("2.3.0")
-        val expected = intArrayOf(
-            0xFF00747A.toInt(),
-            0xFFCD008A.toInt(),
-            0xFFF98126.toInt(),
-            0xFF5ACDFF.toInt()
-        )
-        assertArrayEquals(expected, palette)
-    }
-
-    @Test
-    fun `schemeForVersion correctly reports scheme for pinned and generated versions`() {
-        assertEquals("Pinned", VersionPalette.schemeForVersion("2.2.0"))
-        assertEquals("Triadic", VersionPalette.schemeForVersion("2.2.1"))
-        assertEquals("Split complementary", VersionPalette.schemeForVersion("2.3.0"))
-        assertEquals("Complementary", VersionPalette.schemeForVersion("2.4.0"))
-        assertEquals("Complementary", VersionPalette.schemeForVersion("2.5.0"))
-        assertEquals("Triadic", VersionPalette.schemeForVersion("3.0.0"))
-    }
-
-    @Test
-    fun `generated releases match expected hex palettes and schemes`() {
-        val expectedPalettes = mapOf(
-            "2.2.1" to listOf("#536FAA", "#E8003C", "#58C15C", "#E7A0F2"),
-            "2.3.0" to listOf("#00747A", "#CD008A", "#F98126", "#5ACDFF"),
-            "2.4.0" to listOf("#546599", "#8F6B00", "#A28BFF", "#C6D563"),
-            "2.5.0" to listOf("#A45C70", "#008C7D", "#FF7F4A", "#24D7FB"),
-            "3.0.0" to listOf("#806B1D", "#008493", "#E47CD6", "#88E89F")
-        )
-
-        for ((version, expectedHex) in expectedPalettes) {
-            val palette = VersionPalette.forVersion(version)
-            val actualHex = palette.map { String.format("#%06X", it and 0x00FFFFFF) }
-            assertEquals("Palette mismatch for $version", expectedHex, actualHex)
-        }
+    fun `forVersion hex matches expected values for pinned versions and fallback`() {
+        fun toHex(palette: IntArray) = palette.map { String.format("#%06X", it and 0x00FFFFFF) }
+        assertEquals(listOf("#805D93", "#D31277", "#56BD54", "#00DFFF"), toHex(VersionPalette.forVersion("2.2.0")))
+        assertEquals(listOf("#5A6F33", "#00858A", "#FA812A", "#86D773"), toHex(VersionPalette.forVersion("2.3.0")))
+        assertEquals(listOf("#5A6F33", "#00858A", "#FA812A", "#86D773"), toHex(VersionPalette.forVersion("9.9.9")))
     }
 
     private fun srgbToLinear(c: Float): Float {
@@ -152,8 +165,6 @@ class VersionPaletteTest {
         val b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_
         return floatArrayOf(L, a, b)
     }
-
-    private fun oklabL(color: Int): Float = oklab(color)[0]
 
     private fun oklabDeltaE(c1: Int, c2: Int): Float {
         val (l1, a1, b1) = oklab(c1)

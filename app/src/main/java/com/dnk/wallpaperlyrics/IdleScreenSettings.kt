@@ -17,17 +17,15 @@ object IdleScreenSettings {
     const val DEFAULT_IDLE_TITLE = "No Music Playing"
     const val SETUP_TITLE = "Notification access needed"
     const val SETUP_SUBTITLE = "Open Wallpaper Lyrics to grant it"
-    fun effectivePaletteVersion(realVersion: String, override: String, isDebug: Boolean): String {
-        val trimmed = override.trim()
-        return if (isDebug && trimmed.isNotEmpty()) trimmed else realVersion
-    }
-
     private var cachedVersion: String? = null
     private var cachedPalette: IntArray? = null
 
     private fun defaultPalette(): IntArray {
-        val version = effectivePaletteVersion(BuildConfig.VERSION_NAME, Tuning.paletteVersionOverride, BuildConfig.DEBUG)
+        if (BuildConfig.DEBUG && Tuning.paletteOverride.size == 4) {
+            return Tuning.paletteOverride
+        }
         var palette = cachedPalette
+        val version = BuildConfig.VERSION_NAME
         if (palette == null || cachedVersion != version) {
             palette = VersionPalette.forVersion(version)
             cachedVersion = version

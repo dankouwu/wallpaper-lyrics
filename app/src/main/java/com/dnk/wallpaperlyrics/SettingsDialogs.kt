@@ -480,4 +480,547 @@ object SettingsDialogs {
         val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
         return pm.isIgnoringBatteryOptimizations(context.packageName)
     }
+
+    fun showColorPickerDialog(
+        activity: Activity,
+        title: String,
+        initialColor: Int,
+        onColorSaved: (Int) -> Unit
+    ) {
+        val dialog = Dialog(activity).apply {
+            requestWindowFeature(Window.FEATURE_NO_TITLE)
+            setCancelable(true)
+        }
+
+        val container = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                LS.dpToPx(activity, 24f),
+                LS.dpToPx(activity, 24f),
+                LS.dpToPx(activity, 24f),
+                LS.dpToPx(activity, 20f)
+            )
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#333333"))
+                cornerRadius = LS.dpToPx(activity, 16f).toFloat()
+            }
+        }
+
+        val titleRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, LS.dpToPx(activity, 16f))
+        }
+
+        val titleText = TextView(activity).apply {
+            text = title
+            textSize = 18f
+            setTextColor(Color.WHITE)
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        titleRow.addView(titleText)
+
+        val closeButton = ImageView(activity).apply {
+            val arrowDrawable = LS.CustomIconDrawable(activity, LS.IconType.ARROW_LEFT)
+            setImageDrawable(arrowDrawable)
+            val size = LS.dpToPx(activity, 48f)
+            layoutParams = LinearLayout.LayoutParams(size, size)
+            setPadding(
+                LS.dpToPx(activity, 12f),
+                LS.dpToPx(activity, 12f),
+                LS.dpToPx(activity, 12f),
+                LS.dpToPx(activity, 12f)
+            )
+            isClickable = true
+            val outVal = TypedValue()
+            activity.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
+            setBackgroundResource(outVal.resourceId)
+            setOnClickListener { dialog.dismiss() }
+        }
+        titleRow.addView(closeButton)
+        container.addView(titleRow)
+
+        val initialHsv = FloatArray(3)
+        Color.colorToHSV(initialColor or 0xFF000000.toInt(), initialHsv)
+        var currentHue = initialHsv[0]
+        var currentSaturation = initialHsv[1]
+        var currentValue = initialHsv[2]
+
+        var isProgrammaticUpdate = false
+
+        val previewSwatch = View(activity).apply {
+            val h = LS.dpToPx(activity, 32f)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                h
+            ).apply {
+                bottomMargin = LS.dpToPx(activity, 14f)
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = LS.dpToPx(activity, 10f).toFloat()
+                setColor(initialColor or 0xFF000000.toInt())
+                setStroke(LS.dpToPx(activity, 1f), Color.parseColor("#555555"))
+            }
+        }
+
+        val svView = SaturationValueView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LS.dpToPx(activity, 200f)
+            )
+            setHue(currentHue)
+            setSaturationAndValue(currentSaturation, currentValue)
+        }
+
+        val hueSlider = HueSliderView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LS.dpToPx(activity, 24f)
+            ).apply {
+                topMargin = LS.dpToPx(activity, 16f)
+            }
+            setHue(currentHue)
+        }
+
+        var isRgbMode = true
+        val modeChip = TextView(activity).apply {
+            text = "RGB"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            gravity = Gravity.CENTER
+            setPadding(
+                LS.dpToPx(activity, 14f),
+                LS.dpToPx(activity, 10f),
+                LS.dpToPx(activity, 14f),
+                LS.dpToPx(activity, 10f)
+            )
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#242424"))
+                cornerRadius = LS.dpToPx(activity, 10f).toFloat()
+                setStroke(LS.dpToPx(activity, 1f), Color.parseColor("#444444"))
+            }
+            isClickable = true
+        }
+
+        fun createNumericEdit(): EditText {
+            return EditText(activity).apply {
+                inputType = InputType.TYPE_CLASS_NUMBER
+                setTextColor(Color.WHITE)
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setPadding(
+                    LS.dpToPx(activity, 6f),
+                    LS.dpToPx(activity, 10f),
+                    LS.dpToPx(activity, 6f),
+                    LS.dpToPx(activity, 10f)
+                )
+                background = GradientDrawable().apply {
+                    setColor(Color.parseColor("#242424"))
+                    cornerRadius = LS.dpToPx(activity, 10f).toFloat()
+                    setStroke(LS.dpToPx(activity, 1f), Color.parseColor("#444444"))
+                }
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    textCursorDrawable = ColorDrawable(Color.parseColor("#b7b7b7"))
+                }
+            }
+        }
+
+        val editR = createNumericEdit().apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = LS.dpToPx(activity, 4f)
+            }
+        }
+        val editG = createNumericEdit().apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                rightMargin = LS.dpToPx(activity, 4f)
+            }
+        }
+        val editB = createNumericEdit().apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        val rgbLayout = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+            addView(editR)
+            addView(editG)
+            addView(editB)
+        }
+
+        val editHex = EditText(activity).apply {
+            inputType = InputType.TYPE_CLASS_TEXT
+            setTextColor(Color.WHITE)
+            textSize = 15f
+            gravity = Gravity.CENTER
+            setPadding(
+                LS.dpToPx(activity, 12f),
+                LS.dpToPx(activity, 10f),
+                LS.dpToPx(activity, 12f),
+                LS.dpToPx(activity, 10f)
+            )
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#242424"))
+                cornerRadius = LS.dpToPx(activity, 10f).toFloat()
+                setStroke(LS.dpToPx(activity, 1f), Color.parseColor("#444444"))
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                textCursorDrawable = ColorDrawable(Color.parseColor("#b7b7b7"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val hexLayout = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            visibility = View.GONE
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
+            )
+            addView(editHex)
+        }
+
+        val fieldsContainer = android.widget.FrameLayout(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                leftMargin = LS.dpToPx(activity, 8f)
+            }
+            addView(rgbLayout)
+            addView(hexLayout)
+        }
+
+        modeChip.setOnClickListener {
+            isRgbMode = !isRgbMode
+            modeChip.text = if (isRgbMode) "RGB" else "HEX"
+            rgbLayout.visibility = if (isRgbMode) View.VISIBLE else View.GONE
+            hexLayout.visibility = if (isRgbMode) View.GONE else View.VISIBLE
+        }
+
+        val numericRow = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = LS.dpToPx(activity, 16f)
+            }
+            addView(modeChip)
+            addView(fieldsContainer)
+        }
+
+        fun updateFieldsAndPreview() {
+            val colorInt = Color.HSVToColor(floatArrayOf(currentHue, currentSaturation, currentValue)) or 0xFF000000.toInt()
+            (previewSwatch.background as? GradientDrawable)?.setColor(colorInt)
+
+            if (isProgrammaticUpdate) return
+            isProgrammaticUpdate = true
+            try {
+                val r = Color.red(colorInt).toString()
+                val g = Color.green(colorInt).toString()
+                val b = Color.blue(colorInt).toString()
+                val hex = IdleScreenSettings.formatHexColor(colorInt)
+
+                if (editR.text.toString() != r) editR.setText(r)
+                if (editG.text.toString() != g) editG.setText(g)
+                if (editB.text.toString() != b) editB.setText(b)
+                if (editHex.text.toString() != hex) editHex.setText(hex)
+            } finally {
+                isProgrammaticUpdate = false
+            }
+        }
+
+        updateFieldsAndPreview()
+
+        svView.onSaturationValueChanged = { sat, valLevel ->
+            currentSaturation = sat
+            currentValue = valLevel
+            updateFieldsAndPreview()
+        }
+
+        hueSlider.onHueChanged = { h ->
+            currentHue = h
+            svView.setHue(h)
+            updateFieldsAndPreview()
+        }
+
+        val rgbWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (isProgrammaticUpdate) return
+                val r = editR.text.toString().toIntOrNull()
+                val g = editG.text.toString().toIntOrNull()
+                val b = editB.text.toString().toIntOrNull()
+                if (r != null && r in 0..255 && g != null && g in 0..255 && b != null && b in 0..255) {
+                    val colorInt = Color.rgb(r, g, b) or 0xFF000000.toInt()
+                    val hsv = FloatArray(3)
+                    Color.colorToHSV(colorInt, hsv)
+                    currentHue = hsv[0]
+                    currentSaturation = hsv[1]
+                    currentValue = hsv[2]
+
+                    isProgrammaticUpdate = true
+                    try {
+                        val hex = IdleScreenSettings.formatHexColor(colorInt)
+                        if (editHex.text.toString() != hex) editHex.setText(hex)
+                        svView.setHue(currentHue)
+                        svView.setSaturationAndValue(currentSaturation, currentValue)
+                        hueSlider.setHue(currentHue)
+                        (previewSwatch.background as? GradientDrawable)?.setColor(colorInt)
+                    } finally {
+                        isProgrammaticUpdate = false
+                    }
+                }
+            }
+        }
+        editR.addTextChangedListener(rgbWatcher)
+        editG.addTextChangedListener(rgbWatcher)
+        editB.addTextChangedListener(rgbWatcher)
+
+        val hexWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (isProgrammaticUpdate) return
+                val parsed = IdleScreenSettings.parseHexColor(editHex.text.toString())
+                if (parsed != null) {
+                    val colorInt = parsed or 0xFF000000.toInt()
+                    val hsv = FloatArray(3)
+                    Color.colorToHSV(colorInt, hsv)
+                    currentHue = hsv[0]
+                    currentSaturation = hsv[1]
+                    currentValue = hsv[2]
+
+                    isProgrammaticUpdate = true
+                    try {
+                        val r = Color.red(colorInt).toString()
+                        val g = Color.green(colorInt).toString()
+                        val b = Color.blue(colorInt).toString()
+                        if (editR.text.toString() != r) editR.setText(r)
+                        if (editG.text.toString() != g) editG.setText(g)
+                        if (editB.text.toString() != b) editB.setText(b)
+                        svView.setHue(currentHue)
+                        svView.setSaturationAndValue(currentSaturation, currentValue)
+                        hueSlider.setHue(currentHue)
+                        (previewSwatch.background as? GradientDrawable)?.setColor(colorInt)
+                    } finally {
+                        isProgrammaticUpdate = false
+                    }
+                }
+            }
+        }
+        editHex.addTextChangedListener(hexWatcher)
+
+        val prefs = activity.getSharedPreferences("settings", Context.MODE_PRIVATE)
+        var savedColors = IdleScreenSettings.parseSavedColors(
+            prefs.getString(IdleScreenSettings.KEY_IDLE_SAVED_COLORS, null)
+        )
+
+        val savedColorsHeader = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = LS.dpToPx(activity, 16f)
+                bottomMargin = LS.dpToPx(activity, 8f)
+            }
+        }
+
+        val savedColorsTitle = TextView(activity).apply {
+            text = "Saved Colors"
+            textSize = 14f
+            setTextColor(Color.parseColor("#CCCCCC"))
+            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        savedColorsHeader.addView(savedColorsTitle)
+
+        val plusContainer = android.widget.FrameLayout(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LS.dpToPx(activity, 44f),
+                LS.dpToPx(activity, 44f)
+            )
+            isClickable = true
+            val outVal = TypedValue()
+            activity.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
+            setBackgroundResource(outVal.resourceId)
+        }
+
+        val plusInner = TextView(activity).apply {
+            text = "+"
+            textSize = 20f
+            setTextColor(Color.parseColor("#E0E0E0"))
+            gravity = Gravity.CENTER
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                LS.dpToPx(activity, 28f),
+                LS.dpToPx(activity, 28f)
+            ).apply {
+                gravity = Gravity.CENTER
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor("#242424"))
+                setStroke(LS.dpToPx(activity, 1f), Color.parseColor("#444444"))
+            }
+        }
+        plusContainer.addView(plusInner)
+        savedColorsHeader.addView(plusContainer)
+
+        val savedColorsScroll = android.widget.HorizontalScrollView(activity).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            isHorizontalScrollBarEnabled = false
+        }
+
+        val savedColorsLayout = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        savedColorsScroll.addView(savedColorsLayout)
+
+        fun renderSavedColors() {
+            savedColorsLayout.removeAllViews()
+            val swatchSize = LS.dpToPx(activity, 28f)
+            val containerSize = LS.dpToPx(activity, 44f)
+            for (color in savedColors) {
+                val swatchContainer = android.widget.FrameLayout(activity).apply {
+                    layoutParams = LinearLayout.LayoutParams(containerSize, containerSize).apply {
+                        rightMargin = LS.dpToPx(activity, 4f)
+                    }
+                    isClickable = true
+                    val outVal = TypedValue()
+                    activity.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
+                    setBackgroundResource(outVal.resourceId)
+                }
+
+                val circleView = View(activity).apply {
+                    layoutParams = android.widget.FrameLayout.LayoutParams(swatchSize, swatchSize).apply {
+                        gravity = Gravity.CENTER
+                    }
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.OVAL
+                        setColor(color)
+                        setStroke(LS.dpToPx(activity, 1f), Color.parseColor("#555555"))
+                    }
+                }
+                swatchContainer.addView(circleView)
+
+                swatchContainer.setOnClickListener {
+                    val hsv = FloatArray(3)
+                    Color.colorToHSV(color or 0xFF000000.toInt(), hsv)
+                    currentHue = hsv[0]
+                    currentSaturation = hsv[1]
+                    currentValue = hsv[2]
+                    svView.setHue(currentHue)
+                    svView.setSaturationAndValue(currentSaturation, currentValue)
+                    hueSlider.setHue(currentHue)
+                    updateFieldsAndPreview()
+                }
+
+                swatchContainer.setOnLongClickListener {
+                    val hexStr = IdleScreenSettings.formatHexColor(color)
+                    savedColors = savedColors.filter { it != color }
+                    prefs.edit().putString(
+                        IdleScreenSettings.KEY_IDLE_SAVED_COLORS,
+                        IdleScreenSettings.formatSavedColors(savedColors)
+                    ).apply()
+                    android.widget.Toast.makeText(
+                        activity,
+                        "Removed $hexStr",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                    renderSavedColors()
+                    true
+                }
+
+                savedColorsLayout.addView(swatchContainer)
+            }
+        }
+
+        renderSavedColors()
+
+        plusContainer.setOnClickListener {
+            val currentColorInt = Color.HSVToColor(floatArrayOf(currentHue, currentSaturation, currentValue)) or 0xFF000000.toInt()
+            savedColors = IdleScreenSettings.addSavedColor(savedColors, currentColorInt)
+            prefs.edit().putString(
+                IdleScreenSettings.KEY_IDLE_SAVED_COLORS,
+                IdleScreenSettings.formatSavedColors(savedColors)
+            ).apply()
+            renderSavedColors()
+        }
+
+        val scrollContent = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(previewSwatch)
+            addView(svView)
+            addView(hueSlider)
+            addView(numericRow)
+            addView(savedColorsHeader)
+            addView(savedColorsScroll)
+        }
+
+        val dialogScrollView = android.widget.ScrollView(activity).apply {
+            isFillViewport = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f
+            )
+        }
+        dialogScrollView.addView(scrollContent)
+        container.addView(dialogScrollView)
+
+        val buttonLayout = LinearLayout(activity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.END
+            setPadding(0, LS.dpToPx(activity, 20f), 0, 0)
+        }
+
+        val cancelButton = Button(activity).apply {
+            text = "Cancel"
+            setTextColor(Color.parseColor("#8E8E93"))
+            transformationMethod = null
+            background = null
+            setOnClickListener { dialog.dismiss() }
+        }
+        buttonLayout.addView(cancelButton)
+
+        val saveButton = Button(activity).apply {
+            text = "Save"
+            setTextColor(Color.parseColor("#E0E0E0"))
+            transformationMethod = null
+            background = null
+            setOnClickListener {
+                val finalColor = Color.HSVToColor(floatArrayOf(currentHue, currentSaturation, currentValue)) or 0xFF000000.toInt()
+                onColorSaved(finalColor)
+                dialog.dismiss()
+            }
+        }
+        buttonLayout.addView(saveButton)
+        container.addView(buttonLayout)
+
+        dialog.setContentView(container)
+
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setLayout(
+                (activity.resources.displayMetrics.widthPixels * 0.85f).toInt(),
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        dialog.show()
+    }
 }

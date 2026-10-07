@@ -77,7 +77,7 @@ class IdleScreenSettingsTest {
 
     @org.junit.After
     fun tearDown() {
-        Tuning.paletteVersionOverride = ""
+        Tuning.paletteOverride = intArrayOf()
     }
 
     @Test
@@ -90,33 +90,20 @@ class IdleScreenSettingsTest {
     }
 
     @Test
-    fun `effectivePaletteVersion returns trimmed override in debug when non-blank`() {
-        val result = IdleScreenSettings.effectivePaletteVersion("1.0.0", " 2.3.0 ", isDebug = true)
-        assertEquals("2.3.0", result)
-    }
+    fun `default idle palette follows Tuning paletteOverride when set and resets when cleared`() {
+        val custom = intArrayOf(
+            0xFF112233.toInt(),
+            0xFF445566.toInt(),
+            0xFF778899.toInt(),
+            0xFFAABBCC.toInt()
+        )
+        Tuning.paletteOverride = custom
+        assertEquals(custom[0], IdleScreenSettings.DEFAULT_ACCENT)
+        assertEquals(custom[1], IdleScreenSettings.DEFAULT_BASE)
+        assertEquals(custom[2], IdleScreenSettings.DEFAULT_MID)
+        assertEquals(custom[3], IdleScreenSettings.DEFAULT_HIGHLIGHT)
 
-    @Test
-    fun `effectivePaletteVersion returns real version in debug when override is blank or whitespace`() {
-        assertEquals("1.0.0", IdleScreenSettings.effectivePaletteVersion("1.0.0", "", isDebug = true))
-        assertEquals("1.0.0", IdleScreenSettings.effectivePaletteVersion("1.0.0", "   ", isDebug = true))
-    }
-
-    @Test
-    fun `effectivePaletteVersion returns real version in release even with override`() {
-        val result = IdleScreenSettings.effectivePaletteVersion("1.0.0", "2.3.0", isDebug = false)
-        assertEquals("1.0.0", result)
-    }
-
-    @Test
-    fun `default idle palette follows Tuning paletteVersionOverride when set and resets when cleared`() {
-        Tuning.paletteVersionOverride = "2.3.0"
-        val expectedOverride = VersionPalette.forVersion("2.3.0")
-        assertEquals(expectedOverride[0], IdleScreenSettings.DEFAULT_ACCENT)
-        assertEquals(expectedOverride[1], IdleScreenSettings.DEFAULT_BASE)
-        assertEquals(expectedOverride[2], IdleScreenSettings.DEFAULT_MID)
-        assertEquals(expectedOverride[3], IdleScreenSettings.DEFAULT_HIGHLIGHT)
-
-        Tuning.paletteVersionOverride = ""
+        Tuning.paletteOverride = intArrayOf()
         val expectedDefault = VersionPalette.forVersion(BuildConfig.VERSION_NAME)
         assertEquals(expectedDefault[0], IdleScreenSettings.DEFAULT_ACCENT)
         assertEquals(expectedDefault[1], IdleScreenSettings.DEFAULT_BASE)
@@ -125,10 +112,10 @@ class IdleScreenSettingsTest {
     }
 
     @Test
-    fun `Tuning resetAll clears paletteVersionOverride`() {
-        Tuning.paletteVersionOverride = "2.4.0"
+    fun `Tuning resetAll clears paletteOverride`() {
+        Tuning.paletteOverride = intArrayOf(1, 2, 3, 4)
         Tuning.resetAll()
-        assertEquals("", Tuning.paletteVersionOverride)
+        assertEquals(0, Tuning.paletteOverride.size)
     }
 
     @Test
