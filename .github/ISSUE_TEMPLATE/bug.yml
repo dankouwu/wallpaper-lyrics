@@ -87,7 +87,7 @@ body:
     id: track
     attributes:
       label: Artist and track
-      description: Only if this is a background color, artwork, or song-specific problem.
+      description: Only if this is a background color, album art, or song-specific problem.
       placeholder: "Artist Name, Song Title"
 
   - type: checkboxes

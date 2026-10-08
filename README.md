@@ -4,7 +4,7 @@
 
 An Android live wallpaper that shows the lyrics of whatever you are playing, in time with the music, over a background painted from the album art.
 
-[![Latest release](https://img.shields.io/github/v/release/dankouwu/wallpaper-lyrics?sort=semver&display_name=tag&label=download&color=3DDC84)](https://github.com/dankouwu/wallpaper-lyrics/releases/latest) [![Runs on Android 8.0+](https://img.shields.io/badge/runs%20on-Android%208.0%2B-3DDC84?logo=android&logoColor=white)](#install) [![Fluid background on Android 13+](https://img.shields.io/badge/fluid%20background-Android%2013%2B-5B8DEF)](#the-background) [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-lightgrey)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/release/dankouwu/wallpaper-lyrics?sort=semver&display_name=tag&label=download&color=3DDC84)](https://github.com/dankouwu/wallpaper-lyrics/releases/latest) [![Runs on Android 8.0+](https://img.shields.io/badge/runs%20on-Android%208.0%2B-3DDC84?logo=android&logoColor=white)](#install) [![Fluid background on Android 13+](https://img.shields.io/badge/fluid%20background-Android%2013%2B-5B8DEF)](#the-background) [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-lightgray)](LICENSE)
 
 **[Download](https://github.com/dankouwu/wallpaper-lyrics/releases/latest)** · [Report a bug](https://github.com/dankouwu/wallpaper-lyrics/issues/new?template=bug.yml) · [Suggest a feature](https://github.com/dankouwu/wallpaper-lyrics/issues/new?template=feature.yml)
 
@@ -14,13 +14,11 @@ An Android live wallpaper that shows the lyrics of whatever you are playing, in 
 
 A wallpaper, not an app you sit in. The launcher icon opens settings and nothing else. Start something in any player that publishes a media session, go back to the home screen, and the lyrics are already there and already scrolling.
 
-Where the timing data allows it, words light up one at a time instead of whole lines. Each word grows as it is sung, overshoots a little and settles slightly larger than the words still waiting, and the letters of a held word take turns, each one rising as the color sweep crosses it and overlapping its neighbours. The line stays in focus until its last word has settled, and the view follows on a spring rather than jumping to the next line. When two lines overlap, a line's last word keeps filling in while the next line takes over.
+Where the timing data allows it, words light up one at a time instead of whole lines. Each word grows as it is sung, overshoots a little and settles slightly larger than the words still waiting, and the letters of a held word take turns, each one rising as the color sweep crosses it and overlapping its neighbors. The line stays in focus until its last word has settled, and the view follows on a spring rather than jumping to the next line. When two lines overlap, a line's last word keeps filling in while the next line takes over.
 
-Musixmatch publishes per word timing for a good part of the catalogue. When a track has none, it falls back to line timing, which most tracks have. For the rest, paste your own enhanced LRC or point the app at a custom provider.
+Musixmatch publishes per word timing for a good part of the catalog. When a track has none, it falls back to line timing, which most tracks have. For the rest, paste your own enhanced LRC or point the app at a custom provider.
 
 ## On the phone
-
-![Wallpaper Lyrics](.github/previews/banner.png)
 
 <p align="center">
   <img src=".github/previews/preview_1.gif" alt="Wallpaper preview" width="32%">
@@ -30,13 +28,15 @@ Musixmatch publishes per word timing for a good part of the catalogue. When a tr
 
 ## The background
 
-The cover art is scaled to 512px, tinted along its own luminance, blurred twice, and pushed towards the edge of what sRGB can show at each pixel's own lightness, in OKLCh so the hue does not drift. That goes to an AGSL shader which warps it with two octaves of simplex noise at 0.22 and 0.25 frequency. It ends up moving like liquid and holding the record's palette without ever looking like the record.
+The album art is scaled to 512px, tinted along its own luminance, blurred twice, and pushed toward the edge of what sRGB can show at each pixel's own lightness, in OKLCh so the hue does not drift. That goes to an AGSL shader which warps it with two octaves of simplex noise at 0.35 and 0.9 frequency. It ends up moving like liquid and keeps the album art's palette without ever looking like the album art.
 
-That path needs Android 13, which is where AGSL lands. Android 8 through 12 get animated radial gradient meshes built from a palette sampled off the same artwork. It is a visible downgrade, not a subtle one.
+That path needs Android 13, the first version with AGSL. Android 8 through 12 get animated radial gradient meshes built from a palette sampled off the same album art. It is a visible downgrade, not a subtle one.
 
-Near white covers have their brightest pixels darkened in OKLab lightness so white lyrics stay readable over them. Darker and saturated covers come through unchanged.
+Near white album art has its brightest pixels darkened in OKLab lightness so white lyrics stay readable over it. Darker and saturated album art comes through unchanged.
 
 ## What else it does
+
+![Wallpaper Lyrics](.github/previews/banner.png)
 
 - Waking the screen shows the lyrics first, then fades in the album art with the title and artist, then goes back to the lyrics.
 - Always On Display has its own setting: the album card over the background, the card on black, or black on its own.
@@ -45,7 +45,7 @@ Near white covers have their brightest pixels darkened in OKLab lightness so whi
 - A custom lyrics endpoint, tried ahead of Musixmatch and LRCLIB, if you run your own.
 - An idle screen with its own title and four color palette for when nothing is playing. Clear the title to leave it without text.
 - After a reboot it waits for a player to start. A session Android restores on its own is ignored until it has played once.
-- Static mode, which keeps the blurred artwork and drops the animation when you want the battery back.
+- Static mode, which keeps the blurred album art and drops the animation when you want the battery back.
 - Optional playback controls in the status bar, and optional Material You highlight colors.
 - An update check, off by default. When on, it asks the GitHub releases API once a day around 12:00, posts a notification and shows a popup on launch when a newer release exists, once per version, and it never downloads or installs anything itself.
 
@@ -53,7 +53,7 @@ Fetched lyrics are stored in the app's files rather than its cache, so Android r
 
 ## Install
 
-Open the [Releases](https://github.com/dankouwu/wallpaper-lyrics/releases) page on the phone and download the `wallpaper-lyrics_<version>.apk` attached to the newest one. Tap the file when it lands, and allow your browser or file manager to install unknown apps if Android asks.
+Open the [Releases](https://github.com/dankouwu/wallpaper-lyrics/releases) page on the phone and download the `wallpaper-lyrics_<version>.apk` attached to the newest one. Tap the file once it has downloaded, and allow your browser or file manager to install unknown apps if Android asks.
 
 Then open Wallpaper Lyrics, tap **Activate Live Wallpaper**, and pick **Lyrics Wallpaper** in the system picker.
 
@@ -82,29 +82,39 @@ Three system settings decide whether this works at all.
 ## How it works
 
 ```mermaid
-flowchart TD
-    A[Spotify / Tidal / KDE Connect] -->|MediaSessionManager| B[MediaObserver]
-    B -->|title, artist, duration, position| C[TrackQuery]
-    C -->|cleaned candidates| D[LyricsManager]
+flowchart TB
+    subgraph track ["Track"]
+        direction LR
+        A[Spotify / Tidal / KDE Connect] -->|MediaSessionManager| B[MediaObserver]
+        B -->|title, artist, duration, position| C[TrackQuery]
+        C -->|cleaned candidates| D[LyricsManager]
+    end
 
-    D --> E{Custom endpoint set?}
-    E -->|yes| F[Custom API]
-    E -->|no| G[Musixmatch richsync]
-    F -->|miss| G
-    G -->|no richsync| H[Musixmatch subtitle]
-    H -->|miss| I[LRCLIB search]
-    G --> J[(File cache)]
-    H --> J
-    I --> J
+    subgraph lyrics ["Lyrics"]
+        direction LR
+        E{Custom endpoint set?}
+        E -->|yes| F[Custom API]
+        E -->|no| G[Musixmatch richsync]
+        F -->|miss| G
+        G -->|no richsync| H[Musixmatch subtitle]
+        H -->|miss| I[LRCLIB search]
+        G --> J[(File cache)]
+        H --> J
+        I --> J
+    end
 
-    J --> K[LyricsWallpaperService]
-    K -->|Choreographer callbacks| L[AuroraRenderer]
-    K --> M[LyricsRenderer + SyllableAnimator]
-    L -->|Android 13+| N[AGSL domain warp]
-    L -->|older| O[Radial gradient mesh]
-    N --> P((Wallpaper surface))
-    O --> P
-    M --> P
+    subgraph drawing ["Drawing"]
+        direction LR
+        K[LyricsWallpaperService] -->|Choreographer callbacks| L[AuroraRenderer]
+        K --> M[LyricsRenderer + SyllableAnimator]
+        L -->|Android 13+| N[AGSL domain warp]
+        L -->|older| O[Radial gradient mesh]
+        N --> P((Wallpaper surface))
+        O --> P
+        M --> P
+    end
+
+    track --> lyrics --> drawing
 ```
 
 Two details carry most of the sync quality. Position is extrapolated with `SystemClock.elapsedRealtime()` against the last metadata update, so lyrics keep moving between session callbacks instead of stepping once a second. And `TrackQuery` strips what players put in titles, the `(Official Video)` and `[Remastered 2011]` of it, then scores each candidate against the track duration before accepting a match, because a title and artist that match perfectly with a duration 30 seconds off is usually a live version.
@@ -121,7 +131,7 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 ./gradlew testDebugUnitTest
 ```
 
-The unit tests cover the parts with no Android in them: LRC parsing, query cleanup and scoring, transition and frame timing, layout maths. Shader output and the wallpaper lifecycle are not covered and need a device.
+The unit tests cover the parts with no Android in them: LRC parsing, query cleanup and scoring, transition and frame timing, layout math. Shader output and the wallpaper lifecycle are not covered and need a device.
 
 > [!NOTE]
 > Gradle refuses to configure if `ANDROID_HOME` and `ANDROID_SDK_ROOT` are both set to different paths. Unset one.
@@ -130,7 +140,7 @@ The unit tests cover the parts with no Android in them: LRC parsing, query clean
 
 - Word level timing out of the box depends on Musixmatch richsync coverage. Plenty of tracks only have line timing there, and some have nothing. Importing your own enhanced LRC or running a custom provider's REST API fills the gap.
 - The fluid background needs Android 13. Below that it is gradient meshes.
-- Any media session is picked up, but only Spotify, Tidal and KDE Connect are recognised by name and preferred when several are live. A player that reports thin metadata, or none until you tell it to, gives you nothing to look up.
+- Any media session is picked up, but only Spotify, Tidal and KDE Connect are recognized by name and preferred when several are live. A player that reports thin metadata, or none until you tell it to, gives you nothing to look up.
 - Both lyrics sources are third party and unofficial. They go down, they rate limit, and they hand back the wrong track often enough that manual LRC editing exists.
 - Debug signed, so sideload only.
 
