@@ -18,8 +18,8 @@ class AodModeTest {
     }
 
     @Test
-    fun `unrecognised string maps to METADATA_AND_BACKGROUND`() {
-        assertEquals(AodMode.METADATA_AND_BACKGROUND, AodMode.fromPref("unrecognised"))
+    fun `unrecognized string maps to METADATA_AND_BACKGROUND`() {
+        assertEquals(AodMode.METADATA_AND_BACKGROUND, AodMode.fromPref("unrecognized"))
         assertEquals(AodMode.METADATA_AND_BACKGROUND, AodMode.fromPref("unknown"))
         assertEquals(AodMode.METADATA_AND_BACKGROUND, AodMode.fromPref(""))
     }

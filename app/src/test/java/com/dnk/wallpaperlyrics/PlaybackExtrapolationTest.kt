@@ -31,7 +31,7 @@ class PlaybackExtrapolationTest {
     }
 
     @Test
-    fun `extrapolatePlaybackPosition honours playback speed`() {
+    fun `extrapolatePlaybackPosition honors playback speed`() {
         val basePosition = 10_000L
         val baseUpdateTime = 1_000L
         val durationMs = 200_000L

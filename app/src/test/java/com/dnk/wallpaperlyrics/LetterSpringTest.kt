@@ -168,7 +168,7 @@ class LetterSpringTest {
         val letterLifts: FloatArray,
         val baselineYs: FloatArray,
         val topYs: FloatArray,
-        val centreXs: FloatArray,
+        val centerXs: FloatArray,
         val letterProgresses: FloatArray = FloatArray(0)
     )
 
@@ -182,10 +182,10 @@ class LetterSpringTest {
         val maxTopJumpFrame: Int,
         val maxTopJumpLetter: Int,
         val maxTopJumpPathSwitch: String,
-        val maxCentreJump: Float,
-        val maxCentreJumpFrame: Int,
-        val maxCentreJumpLetter: Int,
-        val maxCentreJumpPathSwitch: String,
+        val maxCenterJump: Float,
+        val maxCenterJumpFrame: Int,
+        val maxCenterJumpLetter: Int,
+        val maxCenterJumpPathSwitch: String,
         val peakDrawnLifts: FloatArray,
         val maxPeakDrawnLift: Float
     )
@@ -294,7 +294,7 @@ class LetterSpringTest {
             val letterLifts = FloatArray(letterCount)
             val baselineYs = FloatArray(letterCount)
             val topYs = FloatArray(letterCount)
-            val centreXs = FloatArray(letterCount)
+            val centerXs = FloatArray(letterCount)
             val letterProgresses = FloatArray(letterCount)
 
             val amp = SyllableAnimator.getMotionAmplitude(wordDurationMs)
@@ -309,7 +309,7 @@ class LetterSpringTest {
                     letterLifts[i] = 0.0f
                     baselineYs[i] = 0.0f
                     topYs[i] = -ascent
-                    centreXs[i] = lCenterX
+                    centerXs[i] = lCenterX
                 }
             } else if (wallTimeMs < nextLineStartTime) {
                 val lineRampFraction = LyricsWallpaperService.getLineRampFraction(wallTimeMs - lineStartTime)
@@ -333,7 +333,7 @@ class LetterSpringTest {
                         letterLifts[i] = 0.0f
                         baselineYs[i] = 0.0f
                         topYs[i] = -ascent
-                        centreXs[i] = lCenterX
+                        centerXs[i] = lCenterX
                     }
                 } else if (progress >= 1f) {
                     path = LifecyclePath.FLAT_SETTLED
@@ -346,7 +346,7 @@ class LetterSpringTest {
                         letterProgresses[i] = 1.0f
                         baselineYs[i] = 0.0f
                         topYs[i] = -settled * ascent
-                        centreXs[i] = wordCenterX + (lCenterX - wordCenterX) * settled
+                        centerXs[i] = wordCenterX + (lCenterX - wordCenterX) * settled
                     }
                 } else {
                     path = LifecyclePath.LETTER_MOTION
@@ -389,7 +389,7 @@ class LetterSpringTest {
                         letterProgresses[i] = letterProgress
                         baselineYs[i] = -lLift
                         topYs[i] = -lLift - lScale * ascent
-                        centreXs[i] = wordCenterX + (lCenterX - wordCenterX) * lScale
+                        centerXs[i] = wordCenterX + (lCenterX - wordCenterX) * lScale
 
                         if (lLift > peakDrawnLifts[i]) {
                             peakDrawnLifts[i] = lLift
@@ -410,7 +410,7 @@ class LetterSpringTest {
                         letterProgresses[i] = 1.0f
                         baselineYs[i] = 0.0f
                         topYs[i] = -ascent
-                        centreXs[i] = lCenterX
+                        centerXs[i] = lCenterX
                     }
                 } else {
                     val progress = ((adjustedPos - motionStartT).toFloat() / motionWindowMs.toFloat()).coerceIn(0f, 1f)
@@ -426,7 +426,7 @@ class LetterSpringTest {
                             letterProgresses[i] = 1.0f
                             baselineYs[i] = 0.0f
                             topYs[i] = -settled * ascent
-                            centreXs[i] = wordCenterX + (lCenterX - wordCenterX) * settled
+                            centerXs[i] = wordCenterX + (lCenterX - wordCenterX) * settled
                         }
                     } else {
                         path = LifecyclePath.LETTER_MOTION
@@ -469,7 +469,7 @@ class LetterSpringTest {
                             letterProgresses[i] = letterProgress
                             baselineYs[i] = -lLift
                             topYs[i] = -lLift - lScale * ascent
-                            centreXs[i] = wordCenterX + (lCenterX - wordCenterX) * lScale
+                            centerXs[i] = wordCenterX + (lCenterX - wordCenterX) * lScale
 
                             if (lLift > peakDrawnLifts[i]) {
                                 peakDrawnLifts[i] = lLift
@@ -489,7 +489,7 @@ class LetterSpringTest {
                     letterLifts = letterLifts,
                     baselineYs = baselineYs,
                     topYs = topYs,
-                    centreXs = centreXs,
+                    centerXs = centerXs,
                     letterProgresses = letterProgresses
                 )
             )
@@ -508,10 +508,10 @@ class LetterSpringTest {
         var maxTopJumpLetter = -1
         var maxTopJumpPathSwitch = ""
 
-        var maxCentreJump = 0f
-        var maxCentreJumpFrame = -1
-        var maxCentreJumpLetter = -1
-        var maxCentreJumpPathSwitch = ""
+        var maxCenterJump = 0f
+        var maxCenterJumpFrame = -1
+        var maxCenterJumpLetter = -1
+        var maxCenterJumpPathSwitch = ""
 
         for (f in 1 until frames.size) {
             val prev = frames[f - 1]
@@ -535,12 +535,12 @@ class LetterSpringTest {
                     maxTopJumpPathSwitch = pathSwitch
                 }
 
-                val cJump = Math.abs(curr.centreXs[i] - prev.centreXs[i])
-                if (cJump > maxCentreJump) {
-                    maxCentreJump = cJump
-                    maxCentreJumpFrame = curr.frameIndex
-                    maxCentreJumpLetter = i
-                    maxCentreJumpPathSwitch = pathSwitch
+                val cJump = Math.abs(curr.centerXs[i] - prev.centerXs[i])
+                if (cJump > maxCenterJump) {
+                    maxCenterJump = cJump
+                    maxCenterJumpFrame = curr.frameIndex
+                    maxCenterJumpLetter = i
+                    maxCenterJumpPathSwitch = pathSwitch
                 }
             }
         }
@@ -557,10 +557,10 @@ class LetterSpringTest {
             maxTopJumpFrame = maxTopJumpFrame,
             maxTopJumpLetter = maxTopJumpLetter,
             maxTopJumpPathSwitch = maxTopJumpPathSwitch,
-            maxCentreJump = maxCentreJump,
-            maxCentreJumpFrame = maxCentreJumpFrame,
-            maxCentreJumpLetter = maxCentreJumpLetter,
-            maxCentreJumpPathSwitch = maxCentreJumpPathSwitch,
+            maxCenterJump = maxCenterJump,
+            maxCenterJumpFrame = maxCenterJumpFrame,
+            maxCenterJumpLetter = maxCenterJumpLetter,
+            maxCenterJumpPathSwitch = maxCenterJumpPathSwitch,
             peakDrawnLifts = peakDrawnLifts,
             maxPeakDrawnLift = maxPeakLift
         )
@@ -598,7 +598,7 @@ class LetterSpringTest {
             val normalPeakLift = Tuning.wordLiftPeakFraction * 60f * SyllableAnimator.getMotionAmplitude(c.durationMs)
             val liftPercent = (res.maxPeakDrawnLift / normalPeakLift) * 100f
 
-            println("${c.label}: maxTopJump=${String.format("%.3f", res.maxTopJump)}px (frame ${res.maxTopJumpFrame}, letter ${res.maxTopJumpLetter}, ${res.maxTopJumpPathSwitch}), maxBaselineJump=${String.format("%.3f", res.maxBaselineJump)}px (frame ${res.maxBaselineJumpFrame}, letter ${res.maxBaselineJumpLetter}, ${res.maxBaselineJumpPathSwitch}), maxCentreJump=${String.format("%.3f", res.maxCentreJump)}px (frame ${res.maxCentreJumpFrame}, letter ${res.maxCentreJumpLetter}, ${res.maxCentreJumpPathSwitch}), peakLift=${String.format("%.3f", res.maxPeakDrawnLift)}px / ${String.format("%.3f", normalPeakLift)}px (${String.format("%.1f", liftPercent)}%)")
+            println("${c.label}: maxTopJump=${String.format("%.3f", res.maxTopJump)}px (frame ${res.maxTopJumpFrame}, letter ${res.maxTopJumpLetter}, ${res.maxTopJumpPathSwitch}), maxBaselineJump=${String.format("%.3f", res.maxBaselineJump)}px (frame ${res.maxBaselineJumpFrame}, letter ${res.maxBaselineJumpLetter}, ${res.maxBaselineJumpPathSwitch}), maxCenterJump=${String.format("%.3f", res.maxCenterJump)}px (frame ${res.maxCenterJumpFrame}, letter ${res.maxCenterJumpLetter}, ${res.maxCenterJumpPathSwitch}), peakLift=${String.format("%.3f", res.maxPeakDrawnLift)}px / ${String.format("%.3f", normalPeakLift)}px (${String.format("%.1f", liftPercent)}%)")
             val letterTopJumps = FloatArray(c.letterCount)
             for (f in 1 until res.frames.size) {
                 val prev = res.frames[f - 1]
@@ -617,7 +617,7 @@ class LetterSpringTest {
                     val prev = res.frames[f - 1]
                     val topJump = rec.topYs[1] - prev.topYs[1]
                     val baseJump = rec.baselineYs[1] - prev.baselineYs[1]
-                    val cJump = rec.centreXs[1] - prev.centreXs[1]
+                    val cJump = rec.centerXs[1] - prev.centerXs[1]
                     println("frame $f: time=${rec.timeMs}ms, p=${rec.letterProgresses[1]}, scale=${rec.letterScales[1]}, lift=${rec.letterLifts[1]}, topY=${rec.topYs[1]} (dTop=${topJump}), dBase=${baseJump}, dCenter=${cJump}")
                 }
             }
@@ -645,7 +645,7 @@ class LetterSpringTest {
                     for (i in prev.topYs.indices) {
                         val topJump = Math.abs(curr.topYs[i] - prev.topYs[i])
                         val baseJump = Math.abs(curr.baselineYs[i] - prev.baselineYs[i])
-                        val centreJump = Math.abs(curr.centreXs[i] - prev.centreXs[i])
+                        val centerJump = Math.abs(curr.centerXs[i] - prev.centerXs[i])
                         assertTrue(
                             "Path handoff ${prev.path} -> ${curr.path} letter $i top jump must be <= 1.0 px (was $topJump px)",
                             topJump <= 1.0f
@@ -655,8 +655,8 @@ class LetterSpringTest {
                             baseJump <= 1.0f
                         )
                         assertTrue(
-                            "Path handoff ${prev.path} -> ${curr.path} letter $i centre jump must be <= 1.0 px (was $centreJump px)",
-                            centreJump <= 1.0f
+                            "Path handoff ${prev.path} -> ${curr.path} letter $i center jump must be <= 1.0 px (was $centerJump px)",
+                            centerJump <= 1.0f
                         )
                     }
                 }
@@ -682,7 +682,7 @@ class LetterSpringTest {
 
             assertTrue("$durationMs ms max top jump must be <= 1.0 px (was ${res.maxTopJump} px)", res.maxTopJump <= 1.0f)
             assertTrue("$durationMs ms max baseline jump must be <= 0.5 px (was ${res.maxBaselineJump} px)", res.maxBaselineJump <= 0.5f)
-            assertTrue("$durationMs ms max centre jump must be <= 1.3 px (was ${res.maxCentreJump} px)", res.maxCentreJump <= 1.3f)
+            assertTrue("$durationMs ms max center jump must be <= 1.3 px (was ${res.maxCenterJump} px)", res.maxCenterJump <= 1.3f)
 
             val ratio = res.maxPeakDrawnLift / normalPeakLift
             assertTrue(
@@ -695,7 +695,7 @@ class LetterSpringTest {
         val normalPeak1200 = Tuning.wordLiftPeakFraction * 60f * SyllableAnimator.getMotionAmplitude(1200L)
         assertTrue("1200ms resync max top jump must be <= 1.0 px (was ${resync.maxTopJump} px)", resync.maxTopJump <= 1.0f)
         assertTrue("1200ms resync max baseline jump must be <= 0.5 px (was ${resync.maxBaselineJump} px)", resync.maxBaselineJump <= 0.5f)
-        assertTrue("1200ms resync max centre jump must be <= 1.3 px (was ${resync.maxCentreJump} px)", resync.maxCentreJump <= 1.3f)
+        assertTrue("1200ms resync max center jump must be <= 1.3 px (was ${resync.maxCenterJump} px)", resync.maxCenterJump <= 1.3f)
         assertTrue(
             "1200ms resync peak lift (${resync.maxPeakDrawnLift} px) must match normal word ($normalPeak1200 px) within 5%",
             Math.abs(resync.maxPeakDrawnLift / normalPeak1200 - 1.0f) <= 0.05f

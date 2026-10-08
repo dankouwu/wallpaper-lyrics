@@ -152,25 +152,25 @@ class InstrumentalDotsTest {
     }
 
     @Test
-    fun testCentresDoNotMoveAtAnyOverlap() {
+    fun testCentersDoNotMoveAtAnyOverlap() {
         val overlaps = listOf(0f, 25f, 50f, 75f, 100f)
         for (dotCount in 1..5) {
             for (i in 0 until dotCount) {
-                val expectedCentre = (i.toFloat() + 0.5f) / dotCount.toFloat()
+                val expectedCenter = (i.toFloat() + 0.5f) / dotCount.toFloat()
                 for (overlap in overlaps) {
-                    val focusAtCentre = LyricsRenderer.getInstrumentalDotFocus(expectedCentre, i, dotCount, overlap)
+                    val focusAtCenter = LyricsRenderer.getInstrumentalDotFocus(expectedCenter, i, dotCount, overlap)
                     assertEquals(
-                        "Dot $i with dotCount $dotCount at overlap $overlap must reach peak 1.0 at centre $expectedCentre",
+                        "Dot $i with dotCount $dotCount at overlap $overlap must reach peak 1.0 at center $expectedCenter",
                         1.0f,
-                        focusAtCentre,
+                        focusAtCenter,
                         0.0001f
                     )
 
                     val epsilon = 0.005f
-                    val leftFocus = LyricsRenderer.getInstrumentalDotFocus(expectedCentre - epsilon, i, dotCount, overlap)
-                    val rightFocus = LyricsRenderer.getInstrumentalDotFocus(expectedCentre + epsilon, i, dotCount, overlap)
-                    assertTrue("Left of centre must have lower focus than peak", leftFocus < 1.0f)
-                    assertTrue("Right of centre must have lower focus than peak", rightFocus < 1.0f)
+                    val leftFocus = LyricsRenderer.getInstrumentalDotFocus(expectedCenter - epsilon, i, dotCount, overlap)
+                    val rightFocus = LyricsRenderer.getInstrumentalDotFocus(expectedCenter + epsilon, i, dotCount, overlap)
+                    assertTrue("Left of center must have lower focus than peak", leftFocus < 1.0f)
+                    assertTrue("Right of center must have lower focus than peak", rightFocus < 1.0f)
                 }
             }
         }
@@ -184,9 +184,9 @@ class InstrumentalDotsTest {
             for (overlap in overlaps) {
                 val halfWidth = (1f + overlap / 100f) / (2f * countF)
                 for (i in 0 until dotCount) {
-                    val centre = (i.toFloat() + 0.5f) / countF
-                    val wStart = Math.max(0f, centre - halfWidth)
-                    val wEnd = Math.min(1f, centre + halfWidth)
+                    val center = (i.toFloat() + 0.5f) / countF
+                    val wStart = Math.max(0f, center - halfWidth)
+                    val wEnd = Math.min(1f, center + halfWidth)
 
                     val focusStart = LyricsRenderer.getInstrumentalDotFocus(wStart, i, dotCount, overlap)
                     val focusEnd = LyricsRenderer.getInstrumentalDotFocus(wEnd, i, dotCount, overlap)
@@ -256,10 +256,10 @@ class InstrumentalDotsTest {
         for (dotCount in 1..8) {
             for (overlap in listOf(0f, 100f)) {
                 for (i in 0 until dotCount) {
-                    val centre = (i.toFloat() + 0.5f) / dotCount.toFloat()
-                    val peakFocus = LyricsRenderer.getInstrumentalDotFocus(centre, i, dotCount, overlap)
+                    val center = (i.toFloat() + 0.5f) / dotCount.toFloat()
+                    val peakFocus = LyricsRenderer.getInstrumentalDotFocus(center, i, dotCount, overlap)
                     assertEquals(
-                        "Dot $i (count $dotCount, overlap $overlap) must peak at centre",
+                        "Dot $i (count $dotCount, overlap $overlap) must peak at center",
                         1.0f,
                         peakFocus,
                         0.0001f

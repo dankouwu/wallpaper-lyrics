@@ -57,8 +57,8 @@ object Tuning {
     val HELD_WORD_MIN_DURATION_MS = Tunable("heldWordMinDurationMs", "Held word threshold (ms)", "A word sung at least this long animates letter by letter. Shorter words swell as one block.", GROUP_WORD_MOTION, 200f, 3000f, 600f, isInteger = true)
     val HELD_WORD_LETTER_SCALE_PEAK = Tunable("heldWordLetterScalePeak", "Held letter scale peak", "Biggest size a single letter reaches as the ripple passes over it. Only used by letter animation 0 and 1; mode 2 uses the normal word scale.", GROUP_WORD_MOTION, 1.00f, 1.40f, 1.04f)
     val HELD_WORD_LETTER_LIFT_FRACTION = Tunable("heldWordLetterLiftFraction", "Held letter lift", "How far each letter of a held word lifts, as a fraction of text size. Only used by letter animation 2; normal words use Lift peak fraction.", GROUP_WORD_MOTION, 0.00f, 0.30f, 0.05f)
-    val HELD_WORD_LETTER_OVERLAP_MS = Tunable("heldWordLetterOverlapMs", "Held letter overlap (ms)", "How long neighbouring letters of a held word move together, in ms. 0 is back to back. Only used by letter animation 2.", GROUP_WORD_MOTION, 0f, 1000f, 200f, isInteger = true)
-    val LETTER_FALLOFF_POWER = Tunable("letterFalloffPower", "Letter falloff power", "How tightly the ripple hugs the letter being sung. Higher leaves the neighbours almost still.", GROUP_WORD_MOTION, 1f, 6f, 3f, isInteger = true)
+    val HELD_WORD_LETTER_OVERLAP_MS = Tunable("heldWordLetterOverlapMs", "Held letter overlap (ms)", "How long neighboring letters of a held word move together, in ms. 0 is back to back. Only used by letter animation 2.", GROUP_WORD_MOTION, 0f, 1000f, 200f, isInteger = true)
+    val LETTER_FALLOFF_POWER = Tunable("letterFalloffPower", "Letter falloff power", "How tightly the ripple hugs the letter being sung. Higher leaves the neighbors almost still.", GROUP_WORD_MOTION, 1f, 6f, 3f, isInteger = true)
     val LETTER_ANIMATION = Tunable("letterAnimation", "Letter animation", "How held words animate letter by letter. 0 is wave, 1 is sequential, 2 is normal word curve per letter.", GROUP_WORD_MOTION, 0f, 2f, 2f, isInteger = true)
     val LETTER_OVERLAP = Tunable("letterOverlap", "Letter overlap", "How long each letter's turn lasts, in percent of the gap between one letter starting and the next. 0 is strictly one at a time; higher lets more letters move together and slows each one down. Only used by letter animation 0 and 1.", GROUP_WORD_MOTION, 0f, 1000f, 300f)
     val GLOW_BLUR_RADIUS_FRACTION = Tunable("glowBlurRadiusFraction", "Glow blur radius fraction", "Width of the glow blur, as a fraction of text size.", GROUP_WORD_MOTION, 0.02f, 0.30f, 0.10f)
@@ -73,7 +73,7 @@ object Tuning {
 
     // Group 2: Background color
     val CHROMA_EXPONENT = Tunable("bg_saturation", "Chroma exponent", "Overall color strength of the background. Drag right for more saturated.", GROUP_BACKGROUND_COLOR, AuroraRenderer.MIN_CHROMA_EXPONENT, AuroraRenderer.MAX_CHROMA_EXPONENT, AuroraRenderer.DEFAULT_CHROMA_EXPONENT, inverted = true)
-    val LINEAR_BOOST = Tunable("linearBoost", "Linear chroma boost", "Cap on how hard near grey pixels are pushed. Low keeps whites and greys neutral, high lets them take on a tint.", GROUP_BACKGROUND_COLOR, 1.0f, 10.0f, AuroraRenderer.DEFAULT_LINEAR_BOOST)
+    val LINEAR_BOOST = Tunable("linearBoost", "Linear chroma boost", "Cap on how hard near gray pixels are pushed. Low keeps whites and grays neutral, high lets them take on a tint.", GROUP_BACKGROUND_COLOR, 1.0f, 10.0f, AuroraRenderer.DEFAULT_LINEAR_BOOST)
     val BACKGROUND_DEPTH = Tunable("backgroundDepth", "Background depth", "Darkens the most colorful areas so the background has some depth.", GROUP_BACKGROUND_COLOR, 0.0f, 0.50f, AuroraRenderer.DEFAULT_BACKGROUND_DEPTH)
     val DEPTH_GATE_LOW = Tunable("depthGateLow", "Depth gate low", "How colorful a pixel has to be before that darkening starts.", GROUP_BACKGROUND_COLOR, 0.0f, 1.0f, AuroraRenderer.DEFAULT_DEPTH_GATE_LOW)
     val DEPTH_GATE_HIGH = Tunable("depthGateHigh", "Depth gate high", "How colorful a pixel has to be to get the full darkening.", GROUP_BACKGROUND_COLOR, 0.0f, 1.0f, AuroraRenderer.DEFAULT_DEPTH_GATE_HIGH)
@@ -105,7 +105,7 @@ object Tuning {
     val DOT_SCALE_PEAK = Tunable("dotScalePeak", "Dot scale peak", "Biggest a dot gets as its turn comes round.", GROUP_INSTRUMENTAL_DOTS, 1.00f, 1.40f, 1.25f)
     val DOT_LIFT_FRACTION = Tunable("dotLiftFraction", "Dot lift fraction", "How far a dot lifts, as a fraction of its radius.", GROUP_INSTRUMENTAL_DOTS, 0.00f, 0.50f, 0.40f)
     val DOT_COUNT = Tunable("dotCount", "Dot count", "How many dots show during an instrumental break.", GROUP_INSTRUMENTAL_DOTS, 1f, 8f, 3f, isInteger = true)
-    val DOT_OVERLAP = Tunable("dotOverlap", "Dot overlap", "How much neighbouring dots share their turn, in percent. 0 is strictly one at a time.", GROUP_INSTRUMENTAL_DOTS, 0f, 100f, 35.00f)
+    val DOT_OVERLAP = Tunable("dotOverlap", "Dot overlap", "How much neighboring dots share their turn, in percent. 0 is strictly one at a time.", GROUP_INSTRUMENTAL_DOTS, 0f, 100f, 35.00f)
 
     val allParams: List<Tunable> = listOf(
         WORD_SCALE_START,

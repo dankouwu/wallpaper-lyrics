@@ -152,9 +152,9 @@ class GamutRelativeChromaTest {
     }
 
     @Test
-    fun `greys below point zero zero one are returned unchanged at every exponent`() {
+    fun `grays below point zero zero one are returned unchanged at every exponent`() {
         val exponents = listOf(0.15f, 0.30f, 0.575f, 1.0f)
-        val greys = listOf(
+        val grays = listOf(
             0xFF000000.toInt(),
             0xFF121212.toInt(),
             0xFF6E6E6E.toInt(),
@@ -163,9 +163,9 @@ class GamutRelativeChromaTest {
         )
 
         for (exp in exponents) {
-            for (color in greys) {
+            for (color in grays) {
                 val out = AuroraRenderer.boostChromaColor(color, exp)
-                assertEquals("Grey color must be unchanged at exp=$exp", color, out)
+                assertEquals("Gray color must be unchanged at exp=$exp", color, out)
             }
         }
     }

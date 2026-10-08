@@ -705,7 +705,7 @@ class TuningTest {
         assertTrue(Tuning.HELD_WORD_LETTER_OVERLAP_MS.isInteger)
         assertFalse(Tuning.HELD_WORD_LETTER_OVERLAP_MS.inverted)
         assertEquals(
-            "How long neighbouring letters of a held word move together, in ms. 0 is back to back. Only used by letter animation 2.",
+            "How long neighboring letters of a held word move together, in ms. 0 is back to back. Only used by letter animation 2.",
             Tuning.HELD_WORD_LETTER_OVERLAP_MS.description
         )
 

@@ -109,7 +109,7 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `grey stays grey with chroma below point zero two`() {
+    fun `gray stays gray with chroma below point zero two`() {
         val input = 0xFF6E6E6E.toInt()
         val result = AuroraRenderer.boostChromaColor(input, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
         val lab = colorToOklab(result)
@@ -169,7 +169,7 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `grey keeps lightness ratio of one within point zero one`() {
+    fun `gray keeps lightness ratio of one within point zero one`() {
         val input = 0xFF6E6E70.toInt()
         val inLab = colorToOklab(input)
         val outLab = colorToOklab(AuroraRenderer.boostChromaColor(input, AuroraRenderer.DEFAULT_CHROMA_EXPONENT))
@@ -259,12 +259,12 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `pure grey field stays pure grey with zero chroma after boost including dithering`() {
+    fun `pure gray field stays pure gray with zero chroma after boost including dithering`() {
         val width = 16
         val height = 16
-        val greys = intArrayOf(0x00, 0x20, 0x50, 0x6E, 0x80, 0xA0, 0xD0, 0xFF)
+        val grays = intArrayOf(0x00, 0x20, 0x50, 0x6E, 0x80, 0xA0, 0xD0, 0xFF)
         val pixels = IntArray(width * height) { i ->
-            val g = greys[i % greys.size]
+            val g = grays[i % grays.size]
             (0xFF shl 24) or (g shl 16) or (g shl 8) or g
         }
         val original = pixels.clone()
@@ -274,9 +274,9 @@ class ChromaBoostTest {
             val r = (color shr 16) and 0xFF
             val g = (color shr 8) and 0xFF
             val b = color and 0xFF
-            assertEquals("Red and green should match for grey", r, g)
-            assertEquals("Green and blue should match for grey", g, b)
-            assertEquals("Grey pixel should be unchanged", original[i], color)
+            assertEquals("Red and green should match for gray", r, g)
+            assertEquals("Green and blue should match for gray", g, b)
+            assertEquals("Gray pixel should be unchanged", original[i], color)
         }
     }
 
@@ -375,11 +375,11 @@ class ChromaBoostTest {
     }
 
     @Test
-    fun `pure grey returns sane in range values without throwing or NaN`() {
-        val greys = intArrayOf(0xFF000000.toInt(), 0xFF808080.toInt(), 0xFFFFFFFF.toInt(), 0xFF121212.toInt())
-        for (grey in greys) {
-            val res = AuroraRenderer.boostChromaColor(grey, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
-            assertEquals("Grey $grey should be returned unchanged", grey, res)
+    fun `pure gray returns sane in range values without throwing or NaN`() {
+        val grays = intArrayOf(0xFF000000.toInt(), 0xFF808080.toInt(), 0xFFFFFFFF.toInt(), 0xFF121212.toInt())
+        for (gray in grays) {
+            val res = AuroraRenderer.boostChromaColor(gray, AuroraRenderer.DEFAULT_CHROMA_EXPONENT)
+            assertEquals("Gray $gray should be returned unchanged", gray, res)
             val r = (res shr 16) and 0xFF
             val g = (res shr 8) and 0xFF
             val b = res and 0xFF

@@ -1570,7 +1570,7 @@ class LyricsWallpaperService : WallpaperService() {
         /**
          * Cuts the black bars off a letterboxed thumbnail. The bars are wide enough to
          * show inside the rounded corners of the metadata view, and they drag the
-         * extracted palette towards black, so they come off before anything reads the
+         * extracted palette toward black, so they come off before anything reads the
          * bitmap.
          *
          * Sampling a handful of columns is enough: a bar spans the full width, so a row
@@ -1830,7 +1830,7 @@ class LyricsWallpaperService : WallpaperService() {
                     val speedMult = prefBgSpeed
                     val targetSpeed = if (isPlaying) speedMult else 0.0f
                     
-                    // Smoothly interpolate current speed towards target speed
+                    // Smoothly interpolate current speed toward target speed
                     val lerpFactor = (dt * 3.0f).coerceAtMost(1.0f)
                     currentAnimationSpeed += (targetSpeed - currentAnimationSpeed) * lerpFactor
                     accumulatedTime += dt * currentAnimationSpeed

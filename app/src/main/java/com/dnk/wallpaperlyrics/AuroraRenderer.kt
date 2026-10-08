@@ -744,7 +744,7 @@ object AuroraRenderer {
         val b = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_
 
         val chroma = hypot(a, b)
-        // Greys stay grey to prevent rounding noise from blowing out to arbitrary hues.
+        // Grays stay gray to prevent rounding noise from blowing out to arbitrary hues.
         if (chroma < 0.001f) {
             return color
         }

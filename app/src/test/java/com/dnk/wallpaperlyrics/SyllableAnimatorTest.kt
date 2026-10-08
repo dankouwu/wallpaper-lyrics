@@ -279,16 +279,16 @@ class SyllableAnimatorTest {
 
         val activeIndex = SyllableAnimator.getActiveLetterIndex(p, codePointCount)
         val activeLift = SyllableAnimator.getLetterLift(p, activeIndex, codePointCount, textSize, wordDuration)
-        val neighbourLift = SyllableAnimator.getLetterLift(p, activeIndex + 1, codePointCount, textSize, wordDuration)
+        val neighborLift = SyllableAnimator.getLetterLift(p, activeIndex + 1, codePointCount, textSize, wordDuration)
         val threeAwayLift = SyllableAnimator.getLetterLift(p, activeIndex + 3, codePointCount, textSize, wordDuration)
 
         assertTrue(
-            "Active letter lift ($activeLift) must exceed neighbour lift ($neighbourLift)",
-            activeLift > neighbourLift
+            "Active letter lift ($activeLift) must exceed neighbor lift ($neighborLift)",
+            activeLift > neighborLift
         )
         assertTrue(
-            "Neighbour lift ($neighbourLift) must exceed letter three away lift ($threeAwayLift)",
-            neighbourLift > threeAwayLift
+            "Neighbor lift ($neighborLift) must exceed letter three away lift ($threeAwayLift)",
+            neighborLift > threeAwayLift
         )
     }
 

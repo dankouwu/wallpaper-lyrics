@@ -407,18 +407,18 @@ object LyricsRenderer {
         val overlap = dotOverlap.coerceIn(0f, 100f)
 
         val countF = dotCount.toFloat()
-        val centre = (dotIndex.toFloat() + 0.5f) / countF
+        val center = (dotIndex.toFloat() + 0.5f) / countF
         val halfWidth = (1f + overlap / 100f) / (2f * countF)
 
-        val wStart = Math.max(0f, centre - halfWidth)
-        val wEnd = Math.min(1f, centre + halfWidth)
+        val wStart = Math.max(0f, center - halfWidth)
+        val wEnd = Math.min(1f, center + halfWidth)
 
         if (p <= wStart || p >= wEnd) return 0.0f
 
-        val t = if (p <= centre) {
-            (p - wStart) / (centre - wStart)
+        val t = if (p <= center) {
+            (p - wStart) / (center - wStart)
         } else {
-            (wEnd - p) / (wEnd - centre)
+            (wEnd - p) / (wEnd - center)
         }
         return t * t * (3f - 2f * t)
     }

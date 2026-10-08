@@ -104,7 +104,7 @@ class LightnessCapTest {
     }
 
     @Test
-    fun `white is capped into expected grey range`() {
+    fun `white is capped into expected gray range`() {
         val white = 0xFFFFFFFF.toInt()
         val result = AuroraRenderer.capLightnessColor(white)
         val r = (result shr 16) and 0xFF
@@ -137,13 +137,13 @@ class LightnessCapTest {
     }
 
     @Test
-    fun `output luma is monotonic across sRGB grey sweep`() {
+    fun `output luma is monotonic across sRGB gray sweep`() {
         var prevLuma = -1
         for (g in 0..255) {
             val color = (0xFF shl 24) or (g shl 16) or (g shl 8) or g
             val result = AuroraRenderer.capLightnessColor(color)
             val luma = computeLuma(result)
-            assertTrue("Luma decreased from $prevLuma to $luma at grey $g", luma >= prevLuma)
+            assertTrue("Luma decreased from $prevLuma to $luma at gray $g", luma >= prevLuma)
             prevLuma = luma
         }
     }
@@ -251,9 +251,9 @@ class LightnessCapTest {
     }
 
     @Test
-    fun `sRGB grey 200 comes out with luma between 180 and 188`() {
-        val grey200 = (0xFF shl 24) or (200 shl 16) or (200 shl 8) or 200
-        val result = AuroraRenderer.capLightnessColor(grey200)
+    fun `sRGB gray 200 comes out with luma between 180 and 188`() {
+        val gray200 = (0xFF shl 24) or (200 shl 16) or (200 shl 8) or 200
+        val result = AuroraRenderer.capLightnessColor(gray200)
         val luma = computeLuma(result)
         assertTrue("Expected luma between 180 and 188, got $luma", luma in 180..188)
     }

@@ -450,7 +450,7 @@ class BackgroundBandingInvestigationTest {
                 if (pct >= 95.0f) pinnedCount95++
             }
 
-            out.println(String.format("Global Chroma Pinning: Total non-grey pixels = %d", totalPixels))
+            out.println(String.format("Global Chroma Pinning: Total non-gray pixels = %d", totalPixels))
             out.println(String.format("  Mean Cin: %.4f | Mean Cout: %.4f | Mean Cap: %.4f",
                 sumInputChroma / totalPixels, sumOutputChroma / totalPixels, sumCap / totalPixels))
             out.println(String.format("  Mean %% of Cap: %.2f%%", sumPctCap / totalPixels))

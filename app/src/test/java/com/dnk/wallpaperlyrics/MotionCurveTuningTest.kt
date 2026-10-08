@@ -19,7 +19,7 @@ class MotionCurveTuningTest {
         Tuning.resetAll()
     }
 
-    // 3. The curve functions produce identical output to the previous hardcoded behaviour when Tuning holds its defaults.
+    // 3. The curve functions produce identical output to the previous hardcoded behavior when Tuning holds its defaults.
     // Pin the existing motion assertions against the defaults.
     @Test
     fun testWordMotionScaleMatchesPinnedDefaults() {

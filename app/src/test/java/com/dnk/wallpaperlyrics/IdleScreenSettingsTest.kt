@@ -205,7 +205,7 @@ class IdleScreenSettingsTest {
     }
 
     @Test
-    fun `componentFromTouch clamps below 0 and above 1 and returns midpoint for centre touch`() {
+    fun `componentFromTouch clamps below 0 and above 1 and returns midpoint for center touch`() {
         val size = 200f
         assertEquals(0f, IdleScreenSettings.componentFromTouch(-50f, size), 0.0001f)
         assertEquals(1f, IdleScreenSettings.componentFromTouch(250f, size), 0.0001f)

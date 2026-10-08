@@ -71,7 +71,7 @@ class VersionPaletteTest {
     }
 
     @Test
-    fun `generated palettes for seeds 1 to 300 are opaque and neighbouring roles separated by at least 0 08 in OKLab`() {
+    fun `generated palettes for seeds 1 to 300 are opaque and neighboring roles separated by at least 0 08 in OKLab`() {
         val adjacentPairs = listOf(
             Pair(0, 1),
             Pair(0, 2),
