@@ -557,7 +557,47 @@ class LyricsWallpaperService : WallpaperService() {
                    (now - songStartTime < 3000)
         }
 
+        private fun settleMetadataTransition() {
+            metadataTransitionProgress = 1.0f
+            metadataTransitionStartTime = 0L
+            prevTitleLayout = null
+            prevArtistLayout = null
+        }
+
+        private fun settleCardFade() {
+            cardFadeProgress = 1.0f
+            cardFadeStartTime = 0L
+            prevAlbumArt = null
+        }
+
+        private fun settleBackgroundTransition() {
+            if (isTransitioning || nextBgArt != null) {
+                isTransitioning = false
+                blendProgress = 1.0f
+                val old = currentBgArt
+                currentBgArt = nextBgArt
+                nextBgArt = null
+                if (old !== currentBgArt && old !== albumArt && old !== prevAlbumArt) {
+                    old?.recycle()
+                }
+                accumulatedTime = nextAccumulatedTime
+                currentSeedX = nextSeedX
+                currentSeedY = nextSeedY
+            }
+        }
+
+        private fun settleAllTransitions() {
+            settleMetadataTransition()
+            settleCardFade()
+            settleBackgroundTransition()
+        }
+
         private fun startMetadataTransition() {
+            if (TransitionSettle.shouldSettle(isScreenOff)) {
+                settleMetadataTransition()
+                settleCardFade()
+                return
+            }
             if (metadataTitleLayout != null) {
                 prevAlbumArt = albumArt
                 prevAlbumArtAspect = albumArtAspect
@@ -806,6 +846,7 @@ class LyricsWallpaperService : WallpaperService() {
                         isScreenOff = true
                         viewAlpha = 1.0f
                         targetViewAlpha = 1.0f
+                        settleAllTransitions()
                         frameClockMs = SystemClock.elapsedRealtime()
                         snapScrollToPosition()
                         drawFrame(0f)
@@ -816,6 +857,9 @@ class LyricsWallpaperService : WallpaperService() {
                         isScreenOff = false
                         if (wasOff) {
                             lastWakeTime = System.currentTimeMillis()
+                            settleAllTransitions()
+                        } else {
+                            completeExpiredTransitions()
                         }
                         frameClockMs = SystemClock.elapsedRealtime()
                         snapScrollToPosition()
@@ -1223,6 +1267,9 @@ class LyricsWallpaperService : WallpaperService() {
                 isScreenOff = false
                 if (wasOff) {
                     lastWakeTime = System.currentTimeMillis()
+                    settleAllTransitions()
+                } else {
+                    completeExpiredTransitions()
                 }
                 
                 // Snap viewAlpha to the correct target immediately to prevent transitions/fading on app return
@@ -1232,8 +1279,6 @@ class LyricsWallpaperService : WallpaperService() {
                 val isMetadataState = isMetadataState(now, timeSinceWake, lines)
                 targetViewAlpha = if (isMetadataState) 1.0f else 0.0f
                 viewAlpha = targetViewAlpha
-
-                completeExpiredTransitions()
 
                 syncPlaybackState()
                 frameClockMs = SystemClock.elapsedRealtime()
@@ -1253,6 +1298,9 @@ class LyricsWallpaperService : WallpaperService() {
             isScreenOff = false
             if (wasOff) {
                 lastWakeTime = System.currentTimeMillis()
+                settleAllTransitions()
+            } else {
+                completeExpiredTransitions()
             }
             
             val now = System.currentTimeMillis()
@@ -1261,8 +1309,6 @@ class LyricsWallpaperService : WallpaperService() {
             val isMetadataState = isMetadataState(now, timeSinceWake, lines)
             targetViewAlpha = if (isMetadataState) 1.0f else 0.0f
             viewAlpha = targetViewAlpha
-
-            completeExpiredTransitions()
 
             syncPlaybackState()
             frameClockMs = SystemClock.elapsedRealtime()
@@ -1451,12 +1497,18 @@ class LyricsWallpaperService : WallpaperService() {
                          albumArtAspect = 1.0f
                          prevAlbumArt = null
                          cardFadeProgress = 1.0f
+                         if (isScreenOff) {
+                             frameClockMs = SystemClock.elapsedRealtime()
+                             drawFrame(0f)
+                             drawFrame(0f)
+                         }
                     }
                 }, 500)
             }
 
             if (isScreenOff) {
                 frameClockMs = SystemClock.elapsedRealtime()
+                drawFrame(0f)
                 drawFrame(0f)
             }
         }
@@ -1508,6 +1560,11 @@ class LyricsWallpaperService : WallpaperService() {
                                 albumArtAspect = 1.0f
                                 prevAlbumArt = null
                                 cardFadeProgress = 1.0f
+                                if (isScreenOff) {
+                                    frameClockMs = SystemClock.elapsedRealtime()
+                                    drawFrame(0f)
+                                    drawFrame(0f)
+                                }
                             }
                         }
                     }
@@ -1602,11 +1659,13 @@ class LyricsWallpaperService : WallpaperService() {
             val art = if (nativeAspect) cropLetterbox(sourceBitmap) else sourceBitmap
             if (art === albumArt) return
 
-            if (CardFade.shouldFade(albumArt, art)) {
+            if (TransitionSettle.shouldFadeCard(albumArt, art, isScreenOff)) {
                 prevAlbumArt = albumArt
                 prevAlbumArtAspect = albumArtAspect
                 cardFadeProgress = 0.0f
                 cardFadeStartTime = SystemClock.elapsedRealtime()
+            } else if (TransitionSettle.shouldSettle(isScreenOff)) {
+                settleCardFade()
             }
             albumArt = art
             albumArtAspect = MetadataArtLayout.aspectFor(nativeAspect, art.width, art.height)
@@ -1663,6 +1722,7 @@ class LyricsWallpaperService : WallpaperService() {
             }
             if (isScreenOff) {
                 frameClockMs = SystemClock.elapsedRealtime()
+                drawFrame(0f)
                 drawFrame(0f)
             }
         }
@@ -1751,6 +1811,11 @@ class LyricsWallpaperService : WallpaperService() {
             currentColors = targetColors.copyOf()
             applyIdleBackground()
             updatePersistentNotificationMetadata(this, isPreview, currentTitle, currentArtist)
+            if (isScreenOff) {
+                frameClockMs = SystemClock.elapsedRealtime()
+                drawFrame(0f)
+                drawFrame(0f)
+            }
         }
 
         private fun applyIdleBackground() {
@@ -1806,18 +1871,22 @@ class LyricsWallpaperService : WallpaperService() {
                 }
                 if (canvas != null) {
                     if (isTransitioning) {
-                        val crossfadeRate = Tuning.crossfadeRate
-                        blendProgress += dt * crossfadeRate
-                        if (blendProgress >= 1.0f) {
-                            blendProgress = 1.0f
-                            isTransitioning = false
-                            val old = currentBgArt
-                            currentBgArt = nextBgArt
-                            nextBgArt = null
-                            old?.recycle()
-                            accumulatedTime = nextAccumulatedTime
-                            currentSeedX = nextSeedX
-                            currentSeedY = nextSeedY
+                        if (TransitionSettle.shouldSettle(isScreenOff)) {
+                            settleBackgroundTransition()
+                        } else {
+                            val crossfadeRate = Tuning.crossfadeRate
+                            blendProgress += dt * crossfadeRate
+                            if (blendProgress >= 1.0f) {
+                                blendProgress = 1.0f
+                                isTransitioning = false
+                                val old = currentBgArt
+                                currentBgArt = nextBgArt
+                                nextBgArt = null
+                                old?.recycle()
+                                accumulatedTime = nextAccumulatedTime
+                                currentSeedX = nextSeedX
+                                currentSeedY = nextSeedY
+                            }
                         }
                     }
 
@@ -2591,12 +2660,12 @@ class LyricsWallpaperService : WallpaperService() {
 
             if (metadataTransitionProgress < 1.0f) {
                 val elapsed = SystemClock.elapsedRealtime() - metadataTransitionStartTime
-                metadataTransitionProgress = CardFade.progressAt(elapsed)
+                metadataTransitionProgress = TransitionSettle.progressAt(elapsed, isScreenOff)
             }
 
             if (cardFadeProgress < 1.0f) {
                 val elapsed = SystemClock.elapsedRealtime() - cardFadeStartTime
-                cardFadeProgress = CardFade.progressAt(elapsed)
+                cardFadeProgress = TransitionSettle.progressAt(elapsed, isScreenOff)
                 if (CardFade.isComplete(cardFadeProgress)) {
                     prevAlbumArt = null
                 }
@@ -2686,10 +2755,36 @@ class LyricsWallpaperService : WallpaperService() {
                 Log.d("Wallpaper", "Bg transition decision: $decision (gen=$incomingGeneration, targetGen=$targetBgGeneration)")
             }
 
-            when (decision) {
-                BgHandoffDecision.DROP_STALE -> {
-                    newBlurred.recycle()
+            if (decision == BgHandoffDecision.DROP_STALE) {
+                newBlurred.recycle()
+                return
+            }
+
+            if (TransitionSettle.shouldSettle(isScreenOff)) {
+                val oldCurrent = currentBgArt
+                val oldNext = nextBgArt
+                currentBgArt = newBlurred
+                nextBgArt = null
+                isTransitioning = false
+                blendProgress = 1.0f
+                accumulatedTime = timeOffset
+                currentSeedX = seedX
+                currentSeedY = seedY
+                targetBgGeneration = incomingGeneration
+                if (oldCurrent !== newBlurred && oldCurrent !== albumArt && oldCurrent !== prevAlbumArt) {
+                    oldCurrent?.recycle()
                 }
+                if (oldNext !== newBlurred && oldNext !== albumArt && oldNext !== prevAlbumArt) {
+                    oldNext?.recycle()
+                }
+                frameClockMs = SystemClock.elapsedRealtime()
+                drawFrame(0f)
+                drawFrame(0f)
+                return
+            }
+
+            when (decision) {
+                BgHandoffDecision.DROP_STALE -> {}
                 BgHandoffDecision.START_FRESH -> {
                     currentBgArt = newBlurred
                     nextBgArt = null
