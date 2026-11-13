@@ -242,11 +242,11 @@ class InstrumentalDotsTest {
 
                 // Smooth startup for first dot near 0 (no abrupt jump or clipping)
                 val focusNearZero = LyricsRenderer.getInstrumentalDotFocus(0.001f, 0, dotCount, overlap)
-                assertTrue("Focus near zero must stay small: $focusNearZero", focusNearZero in 0.0f..0.02f)
+                assertTrue("Focus near zero must stay small: $focusNearZero", focusNearZero in 0.0f..0.08f)
 
                 // Smooth finish for last dot near 1 (no abrupt jump or clipping)
                 val focusNearOne = LyricsRenderer.getInstrumentalDotFocus(0.999f, dotCount - 1, dotCount, overlap)
-                assertTrue("Focus near one must stay small: $focusNearOne", focusNearOne in 0.0f..0.02f)
+                assertTrue("Focus near one must stay small: $focusNearOne", focusNearOne in 0.0f..0.08f)
             }
         }
     }
@@ -266,6 +266,81 @@ class InstrumentalDotsTest {
                     )
                 }
             }
+        }
+    }
+
+    @Test
+    fun testRiseIsEasedOut() {
+        val dotIndex = 1
+        val dotCount = 3
+        val overlap = 0f
+        val wStart = 1f / 3f
+        val center = 0.5f
+        val midpoint = (wStart + center) / 2f
+        val focus = LyricsRenderer.getInstrumentalDotFocus(midpoint, dotIndex, dotCount, overlap)
+        assertEquals(0.8954f, focus, 0.01f)
+    }
+
+    @Test
+    fun testFallIsEasedIn() {
+        val dotIndex = 1
+        val dotCount = 3
+        val overlap = 0f
+        val center = 0.5f
+        val wEnd = 2f / 3f
+        val midpoint = (center + wEnd) / 2f
+        val focus = LyricsRenderer.getInstrumentalDotFocus(midpoint, dotIndex, dotCount, overlap)
+        assertEquals(0.8954f, focus, 0.01f)
+    }
+
+    @Test
+    fun testRiseMatchesCubicBezierReferenceValues() {
+        val dotIndex = 1
+        val dotCount = 3
+        val overlap = 0f
+        val wStart = 1f / 3f
+        val center = 0.5f
+        val span = center - wStart
+
+        val referencePoints = listOf(
+            0.1f to 0.3228f,
+            0.25f to 0.6477f,
+            0.5f to 0.8954f,
+            0.75f to 0.9807f,
+            0.9f to 0.9973f
+        )
+
+        for ((t, expected) in referencePoints) {
+            val progress = wStart + t * span
+            val focus = LyricsRenderer.getInstrumentalDotFocus(progress, dotIndex, dotCount, overlap)
+            assertEquals("Focus at t=$t must match reference value", expected, focus, 0.005f)
+        }
+    }
+
+    @Test
+    fun testFocusIsMonotonicAcrossWindow() {
+        val dotIndex = 1
+        val dotCount = 3
+        val overlap = 0f
+        val wStart = 1f / 3f
+        val center = 0.5f
+        val wEnd = 2f / 3f
+        val steps = 1000
+
+        var previousFocus = LyricsRenderer.getInstrumentalDotFocus(wStart, dotIndex, dotCount, overlap)
+        for (step in 1..steps) {
+            val progress = wStart + (center - wStart) * (step.toFloat() / steps.toFloat())
+            val focus = LyricsRenderer.getInstrumentalDotFocus(progress, dotIndex, dotCount, overlap)
+            assertTrue(focus >= previousFocus)
+            previousFocus = focus
+        }
+
+        previousFocus = LyricsRenderer.getInstrumentalDotFocus(center, dotIndex, dotCount, overlap)
+        for (step in 1..steps) {
+            val progress = center + (wEnd - center) * (step.toFloat() / steps.toFloat())
+            val focus = LyricsRenderer.getInstrumentalDotFocus(progress, dotIndex, dotCount, overlap)
+            assertTrue(focus <= previousFocus)
+            previousFocus = focus
         }
     }
 }

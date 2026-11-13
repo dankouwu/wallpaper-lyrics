@@ -395,6 +395,31 @@ object LyricsRenderer {
         return Pair(topShader, bottomShader)
     }
 
+    // cubic-bezier(0.2, 0.72, 0.38, 1)
+    private const val DOT_CURVE_X1 = 0.2f
+    private const val DOT_CURVE_Y1 = 0.72f
+    private const val DOT_CURVE_X2 = 0.38f
+    private const val DOT_CURVE_Y2 = 1.0f
+
+    private fun evaluateInstrumentalDotCurve(t: Float): Float {
+        var s = t
+        for (i in 0 until 4) {
+            val oneMinusS = 1f - s
+            val x = 3f * oneMinusS * oneMinusS * s * DOT_CURVE_X1 +
+                3f * oneMinusS * s * s * DOT_CURVE_X2 +
+                s * s * s
+            val dx = 3f * oneMinusS * oneMinusS * DOT_CURVE_X1 +
+                6f * oneMinusS * s * (DOT_CURVE_X2 - DOT_CURVE_X1) +
+                3f * s * s * (1f - DOT_CURVE_X2)
+            s -= (x - t) / dx
+            if (s < 0f) s = 0f else if (s > 1f) s = 1f
+        }
+        val oneMinusS = 1f - s
+        return 3f * oneMinusS * oneMinusS * s * DOT_CURVE_Y1 +
+            3f * oneMinusS * s * s * DOT_CURVE_Y2 +
+            s * s * s
+    }
+
     fun getInstrumentalDotFocus(
         progress: Float,
         dotIndex: Int,
@@ -420,7 +445,7 @@ object LyricsRenderer {
         } else {
             (wEnd - p) / (wEnd - center)
         }
-        return t * t * (3f - 2f * t)
+        return evaluateInstrumentalDotCurve(t)
     }
 
     fun drawInstrumentalProgress(
