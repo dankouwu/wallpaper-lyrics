@@ -180,14 +180,9 @@ class BackgroundPreviewView(context: Context) : View(context) {
                     val scaledWork = Bitmap.createScaledBitmap(preprocessed, 128, 128, true)
                     preprocessed.recycle()
 
-                    val pass1 = AuroraRenderer.blurBitmap(scaledWork, 20)
+                    val field = AuroraRenderer.processField(scaledWork, 20, bgSaturationExponent)
                     scaledWork.recycle()
-
-                    val pass2 = AuroraRenderer.blurBitmap(pass1, 20)
-                    pass1.recycle()
-                    AuroraRenderer.boostChroma(pass2, bgSaturationExponent)
-                    AuroraRenderer.capLightness(pass2)
-                    pass2
+                    field
                 }
                 val oldBg = backgroundBitmap
                 backgroundBitmap = blurredResult
@@ -290,15 +285,10 @@ class BackgroundPreviewView(context: Context) : View(context) {
                     val scaled = Bitmap.createScaledBitmap(preprocessed, 128, 128, true)
                     preprocessed.recycle()
 
-                    val firstPass = AuroraRenderer.blurBitmap(scaled, 20)
+                    val field = AuroraRenderer.processField(scaled, 20, bgSaturationExponent)
                     scaled.recycle()
 
-                    val secondPass = AuroraRenderer.blurBitmap(firstPass, 20)
-                    firstPass.recycle()
-                    AuroraRenderer.boostChroma(secondPass, bgSaturationExponent)
-                    AuroraRenderer.capLightness(secondPass)
-
-                    secondPass
+                    field
                 }
 
                 val oldBitmap = backgroundBitmap
@@ -429,15 +419,8 @@ class BackgroundPreviewView(context: Context) : View(context) {
                         val scaledWork = Bitmap.createScaledBitmap(preprocessed, 128, 128, true)
                         preprocessed.recycle()
 
-                        val pass1 = AuroraRenderer.blurBitmap(scaledWork, 20)
+                        blurredBg = AuroraRenderer.processField(scaledWork, 20, bgSaturationExponent)
                         scaledWork.recycle()
-
-                        val pass2 = AuroraRenderer.blurBitmap(pass1, 20)
-                        pass1.recycle()
-                        AuroraRenderer.boostChroma(pass2, bgSaturationExponent)
-                        AuroraRenderer.capLightness(pass2)
-
-                        blurredBg = pass2
                         CoverProcessResult(scaledCard, blurredBg, palette)
                     } catch (e: Throwable) {
                         cardCover?.recycle()

@@ -536,94 +536,195 @@ object AuroraRenderer {
         return scaled
     }
 
-    fun blurBitmap(sentBitmap: Bitmap, radius: Int): Bitmap {
-        val bitmap = sentBitmap.copy(sentBitmap.config, true)
-        val w = bitmap.width
-        val h = bitmap.height
-        val pix = IntArray(w * h)
-        bitmap.getPixels(pix, 0, w, 0, 0, w, h)
+    // The field used to be blurred, boosted and capped as 8-bit pixels, rounding after every pass.
+    // The chroma boost then stretched each rounded step to 2 or 3 output levels, which the final
+    // dither could not hide, so dark covers banded. Everything stays in float until one Bayer
+    // dithered rounding at the end. See .agents/notes/decisions.md, Background.
+    fun processField(
+        source: Bitmap,
+        radius: Int,
+        exponent: Float = DEFAULT_CHROMA_EXPONENT,
+        gamutCap: Float = DEFAULT_GAMUT_CAP_FRACTION,
+        linearBoost: Float = DEFAULT_LINEAR_BOOST,
+        depth: Float = DEFAULT_BACKGROUND_DEPTH,
+        depthGateLow: Float = DEFAULT_DEPTH_GATE_LOW,
+        depthGateHigh: Float = DEFAULT_DEPTH_GATE_HIGH,
+        knee: Float = LIGHTNESS_CAP_KNEE,
+        ceiling: Float = LIGHTNESS_CAP_CEILING,
+        strength: Float = LIGHTNESS_CAP_STRENGTH
+    ): Bitmap {
+        val w = source.width
+        val h = source.height
+        val pixels = IntArray(w * h)
+        source.getPixels(pixels, 0, w, 0, 0, w, h)
+        processField(pixels, w, h, radius, exponent, gamutCap, linearBoost, depth, depthGateLow, depthGateHigh, knee, ceiling, strength)
+        val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        out.setPixels(pixels, 0, w, 0, 0, w, h)
+        return out
+    }
 
+    internal fun processField(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        radius: Int,
+        exponent: Float = DEFAULT_CHROMA_EXPONENT,
+        gamutCap: Float = DEFAULT_GAMUT_CAP_FRACTION,
+        linearBoost: Float = DEFAULT_LINEAR_BOOST,
+        depth: Float = DEFAULT_BACKGROUND_DEPTH,
+        depthGateLow: Float = DEFAULT_DEPTH_GATE_LOW,
+        depthGateHigh: Float = DEFAULT_DEPTH_GATE_HIGH,
+        knee: Float = LIGHTNESS_CAP_KNEE,
+        ceiling: Float = LIGHTNESS_CAP_CEILING,
+        strength: Float = LIGHTNESS_CAP_STRENGTH
+    ) {
+        val (r, g, b) = processFieldFloat(
+            pixels, width, height, radius, exponent, gamutCap, linearBoost, depth, depthGateLow, depthGateHigh, knee, ceiling, strength
+        )
+        for (y in 0 until height) {
+            val bayerRow = (y and 7) shl 3
+            for (x in 0 until width) {
+                val dither = BAYER_8X8[bayerRow or (x and 7)]
+                val i = y * width + x
+                val outR = Math.round(r[i] + dither).coerceIn(0, 255)
+                val outG = Math.round(g[i] + dither).coerceIn(0, 255)
+                val outB = Math.round(b[i] + dither).coerceIn(0, 255)
+                pixels[i] = (0xFF shl 24) or (outR shl 16) or (outG shl 8) or outB
+            }
+        }
+    }
+
+    // The field before its 8-bit rounding, as sRGB channels in 0..255. Tests measure against it.
+    internal fun processFieldFloat(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        radius: Int,
+        exponent: Float = DEFAULT_CHROMA_EXPONENT,
+        gamutCap: Float = DEFAULT_GAMUT_CAP_FRACTION,
+        linearBoost: Float = DEFAULT_LINEAR_BOOST,
+        depth: Float = DEFAULT_BACKGROUND_DEPTH,
+        depthGateLow: Float = DEFAULT_DEPTH_GATE_LOW,
+        depthGateHigh: Float = DEFAULT_DEPTH_GATE_HIGH,
+        knee: Float = LIGHTNESS_CAP_KNEE,
+        ceiling: Float = LIGHTNESS_CAP_CEILING,
+        strength: Float = LIGHTNESS_CAP_STRENGTH
+    ): Triple<FloatArray, FloatArray, FloatArray> {
+        val n = width * height
+        val r = FloatArray(n) { ((pixels[it] shr 16) and 0xFF).toFloat() }
+        val g = FloatArray(n) { ((pixels[it] shr 8) and 0xFF).toFloat() }
+        val b = FloatArray(n) { (pixels[it] and 0xFF).toFloat() }
+        val tmp = FloatArray(n)
+        // Two passes, as the field always had: one box blur is visibly square.
+        for (channel in arrayOf(r, g, b)) {
+            boxBlur(channel, tmp, width, height, radius)
+            boxBlur(channel, tmp, width, height, radius)
+        }
+        val rgb = FloatArray(3)
+        for (i in 0 until n) {
+            rgb[0] = r[i]; rgb[1] = g[i]; rgb[2] = b[i]
+            boostAndCap(rgb, exponent, gamutCap, linearBoost, depth, depthGateLow, depthGateHigh, knee, ceiling, strength)
+            r[i] = rgb[0]; g[i] = rgb[1]; b[i] = rgb[2]
+        }
+        return Triple(r, g, b)
+    }
+
+    // Box blur with clamped edges, horizontal into tmp then vertical back into c.
+    private fun boxBlur(c: FloatArray, tmp: FloatArray, w: Int, h: Int, radius: Int) {
+        val div = (radius + radius + 1).toFloat()
         val wm = w - 1
         val hm = h - 1
-        val wh = w * h
-        val div = radius + radius + 1
-
-        val r = IntArray(wh)
-        val g = IntArray(wh)
-        val b = IntArray(wh)
-        var rsum: Int
-        var gsum: Int
-        var bsum: Int
-        var p: Int
-        var yp: Int
-        var yi: Int
-        var yw: Int
-
-        val vmin = IntArray(Math.max(w, h))
-
-        // Horizontal pass
-        yw = 0
-        yi = 0
         for (y in 0 until h) {
-            rsum = 0
-            gsum = 0
-            bsum = 0
-            for (i in -radius..radius) {
-                p = pix[yi + Math.min(wm, Math.max(i, 0))]
-                rsum += (p shr 16) and 0xff
-                gsum += (p shr 8) and 0xff
-                bsum += p and 0xff
-            }
+            val row = y * w
+            var sum = 0f
+            for (i in -radius..radius) sum += c[row + Math.min(wm, Math.max(i, 0))]
             for (x in 0 until w) {
-                r[yi] = (rsum + div / 2) / div
-                g[yi] = (gsum + div / 2) / div
-                b[yi] = (bsum + div / 2) / div
-
-                if (y == 0) {
-                    vmin[x] = Math.min(x + radius + 1, wm)
-                }
-                val p1 = pix[yw + vmin[x]]
-                val p2 = pix[yw + Math.max(x - radius, 0)]
-
-                rsum += ((p1 shr 16) and 0xff) - ((p2 shr 16) and 0xff)
-                gsum += ((p1 shr 8) and 0xff) - ((p2 shr 8) and 0xff)
-                bsum += (p1 and 0xff) - (p2 and 0xff)
-                yi++
+                tmp[row + x] = sum / div
+                sum += c[row + Math.min(x + radius + 1, wm)] - c[row + Math.max(x - radius, 0)]
             }
-            yw += w
         }
-
-        // Vertical pass
         for (x in 0 until w) {
-            rsum = 0
-            gsum = 0
-            bsum = 0
-            yp = -radius * w
-            for (i in -radius..radius) {
-                yi = Math.max(0, yp) + x
-                rsum += r[yi]
-                gsum += g[yi]
-                bsum += b[yi]
-                yp += w
-            }
-            yi = x
+            var sum = 0f
+            for (i in -radius..radius) sum += tmp[Math.min(hm, Math.max(i, 0)) * w + x]
             for (y in 0 until h) {
-                pix[yi] = (0xff000000.toInt() or (((rsum + div / 2) / div) shl 16) or (((gsum + div / 2) / div) shl 8) or ((bsum + div / 2) / div))
-                if (x == 0) {
-                    vmin[y] = Math.min(y + radius + 1, hm) * w
-                }
-                val p1 = x + vmin[y]
-                val p2 = x + Math.max(0, y - radius) * w
-
-                rsum += r[p1] - r[p2]
-                gsum += g[p1] - g[p2]
-                bsum += b[p1] - b[p2]
-                yi += w
+                c[y * w + x] = sum / div
+                sum += tmp[Math.min(y + radius + 1, hm) * w + x] - tmp[Math.max(y - radius, 0) * w + x]
             }
         }
+    }
 
-        bitmap.setPixels(pix, 0, w, 0, 0, w, h)
-        return bitmap
+    // boostChromaColor then capLightnessColor without the 8-bit rounding between them. The sRGB
+    // gamut clamp between them stays, so the field looks as it did. rgb is sRGB in 0..255,
+    // changed in place.
+    private fun boostAndCap(
+        rgb: FloatArray,
+        exponent: Float,
+        gamutCap: Float,
+        linearBoost: Float,
+        depth: Float,
+        depthGateLow: Float,
+        depthGateHigh: Float,
+        knee: Float,
+        ceiling: Float,
+        strength: Float
+    ) {
+        toOklab(rgb)
+        val L = rgb[0]
+        val a = rgb[1]
+        val b = rgb[2]
+        val chroma = hypot(a, b)
+        val hueA = a / chroma
+        val hueB = b / chroma
+        val maxChroma = if (chroma < 0.001f) 0f else maxChromaAt(L, hueA, hueB)
+        // Grays stay gray, as in boostChromaColor.
+        if (maxChroma >= 1e-6f) {
+            val chromaFloorGate = smoothstep(DEPTH_CHROMA_FLOOR_LOW, DEPTH_CHROMA_FLOOR_HIGH, chroma)
+            val depthGate = smoothstep(depthGateLow, depthGateHigh, chroma / maxChroma) * chromaFloorGate
+            val finalChroma = gamutRelativeChroma(chroma, maxChroma, exponent, gamutCap, linearBoost)
+            rgb[0] = L * (1f - depth * depthGate)
+            rgb[1] = finalChroma * hueA
+            rgb[2] = finalChroma * hueB
+        }
+        fromOklab(rgb)
+
+        toOklab(rgb)
+        if (rgb[0] > knee) {
+            val range = ceiling - knee
+            val cappedL = knee + range * (1f - Math.exp(-((rgb[0] - knee) / range).toDouble()).toFloat())
+            rgb[0] -= strength * (rgb[0] - cappedL)
+        }
+        fromOklab(rgb)
+    }
+
+    // sRGB 0..255 to OKLab, in place.
+    private fun toOklab(c: FloatArray) {
+        val rLin = srgbToLinear(c[0] / 255f)
+        val gLin = srgbToLinear(c[1] / 255f)
+        val bLin = srgbToLinear(c[2] / 255f)
+        val l_ = Math.cbrt((0.4122214708f * rLin + 0.5363325363f * gLin + 0.0514459929f * bLin).toDouble()).toFloat()
+        val m_ = Math.cbrt((0.2119034982f * rLin + 0.6806995451f * gLin + 0.1073969566f * bLin).toDouble()).toFloat()
+        val s_ = Math.cbrt((0.0883024619f * rLin + 0.2817188376f * gLin + 0.6299787005f * bLin).toDouble()).toFloat()
+        c[0] = 0.2104542553f * l_ + 0.7936177850f * m_ - 0.0040720468f * s_
+        c[1] = 1.9779984951f * l_ - 2.4285922050f * m_ + 0.4505937099f * s_
+        c[2] = 0.0259040371f * l_ + 0.7827717662f * m_ - 0.8086757660f * s_
+    }
+
+    // OKLab to sRGB 0..255, clamped to the gamut, in place.
+    private fun fromOklab(c: FloatArray) {
+        val fl = c[0] + 0.3963377774f * c[1] + 0.2158037573f * c[2]
+        val fm = c[0] - 0.1055613458f * c[1] - 0.0638541728f * c[2]
+        val fs = c[0] - 0.0894841775f * c[1] - 1.2914855480f * c[2]
+        val pl = fl * fl * fl
+        val pm = fm * fm * fm
+        val ps = fs * fs * fs
+        c[0] = linearToSrgb(+4.0767416621f * pl - 3.3077115913f * pm + 0.2309699292f * ps) * 255f
+        c[1] = linearToSrgb(-1.2684380046f * pl + 2.6097574011f * pm - 0.3413193965f * ps) * 255f
+        c[2] = linearToSrgb(-0.0041960863f * pl - 0.7034186147f * pm + 1.7076147010f * ps) * 255f
+    }
+
+    private fun srgbToLinear(c: Float): Float {
+        val clamped = c.coerceIn(0f, 1f)
+        return if (clamped <= 0.04045f) clamped / 12.92f else Math.pow(((clamped + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
     }
 
     private fun determineConsensusColor(samples: List<Int>): Int? {
@@ -787,23 +888,6 @@ object AuroraRenderer {
     }
 
     fun boostChroma(
-        target: Bitmap,
-        exponent: Float = DEFAULT_CHROMA_EXPONENT,
-        gamutCap: Float = DEFAULT_GAMUT_CAP_FRACTION,
-        linearBoost: Float = DEFAULT_LINEAR_BOOST,
-        depth: Float = DEFAULT_BACKGROUND_DEPTH,
-        depthGateLow: Float = DEFAULT_DEPTH_GATE_LOW,
-        depthGateHigh: Float = DEFAULT_DEPTH_GATE_HIGH
-    ) {
-        val w = target.width
-        val h = target.height
-        val pixels = IntArray(w * h)
-        target.getPixels(pixels, 0, w, 0, 0, w, h)
-        boostChroma(pixels, w, h, exponent, gamutCap, linearBoost, depth, depthGateLow, depthGateHigh)
-        target.setPixels(pixels, 0, w, 0, 0, w, h)
-    }
-
-    fun boostChroma(
         pixels: IntArray,
         width: Int,
         height: Int,
@@ -836,20 +920,6 @@ object AuroraRenderer {
 
     // Caps bright backgrounds so white lyrics stay legible against white covers without clipping contrast in darker scenes.
     // Uses a soft exponential knee above 0.62 to prevent harsh luminance boundaries on gradients.
-    fun capLightness(
-        target: Bitmap,
-        knee: Float = LIGHTNESS_CAP_KNEE,
-        ceiling: Float = LIGHTNESS_CAP_CEILING,
-        strength: Float = LIGHTNESS_CAP_STRENGTH
-    ) {
-        val w = target.width
-        val h = target.height
-        val pixels = IntArray(w * h)
-        target.getPixels(pixels, 0, w, 0, 0, w, h)
-        capLightness(pixels, w, h, knee, ceiling, strength)
-        target.setPixels(pixels, 0, w, 0, 0, w, h)
-    }
-
     internal fun capLightness(
         pixels: IntArray,
         width: Int,

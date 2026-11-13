@@ -1679,30 +1679,21 @@ class LyricsWallpaperService : WallpaperService() {
                 val blurred = withContext(Dispatchers.Default) {
                     val preprocessed = AuroraRenderer.preprocessArt(art, palette.accent, 0.15f)
                     // Radius 80 scales radius 20 linearly with resolution (512 / 128) to preserve visual softness.
-                    val firstPass = AuroraRenderer.blurBitmap(preprocessed, 80)
-                    val secondPass = AuroraRenderer.blurBitmap(firstPass, 80)
-                    preprocessed.recycle()
-                    firstPass.recycle()
-                    val exponent = prefBgSaturation
-                    val gamutCap = Tuning.gamutCapFraction
-                    val linearBoost = Tuning.linearBoost
-                    val depth = Tuning.backgroundDepth
-                    val depthGateLow = Tuning.depthGateLow
-                    val depthGateHigh = Tuning.depthGateHigh
-                    AuroraRenderer.boostChroma(
-                        secondPass,
-                        exponent,
-                        gamutCap,
-                        linearBoost,
-                        depth,
-                        depthGateLow,
-                        depthGateHigh
+                    val field = AuroraRenderer.processField(
+                        preprocessed,
+                        80,
+                        prefBgSaturation,
+                        Tuning.gamutCapFraction,
+                        Tuning.linearBoost,
+                        Tuning.backgroundDepth,
+                        Tuning.depthGateLow,
+                        Tuning.depthGateHigh,
+                        Tuning.lightnessCapKnee,
+                        Tuning.lightnessCapCeiling,
+                        Tuning.lightnessCapStrength
                     )
-                    val knee = Tuning.lightnessCapKnee
-                    val ceiling = Tuning.lightnessCapCeiling
-                    val strength = Tuning.lightnessCapStrength
-                    AuroraRenderer.capLightness(secondPass, knee, ceiling, strength)
-                    secondPass
+                    preprocessed.recycle()
+                    field
                 }
                 
                 withContext(Dispatchers.Main) {
@@ -1824,30 +1815,21 @@ class LyricsWallpaperService : WallpaperService() {
                 val idleMesh = AuroraRenderer.createIdleMesh(targetColors)
                 val preprocessed = AuroraRenderer.preprocessArt(idleMesh, Color.BLACK, 0f)
                 // Radius 80 scales radius 20 linearly with resolution (512 / 128) to preserve visual softness.
-                val firstPass = AuroraRenderer.blurBitmap(preprocessed, 80)
-                val blurred = AuroraRenderer.blurBitmap(firstPass, 80)
+                val blurred = AuroraRenderer.processField(
+                    preprocessed,
+                    80,
+                    prefBgSaturation,
+                    Tuning.gamutCapFraction,
+                    Tuning.linearBoost,
+                    Tuning.backgroundDepth,
+                    Tuning.depthGateLow,
+                    Tuning.depthGateHigh,
+                    Tuning.lightnessCapKnee,
+                    Tuning.lightnessCapCeiling,
+                    Tuning.lightnessCapStrength
+                )
                 idleMesh.recycle()
                 preprocessed.recycle()
-                firstPass.recycle()
-                val exponent = prefBgSaturation
-                val gamutCap = Tuning.gamutCapFraction
-                val linearBoost = Tuning.linearBoost
-                val depth = Tuning.backgroundDepth
-                val depthGateLow = Tuning.depthGateLow
-                val depthGateHigh = Tuning.depthGateHigh
-                AuroraRenderer.boostChroma(
-                    blurred,
-                    exponent,
-                    gamutCap,
-                    linearBoost,
-                    depth,
-                    depthGateLow,
-                    depthGateHigh
-                )
-                val knee = Tuning.lightnessCapKnee
-                val ceiling = Tuning.lightnessCapCeiling
-                val strength = Tuning.lightnessCapStrength
-                AuroraRenderer.capLightness(blurred, knee, ceiling, strength)
                 
                 withContext(Dispatchers.Main) {
                     triggerBgTransition(blurred, capturedGen)
