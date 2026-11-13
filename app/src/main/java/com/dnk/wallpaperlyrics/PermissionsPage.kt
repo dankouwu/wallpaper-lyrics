@@ -4,18 +4,15 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Color
-import android.os.Bundle
 import android.provider.Settings
-import android.util.TypedValue
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import com.dnk.wallpaperlyrics.LyricsSettings as LS
 
-class PermissionsActivity : AppCompatActivity() {
+class PermissionsPage(activity: MainActivity) : SettingsPage(activity) {
 
     private lateinit var prefs: SharedPreferences
     private lateinit var contentContainer: LinearLayout
@@ -23,8 +20,11 @@ class PermissionsActivity : AppCompatActivity() {
     private lateinit var wallpaperRow: LS.SettingsRow
     private lateinit var batteryRow: LS.SettingsRow
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    private companion object {
+        const val REQUEST_POST_NOTIFICATIONS = 103
+    }
+
+    override fun onCreate() {
 
         prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -33,10 +33,10 @@ class PermissionsActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(
-                    LS.dpToPx(this@PermissionsActivity, 24f),
-                    LS.dpToPx(this@PermissionsActivity, 16f),
-                    LS.dpToPx(this@PermissionsActivity, 24f),
-                    LS.dpToPx(this@PermissionsActivity, 40f)
+                    LS.dpToPx(this@PermissionsPage, 24f),
+                    LS.dpToPx(this@PermissionsPage, 16f),
+                    LS.dpToPx(this@PermissionsPage, 24f),
+                    LS.dpToPx(this@PermissionsPage, 40f)
                 )
                 setBackgroundColor(Color.parseColor("#242424"))
                 layoutParams = LinearLayout.LayoutParams(
@@ -45,55 +45,7 @@ class PermissionsActivity : AppCompatActivity() {
                 )
             }
 
-            val headerLayout = android.widget.RelativeLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = LS.dpToPx(this@PermissionsActivity, 24f)
-                    bottomMargin = LS.dpToPx(this@PermissionsActivity, 16f)
-                }
-            }
-
-            val backButton = android.widget.ImageView(this).apply {
-                val arrowDrawable = LS.CustomIconDrawable(this@PermissionsActivity, LS.IconType.ARROW_LEFT)
-                setImageDrawable(arrowDrawable)
-                val size = LS.dpToPx(this@PermissionsActivity, 48f)
-                layoutParams = android.widget.RelativeLayout.LayoutParams(size, size).apply {
-                    addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT)
-                    addRule(android.widget.RelativeLayout.CENTER_VERTICAL)
-                }
-                setPadding(
-                    LS.dpToPx(this@PermissionsActivity, 12f),
-                    LS.dpToPx(this@PermissionsActivity, 12f),
-                    LS.dpToPx(this@PermissionsActivity, 12f),
-                    LS.dpToPx(this@PermissionsActivity, 12f)
-                )
-                isClickable = true
-                val outVal = TypedValue()
-                theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
-                setBackgroundResource(outVal.resourceId)
-                setOnClickListener {
-                    finish()
-                }
-            }
-            headerLayout.addView(backButton)
-
-            val titleView = TextView(this).apply {
-                text = "Permissions & Notifications"
-                textSize = 24f
-                setTextColor(Color.WHITE)
-                setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD))
-                paint.isFakeBoldText = true
-                gravity = Gravity.CENTER
-                layoutParams = android.widget.RelativeLayout.LayoutParams(
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT,
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    addRule(android.widget.RelativeLayout.CENTER_IN_PARENT)
-                }
-            }
-            headerLayout.addView(titleView)
+            val headerLayout = LS.pageHeader(this, "Permissions & Notifications") { finish() }
             rootLayout.addView(headerLayout)
 
             contentContainer = LinearLayout(this).apply {
@@ -124,10 +76,10 @@ class PermissionsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor("#8E8E93"))
             setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
             setPadding(
-                LS.dpToPx(this@PermissionsActivity, 12f),
-                LS.dpToPx(this@PermissionsActivity, 16f),
-                LS.dpToPx(this@PermissionsActivity, 12f),
-                LS.dpToPx(this@PermissionsActivity, 8f)
+                LS.dpToPx(this@PermissionsPage, 12f),
+                LS.dpToPx(this@PermissionsPage, 16f),
+                LS.dpToPx(this@PermissionsPage, 12f),
+                LS.dpToPx(this@PermissionsPage, 8f)
             )
         }
     }
@@ -136,7 +88,7 @@ class PermissionsActivity : AppCompatActivity() {
         contentContainer.addView(addSectionHeader("System Access"))
         val systemAccessCard = LS.SettingsCard(this).apply {
             notificationRow = LS.SettingsRow(
-                this@PermissionsActivity,
+                this@PermissionsPage,
                 LS.IconType.BELL,
                 "Notification Access",
                 "Required to read music session details",
@@ -145,14 +97,14 @@ class PermissionsActivity : AppCompatActivity() {
                     try {
                         startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     } catch (e: Exception) {
-                        Toast.makeText(this@PermissionsActivity, "Could not open settings", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@PermissionsPage, "Could not open settings", Toast.LENGTH_SHORT).show()
                     }
                 }
             )
             addRow(notificationRow)
 
             wallpaperRow = LS.SettingsRow(
-                this@PermissionsActivity,
+                this@PermissionsPage,
                 LS.IconType.IMAGE,
                 "Activate Live Wallpaper",
                 "Choose this wallpaper in picker menu",
@@ -162,18 +114,18 @@ class PermissionsActivity : AppCompatActivity() {
                         val intent = Intent(android.app.WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
                         intent.putExtra(
                             android.app.WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT,
-                            android.content.ComponentName(this@PermissionsActivity, LyricsWallpaperService::class.java)
+                            android.content.ComponentName(this@PermissionsPage, LyricsWallpaperService::class.java)
                         )
                         startActivity(intent)
                     } catch (e: Exception) {
-                        Toast.makeText(this@PermissionsActivity, "Could not open wallpaper picker", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@PermissionsPage, "Could not open wallpaper picker", Toast.LENGTH_SHORT).show()
                     }
                 }
             )
             addRow(wallpaperRow)
 
             batteryRow = LS.SettingsRow(
-                this@PermissionsActivity,
+                this@PermissionsPage,
                 LS.IconType.GAUGE,
                 "Battery Unrestricted",
                 "Required so the wallpaper is not throttled",
@@ -182,7 +134,7 @@ class PermissionsActivity : AppCompatActivity() {
                     try {
                         startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                     } catch (e: Exception) {
-                        Toast.makeText(this@PermissionsActivity, "Could not open battery settings", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@PermissionsPage, "Could not open battery settings", Toast.LENGTH_SHORT).show()
                     }
                 }
             )
@@ -193,7 +145,7 @@ class PermissionsActivity : AppCompatActivity() {
         contentContainer.addView(addSectionHeader("Notifications"))
         val notificationsCard = LS.SettingsCard(this).apply {
             val persistentNotifRow = LS.SettingsRow(
-                this@PermissionsActivity,
+                this@PermissionsPage,
                 LS.IconType.BELL,
                 "Persistent Controls",
                 "Show control notification in status bar",
@@ -201,12 +153,18 @@ class PermissionsActivity : AppCompatActivity() {
                 initialVal = prefs.getBoolean("persistent_notification", false).toString(),
                 onCheckedChange = { isChecked ->
                     prefs.edit().putBoolean("persistent_notification", isChecked).apply()
+                    // Asked here rather than on launch: this is the first thing that needs it.
+                    if (isChecked && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                        checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQUEST_POST_NOTIFICATIONS)
+                    }
                 }
             )
             addRow(persistentNotifRow)
 
             addRow(LS.SettingsRow(
-                this@PermissionsActivity,
+                this@PermissionsPage,
                 LS.IconType.INFO,
                 "Status Messages",
                 "Toast when lyrics are fetched or missing",
@@ -228,7 +186,7 @@ class PermissionsActivity : AppCompatActivity() {
                 notificationRow.updateSubtitle("Granted")
             } else {
                 notificationRow.setTrailing(LS.TrailingType.CHEVRON)
-                notificationRow.updateSubtitle("Required to read music session details")
+                notificationRow.updateSubtitle("Not granted. Required to read music session details")
             }
         }
         if (::wallpaperRow.isInitialized) {
@@ -237,7 +195,7 @@ class PermissionsActivity : AppCompatActivity() {
                 wallpaperRow.updateSubtitle("Active")
             } else {
                 wallpaperRow.setTrailing(LS.TrailingType.CHEVRON)
-                wallpaperRow.updateSubtitle("Choose this wallpaper in picker menu")
+                wallpaperRow.updateSubtitle("Not set. Choose this wallpaper in the picker")
             }
         }
         if (::batteryRow.isInitialized) {
@@ -246,7 +204,7 @@ class PermissionsActivity : AppCompatActivity() {
                 batteryRow.updateSubtitle("Unrestricted")
             } else {
                 batteryRow.setTrailing(LS.TrailingType.CHEVRON)
-                batteryRow.updateSubtitle("Required so the wallpaper is not throttled")
+                batteryRow.updateSubtitle("Restricted. Required so the wallpaper is not throttled")
             }
         }
     }

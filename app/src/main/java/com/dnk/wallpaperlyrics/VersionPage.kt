@@ -7,14 +7,11 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
-import android.os.Bundle
-import android.util.TypedValue
 import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import com.dnk.wallpaperlyrics.LyricsSettings as LS
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +23,7 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-class VersionActivity : AppCompatActivity() {
+class VersionPage(activity: MainActivity) : SettingsPage(activity) {
 
     private lateinit var prefs: SharedPreferences
     private lateinit var contentContainer: LinearLayout
@@ -37,8 +34,7 @@ class VersionActivity : AppCompatActivity() {
         private const val REQUEST_POST_NOTIFICATIONS = 101
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    override fun onCreate() {
 
         prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -47,10 +43,10 @@ class VersionActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(
-                    LS.dpToPx(this@VersionActivity, 24f),
-                    LS.dpToPx(this@VersionActivity, 16f),
-                    LS.dpToPx(this@VersionActivity, 24f),
-                    LS.dpToPx(this@VersionActivity, 40f)
+                    LS.dpToPx(this@VersionPage, 24f),
+                    LS.dpToPx(this@VersionPage, 16f),
+                    LS.dpToPx(this@VersionPage, 24f),
+                    LS.dpToPx(this@VersionPage, 40f)
                 )
                 setBackgroundColor(Color.parseColor("#242424"))
                 layoutParams = LinearLayout.LayoutParams(
@@ -59,55 +55,7 @@ class VersionActivity : AppCompatActivity() {
                 )
             }
 
-            val headerLayout = android.widget.RelativeLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = LS.dpToPx(this@VersionActivity, 24f)
-                    bottomMargin = LS.dpToPx(this@VersionActivity, 16f)
-                }
-            }
-
-            val backButton = android.widget.ImageView(this).apply {
-                val arrowDrawable = LS.CustomIconDrawable(this@VersionActivity, LS.IconType.ARROW_LEFT)
-                setImageDrawable(arrowDrawable)
-                val size = LS.dpToPx(this@VersionActivity, 48f)
-                layoutParams = android.widget.RelativeLayout.LayoutParams(size, size).apply {
-                    addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT)
-                    addRule(android.widget.RelativeLayout.CENTER_VERTICAL)
-                }
-                setPadding(
-                    LS.dpToPx(this@VersionActivity, 12f),
-                    LS.dpToPx(this@VersionActivity, 12f),
-                    LS.dpToPx(this@VersionActivity, 12f),
-                    LS.dpToPx(this@VersionActivity, 12f)
-                )
-                isClickable = true
-                val outVal = TypedValue()
-                theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
-                setBackgroundResource(outVal.resourceId)
-                setOnClickListener {
-                    finish()
-                }
-            }
-            headerLayout.addView(backButton)
-
-            val titleView = TextView(this).apply {
-                text = "Version & Updates"
-                textSize = 24f
-                setTextColor(Color.WHITE)
-                setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD))
-                paint.isFakeBoldText = true
-                gravity = Gravity.CENTER
-                layoutParams = android.widget.RelativeLayout.LayoutParams(
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT,
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    addRule(android.widget.RelativeLayout.CENTER_IN_PARENT)
-                }
-            }
-            headerLayout.addView(titleView)
+            val headerLayout = LS.pageHeader(this, "Version & Updates") { finish() }
             rootLayout.addView(headerLayout)
 
             contentContainer = LinearLayout(this).apply {
@@ -141,10 +89,10 @@ class VersionActivity : AppCompatActivity() {
             setTextColor(Color.parseColor("#8E8E93"))
             setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
             setPadding(
-                LS.dpToPx(this@VersionActivity, 12f),
-                LS.dpToPx(this@VersionActivity, 16f),
-                LS.dpToPx(this@VersionActivity, 12f),
-                LS.dpToPx(this@VersionActivity, 8f)
+                LS.dpToPx(this@VersionPage, 12f),
+                LS.dpToPx(this@VersionPage, 16f),
+                LS.dpToPx(this@VersionPage, 12f),
+                LS.dpToPx(this@VersionPage, 8f)
             )
         }
     }
@@ -183,7 +131,7 @@ class VersionActivity : AppCompatActivity() {
         val versionCard = LS.SettingsCard(this).apply {
             addRow(
                 LS.SettingsRow(
-                    this@VersionActivity,
+                    this@VersionPage,
                     LS.IconType.FILE_STACK,
                     "Installed version",
                     installedVersion,
@@ -201,7 +149,7 @@ class VersionActivity : AppCompatActivity() {
 
             addRow(
                 LS.SettingsRow(
-                    this@VersionActivity,
+                    this@VersionPage,
                     LS.IconType.GITHUB,
                     "Latest release",
                     latestSubtitle,
@@ -213,7 +161,7 @@ class VersionActivity : AppCompatActivity() {
             if (updateAvailable && !latestUrl.isNullOrBlank()) {
                 addRow(
                     LS.SettingsRow(
-                        this@VersionActivity,
+                        this@VersionPage,
                         LS.IconType.LINK,
                         "Download update",
                         "Open release page on GitHub",
@@ -222,7 +170,7 @@ class VersionActivity : AppCompatActivity() {
                             try {
                                 startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(latestUrl)))
                             } catch (e: Exception) {
-                                Toast.makeText(this@VersionActivity, "Could not open release link", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@VersionPage, "Could not open release link", Toast.LENGTH_SHORT).show()
                             }
                         }
                     )
@@ -236,7 +184,7 @@ class VersionActivity : AppCompatActivity() {
             val dailyEnabled = prefs.getBoolean(UpdateCheck.PREF_UPDATE_CHECK_ENABLED, false)
             addRow(
                 LS.SettingsRow(
-                    this@VersionActivity,
+                    this@VersionPage,
                     LS.IconType.CLOCK,
                     "Check for updates daily",
                     "Checks GitHub once a day around 12:00",
@@ -250,9 +198,9 @@ class VersionActivity : AppCompatActivity() {
                                     requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), REQUEST_POST_NOTIFICATIONS)
                                 }
                             }
-                            UpdateCheck.scheduleDailyCheck(this@VersionActivity)
+                            UpdateCheck.scheduleDailyCheck(this@VersionPage)
                         } else {
-                            UpdateCheck.cancelDailyCheck(this@VersionActivity)
+                            UpdateCheck.cancelDailyCheck(this@VersionPage)
                         }
                     }
                 )
@@ -266,7 +214,7 @@ class VersionActivity : AppCompatActivity() {
 
             addRow(
                 LS.SettingsRow(
-                    this@VersionActivity,
+                    this@VersionPage,
                     LS.IconType.RELOAD,
                     "Check now",
                     checkNowSubtitle,
@@ -279,7 +227,7 @@ class VersionActivity : AppCompatActivity() {
                         rebuildUi()
 
                         CoroutineScope(Dispatchers.IO).launch {
-                            val result = UpdateCheck.checkNow(this@VersionActivity, installedVersion)
+                            val result = UpdateCheck.checkNow(this@VersionPage, installedVersion)
                             withContext(Dispatchers.Main) {
                                 isChecking = false
                                 when (result) {
@@ -287,7 +235,7 @@ class VersionActivity : AppCompatActivity() {
                                         checkStatusText = "Update available: ${result.tag}"
                                         rebuildUi()
                                         UpdateCheck.showUpdateDialog(
-                                            this@VersionActivity,
+                                            activity,
                                             installedVersion,
                                             result.tag,
                                             result.url

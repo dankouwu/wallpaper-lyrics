@@ -2,6 +2,7 @@ package com.dnk.wallpaperlyrics
 
 import android.app.Activity
 import android.app.Dialog
+import android.app.WallpaperManager
 import android.content.ComponentName
 import android.content.Context
 import android.graphics.Canvas
@@ -38,8 +39,17 @@ object SettingsDialogs {
         isFloat: Boolean,
         unit: String,
         hint: String = "",
+        previewBehind: View? = null,
         onValueSaved: (Float) -> Unit
-    ) {
+    ): Dialog {
+        // previewBehind is the settings list of an activity themed to show the wallpaper. Hiding
+        // it makes the running engine the preview, so there is no second renderer to keep in step.
+        val previewOnWallpaper = previewBehind != null &&
+            WallpaperManager.getInstance(activity).wallpaperInfo?.packageName == activity.packageName
+        val savedValue = initialVal.toFloatOrNull() ?: 0f
+        val preview: (Float) -> Unit = { value ->
+            if (previewOnWallpaper) OffsetPreview.deltaMs = (value - savedValue).toLong()
+        }
         val dialog = Dialog(activity).apply {
             requestWindowFeature(Window.FEATURE_NO_TITLE)
             setCancelable(true)
@@ -66,7 +76,11 @@ object SettingsDialogs {
 
         if (hint.isNotEmpty()) {
             val hintText = TextView(activity).apply {
-                text = hint
+                text = if (previewOnWallpaper && getActiveSongMetadata(activity) == null) {
+                    "$hint Play a song to see the change on the wallpaper."
+                } else {
+                    hint
+                }
                 setTextColor(Color.parseColor("#8E8E93"))
                 textSize = 12f
             }
@@ -162,6 +176,7 @@ object SettingsDialogs {
                 }
                 inputEdit.setText(formatted)
                 inputEdit.setSelection(inputEdit.text.length)
+                preview(value)
                 syncing = false
             }
         }
@@ -176,6 +191,7 @@ object SettingsDialogs {
                     if (parsed != null && parsed in minVal..maxVal) {
                         val progress = (((parsed - minVal) / (maxVal - minVal)) * 1000f).toInt()
                         seekBar.progress = progress
+                        preview(parsed)
                     }
                     syncing = false
                 }
@@ -221,6 +237,21 @@ object SettingsDialogs {
             inputEdit.requestFocus()
         }
 
+        if (previewOnWallpaper) {
+            // The window is transparent (Theme.WallpaperLyrics.Settings) but shows the wallpaper
+            // only while previewing.
+            val window = activity.window
+            window.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+            previewBehind?.visibility = View.INVISIBLE
+            (activity as? MainActivity)?.setStatusBarBackgroundVisible(false)
+            dialog.setOnDismissListener {
+                OffsetPreview.deltaMs = 0L
+                previewBehind?.visibility = View.VISIBLE
+                (activity as? MainActivity)?.setStatusBarBackgroundVisible(true)
+                window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
+            }
+        }
+
         dialog.window?.apply {
             setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN)
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
@@ -228,9 +259,16 @@ object SettingsDialogs {
                 (activity.resources.displayMetrics.widthPixels * 0.85f).toInt(),
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
+            // Low on the screen and undimmed, so the lyrics stay in view.
+            if (previewOnWallpaper) {
+                clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+                setGravity(Gravity.BOTTOM)
+                attributes = attributes.apply { y = LS.dpToPx(activity, 24f) }
+            }
         }
 
         dialog.show()
+        return dialog
     }
 
     fun showOptionPickerDialog(

@@ -253,6 +253,53 @@ object LyricsSettings {
         override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
     }
 
+    // The title keeps the back button's width clear on both sides, so it stays centered on the
+    // page and a long one wraps instead of running into the arrow.
+    fun pageHeader(context: Context, title: String, onBack: () -> Unit): View {
+        val buttonSize = dpToPx(context, 48f)
+        val header = android.widget.RelativeLayout(context).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dpToPx(context, 24f)
+                bottomMargin = dpToPx(context, 16f)
+            }
+        }
+        header.addView(android.widget.ImageView(context).apply {
+            setImageDrawable(CustomIconDrawable(context, IconType.ARROW_LEFT))
+            layoutParams = android.widget.RelativeLayout.LayoutParams(buttonSize, buttonSize).apply {
+                addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT)
+                addRule(android.widget.RelativeLayout.CENTER_VERTICAL)
+            }
+            val pad = dpToPx(context, 12f)
+            setPadding(pad, pad, pad, pad)
+            isClickable = true
+            contentDescription = "Back"
+            val outVal = TypedValue()
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
+            setBackgroundResource(outVal.resourceId)
+            setOnClickListener { onBack() }
+        })
+        header.addView(TextView(context).apply {
+            text = title
+            textSize = 24f
+            setTextColor(Color.WHITE)
+            typeface = android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD)
+            paint.isFakeBoldText = true
+            gravity = Gravity.CENTER
+            layoutParams = android.widget.RelativeLayout.LayoutParams(
+                android.widget.RelativeLayout.LayoutParams.MATCH_PARENT,
+                android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                addRule(android.widget.RelativeLayout.CENTER_VERTICAL)
+                leftMargin = buttonSize
+                rightMargin = buttonSize
+            }
+        })
+        return header
+    }
+
     class SettingsCard(context: Context) : LinearLayout(context) {
         init {
             orientation = VERTICAL
@@ -445,6 +492,7 @@ object LyricsSettings {
         }
 
         fun updateValue(newValue: String) { valueBadge?.text = newValue }
+        fun setChecked(checked: Boolean) { (trailingView as? SwitchCompat)?.isChecked = checked }
         fun updateSubtitle(newSubtitle: String) {
             rowSubtitleView?.apply {
                 text = newSubtitle

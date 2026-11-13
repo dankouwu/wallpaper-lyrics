@@ -1,353 +1,283 @@
 package com.dnk.wallpaperlyrics
 
-import android.content.Context
-import android.content.Intent
+import android.animation.ValueAnimator
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
-import android.net.Uri
 import android.os.Bundle
-import android.view.Gravity
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import android.widget.Toast
+import android.os.Build
+import android.view.View
+import android.view.ViewGroup
+import android.view.animation.PathInterpolator
+import android.widget.FrameLayout
+import androidx.activity.BackEventCompat
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
-import com.dnk.wallpaperlyrics.LyricsSettings as LS
-import java.security.MessageDigest
+import androidx.core.animation.doOnEnd
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
 
+// Holds the settings screens as a stack of pages and moves them the way Pixel settings does: a
+// new page slides in from the right over the previous one, which drifts a quarter to the left
+// under a scrim. Back reverses it, and the back gesture drags the page right with the finger,
+// whichever edge the swipe starts from, so the previous page shows under it.
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var permissionsNavRow: LS.SettingsRow
+    private lateinit var container: FrameLayout
+    private lateinit var scrim: View
+    private lateinit var statusBarBackground: View
+    private var barInsets = Insets.NONE
+    private val stack = ArrayList<SettingsPage>()
+    private var isActivityResumed = false
+    private var animator: ValueAnimator? = null
+    private var dragging = false
+    private var dragProgress = 0f
+
+    // Material emphasized decelerate.
+    private val motion = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
+
+    private val backCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackStarted(backEvent: BackEventCompat) = startDrag()
+        override fun handleOnBackProgressed(backEvent: BackEventCompat) = drag(backEvent.progress)
+        override fun handleOnBackCancelled() = cancelDrag()
+        override fun handleOnBackPressed() = closeTop()
+    }
+
+    private val pageFactories: List<Pair<Class<out SettingsPage>, () -> SettingsPage>> by lazy {
+        listOf(
+            MainPage::class.java to { MainPage(this) },
+            PermissionsPage::class.java to { PermissionsPage(this) },
+            BackgroundSettingsPage::class.java to { BackgroundSettingsPage(this) },
+            LyricsSettingsPage::class.java to { LyricsSettingsPage(this) },
+            EnhancedLyricsPage::class.java to { EnhancedLyricsPage(this) },
+            TimingPage::class.java to { TimingPage(this) },
+            BluetoothOffsetPage::class.java to { BluetoothOffsetPage(this) },
+            VersionPage::class.java to { VersionPage(this) }
+        )
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
-            }
+        container = FrameLayout(this)
+        scrim = View(this).apply {
+            setBackgroundColor(Color.BLACK)
+            alpha = 0f
+            visibility = View.GONE
         }
+        container.addView(scrim)
 
-        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-
-        if (BuildFlags.DEBUG) {
-            Tuning.load(this)
+        // Pages draw under both system bars, so lists scroll under the gesture bar and the offset
+        // preview shows the wallpaper to every edge. Only the status bar keeps a solid background,
+        // so scrolled text does not run under the clock.
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
+        statusBarBackground = View(this).apply { setBackgroundColor(PAGE_BACKGROUND) }
+        container.addView(statusBarBackground, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, 0))
+        ViewCompat.setOnApplyWindowInsetsListener(container) { _, insets ->
+            barInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            statusBarBackground.layoutParams.height = barInsets.top
+            statusBarBackground.requestLayout()
+            stack.forEach { applyInsets(it.view) }
+            WindowInsetsCompat.CONSUMED
         }
+        setContentView(container)
+        onBackPressedDispatcher.addCallback(this, backCallback)
 
-        try {
-            val rootLayout = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(LS.dpToPx(this@MainActivity, 24f), LS.dpToPx(this@MainActivity, 16f), LS.dpToPx(this@MainActivity, 24f), LS.dpToPx(this@MainActivity, 40f))
-                setBackgroundColor(Color.parseColor("#242424"))
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.MATCH_PARENT
-                )
-            }
+        // Rotation or a theme change recreates the activity, so the open pages are rebuilt.
+        val saved = savedInstanceState?.getIntArray(KEY_PAGES)
+        val pages = saved?.toList()?.mapNotNull { pageFactories.getOrNull(it)?.second?.invoke() }
+        if (pages.isNullOrEmpty()) {
+            addPage(MainPage(this))
+        } else {
+            pages.forEach { addPage(it) }
+        }
+        stack.dropLast(1).forEach { it.view.visibility = View.GONE }
+        backCallback.isEnabled = stack.size > 1
+    }
 
-            val titleView = TextView(this).apply {
-                text = "Wallpaper Lyrics"
-                textSize = 26f
-                setTextColor(Color.WHITE)
-                setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD))
-                paint.isFakeBoldText = true
-                gravity = Gravity.CENTER_HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = LS.dpToPx(this@MainActivity, 24f)
-                    bottomMargin = LS.dpToPx(this@MainActivity, 16f)
-                }
-            }
-            rootLayout.addView(titleView)
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putIntArray(
+            KEY_PAGES,
+            stack.map { page -> pageFactories.indexOfFirst { it.first == page.javaClass } }.toIntArray()
+        )
+    }
 
-            fun addSectionHeader(title: String, textColor: Int = Color.parseColor("#8E8E93")) {
-                val header = TextView(this).apply {
-                    text = title
-                    textSize = 13f
-                    setTextColor(textColor)
-                    setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-                    setPadding(LS.dpToPx(this@MainActivity, 12f), LS.dpToPx(this@MainActivity, 24f), LS.dpToPx(this@MainActivity, 12f), LS.dpToPx(this@MainActivity, 8f))
-                }
-                rootLayout.addView(header)
-            }
+    private fun addPage(page: SettingsPage) {
+        page.onCreate()
+        stack.add(page)
+        container.addView(page.view, container.indexOfChild(statusBarBackground))
+        applyInsets(page.view)
+    }
 
-            addSectionHeader("Settings")
-            val settingsCard = LS.SettingsCard(this).apply {
-                val notifOk = SettingsDialogs.isNotificationServiceEnabled(this@MainActivity)
-                val wallOk = SettingsDialogs.isWallpaperActive(this@MainActivity)
-                val battOk = SettingsDialogs.isBatteryUnrestricted(this@MainActivity)
-                val attentionCount = (if (notifOk) 0 else 1) + (if (wallOk) 0 else 1) + (if (battOk) 0 else 1)
-                val initialPermsSubtitle = when (attentionCount) {
-                    0 -> "All set"
-                    1 -> "1 needs attention"
-                    2 -> "2 need attention"
-                    else -> "3 need attention"
-                }
+    private fun applyInsets(view: View) {
+        view.setPadding(barInsets.left, barInsets.top, barInsets.right, barInsets.bottom)
+        (view as? ViewGroup)?.clipToPadding = false
+        view.setBackgroundColor(PAGE_BACKGROUND)
+    }
 
-                permissionsNavRow = LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.BELL,
-                    "Permissions & Notifications",
-                    initialPermsSubtitle,
-                    LS.TrailingType.CHEVRON,
-                    onClick = {
-                        startActivity(Intent(this@MainActivity, PermissionsActivity::class.java))
-                    }
-                )
-                addRow(permissionsNavRow)
+    // Hidden while a dialog previews on the wallpaper, which should fill the whole screen.
+    fun setStatusBarBackgroundVisible(visible: Boolean) {
+        statusBarBackground.visibility = if (visible) View.VISIBLE else View.INVISIBLE
+    }
 
-                addRow(LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.SLIDERS,
-                    "Background & Display",
-                    "Wallpaper visuals, idle screen and always on display",
-                    LS.TrailingType.CHEVRON,
-                    onClick = {
-                        startActivity(Intent(this@MainActivity, BackgroundSettingsActivity::class.java))
-                    }
-                ))
+    fun openPage(page: SettingsPage) {
+        if (animator?.isRunning == true || dragging) return
+        val below = stack.last()
+        addPage(page)
+        below.onPause()
+        below.onStop()
+        if (isActivityResumed) page.onResume()
+        backCallback.isEnabled = true
 
-                addRow(LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.LIST_MUSIC,
-                    "Lyrics",
-                    "Media player, provider, cache and edits",
-                    LS.TrailingType.CHEVRON,
-                    onClick = {
-                        startActivity(Intent(this@MainActivity, LyricsSettingsActivity::class.java))
-                    }
-                ))
-
-                addRow(LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.CLOCK,
-                    "Timing & Sync",
-                    "Offsets for songs and Bluetooth devices",
-                    LS.TrailingType.CHEVRON,
-                    onClick = {
-                        startActivity(Intent(this@MainActivity, TimingActivity::class.java))
-                    }
-                ))
-            }
-            rootLayout.addView(settingsCard)
-
-            addSectionHeader("About")
-            val cardAbout = LS.SettingsCard(this).apply {
-                addRow(LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.FILE_STACK,
-                    "Version",
-                    packageManager.getPackageInfo(packageName, 0).versionName,
-                    LS.TrailingType.CHEVRON,
-                    onClick = {
-                        startActivity(Intent(this@MainActivity, VersionActivity::class.java))
-                    }
-                ))
-
-                addRow(LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.GITHUB,
-                    "GitHub Repository",
-                    "View source code and star the project",
-                    LS.TrailingType.EXTERNAL,
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/dankouwu/wallpaper-lyrics"))
-                            startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(this@MainActivity, "Could not open repository link", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                ))
-
-                addRow(LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.BUG,
-                    "Report an Issue",
-                    "Submit bugs or request new features",
-                    LS.TrailingType.EXTERNAL,
-                    onClick = {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/dankouwu/wallpaper-lyrics/issues"))
-                            startActivity(intent)
-                        } catch (e: Exception) {
-                            Toast.makeText(this@MainActivity, "Could not open issue link", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                ))
-
-                addRow(LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.COPYRIGHT,
-                    "License",
-                    "Apache License 2.0 terms",
-                    LS.TrailingType.CHEVRON,
-                    onClick = {
-                        showAboutDialog(
-                            "Apache License 2.0",
-                            "Copyright 2026 dankouwu\n\nLicensed under the Apache License, Version 2.0 (the \"License\"); you may not use this file except in compliance with the License. You may obtain a copy of the License at:\n\nhttp://www.apache.org/licenses/LICENSE-2.0\n\nUnless required by applicable law or agreed to in writing, software distributed under the License is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License."
-                        )
-                    }
-                ))
-
-                addRow(LS.SettingsRow(
-                    this@MainActivity,
-                    LS.IconType.INFO,
-                    "Credits & Libraries",
-                    "Developer details and open-source packages",
-                    LS.TrailingType.CHEVRON,
-                    onClick = {
-                        showAboutDialog(
-                            "Credits & Libraries",
-                            "Developers & Contributors:\n- dankouwu\n- riveerxd\n\nLibraries Used:\n- AndroidX core & components\n- Gson (Google JSON serializer)\n- LRCLIB (Synced lyrics provider)\n- Lucide Icons (lucide.dev)\n\nThank you for using Wallpaper Lyrics!"
-                        )
-                    }
-                ))
-            }
-            rootLayout.addView(cardAbout)
-
-            if (BuildFlags.DEBUG) {
-                addSectionHeader("Debug (Debug Build Only)", Color.parseColor("#F59E0B"))
-                val debugCard = LS.SettingsCard(this).apply {
-                    background = GradientDrawable().apply {
-                        setColor(Color.parseColor("#282015"))
-                        setStroke(LS.dpToPx(this@MainActivity, 1f), Color.parseColor("#5C4012"))
-                        cornerRadius = LS.dpToPx(this@MainActivity, 18f).toFloat()
-                    }
-                    addRow(LS.SettingsRow(
-                        this@MainActivity,
-                        LS.IconType.SLIDERS,
-                        "Live Parameter Tuning",
-                        "Adjust word motion curves and rendering values",
-                        LS.TrailingType.CHEVRON,
-                        onClick = {
-                            try {
-                                startActivity(Intent().setClassName(this@MainActivity, "com.dnk.wallpaperlyrics.DebugTuningActivity"))
-                            } catch (e: Exception) {
-                                Toast.makeText(this@MainActivity, "Could not open tuning screen", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    ))
-                }
-                rootLayout.addView(debugCard)
-            }
-
-            val scrollView = ScrollView(this).apply {
-                isFillViewport = true
-            }
-            scrollView.addView(rootLayout)
-            setContentView(scrollView)
-
-            checkUpdatePopup(prefs)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        showScrimUnder(page)
+        val width = container.width.toFloat()
+        page.view.translationX = width
+        animate(0f, 1f, OPEN_MS) { f ->
+            page.view.translationX = width * (1f - f)
+            below.view.translationX = -PARALLAX * width * f
+            scrim.alpha = SCRIM * f
+        }.doOnEnd {
+            below.view.visibility = View.GONE
+            below.view.translationX = 0f
+            hideScrim()
         }
     }
 
-    private fun checkUpdatePopup(prefs: android.content.SharedPreferences) {
-        val autoCheckEnabled = prefs.getBoolean(UpdateCheck.PREF_UPDATE_CHECK_ENABLED, false)
-        if (autoCheckEnabled) {
-            val latestTag = prefs.getString(UpdateCheck.PREF_LATEST_TAG, null)
-            val latestUrl = prefs.getString(UpdateCheck.PREF_LATEST_URL, null)
-            val dismissedTag = prefs.getString(UpdateCheck.PREF_DISMISSED_TAG, null)
-            val currentVersion = try {
-                packageManager.getPackageInfo(packageName, 0).versionName
-            } catch (e: Exception) {
-                ""
+    fun closePage(page: SettingsPage) {
+        if (page === stack.lastOrNull()) closeTop()
+    }
+
+    private fun startDrag() {
+        if (stack.size < 2 || animator?.isRunning == true) return
+        dragging = true
+        dragProgress = 0f
+        val below = stack[stack.size - 2]
+        below.view.visibility = View.VISIBLE
+        showScrimUnder(stack.last())
+        drag(0f)
+    }
+
+    private fun drag(progress: Float) {
+        if (!dragging) return
+        dragProgress = progress
+        setClosing(progress)
+    }
+
+    private fun cancelDrag() {
+        if (!dragging) return
+        dragging = false
+        val below = stack[stack.size - 2]
+        animate(dragProgress, 0f, (CLOSE_MS * dragProgress).toLong().coerceAtLeast(MIN_MS)) { setClosing(it) }
+            .doOnEnd {
+                below.view.visibility = View.GONE
+                below.view.translationX = 0f
+                hideScrim()
             }
-            if (!latestTag.isNullOrBlank() && !latestUrl.isNullOrBlank() &&
-                UpdateCheck.isNewerVersion(latestTag, currentVersion) &&
-                latestTag != dismissedTag
-            ) {
-                UpdateCheck.showUpdateDialog(this, currentVersion, latestTag, latestUrl)
+    }
+
+    private fun closeTop() {
+        if (stack.size < 2) {
+            finish()
+            return
+        }
+        if (animator?.isRunning == true && !dragging) return
+        val from = if (dragging) dragProgress else 0f
+        dragging = false
+        val top = stack.last()
+        val below = stack[stack.size - 2]
+        if (from == 0f) {
+            below.view.visibility = View.VISIBLE
+            showScrimUnder(top)
+        }
+        top.isFinishing = true
+        top.onPause()
+        if (isActivityResumed) below.onResume()
+
+        animate(from, 1f, (CLOSE_MS * (1f - from)).toLong().coerceAtLeast(MIN_MS)) { setClosing(it) }
+            .doOnEnd {
+                container.removeView(top.view)
+                stack.remove(top)
+                top.onStop()
+                top.onDestroy()
+                top.isDestroyed = true
+                below.view.translationX = 0f
+                hideScrim()
+                backCallback.isEnabled = stack.size > 1
             }
+    }
+
+    // 0 is the top page in place, 1 is the top page gone off the right edge.
+    private fun setClosing(progress: Float) {
+        val width = container.width.toFloat()
+        stack.last().view.translationX = width * progress
+        stack[stack.size - 2].view.translationX = -PARALLAX * width * (1f - progress)
+        scrim.alpha = SCRIM * (1f - progress)
+    }
+
+    private fun showScrimUnder(top: SettingsPage) {
+        container.removeView(scrim)
+        container.addView(scrim, container.indexOfChild(top.view))
+        scrim.visibility = View.VISIBLE
+    }
+
+    private fun hideScrim() {
+        scrim.visibility = View.GONE
+        scrim.alpha = 0f
+    }
+
+    private fun animate(from: Float, to: Float, durationMs: Long, update: (Float) -> Unit): ValueAnimator {
+        animator?.cancel()
+        return ValueAnimator.ofFloat(from, to).apply {
+            duration = durationMs
+            interpolator = motion
+            addUpdateListener { update(it.animatedValue as Float) }
+            animator = this
+            start()
         }
     }
 
     override fun onResume() {
         super.onResume()
-        if (::permissionsNavRow.isInitialized) {
-            val notifOk = SettingsDialogs.isNotificationServiceEnabled(this)
-            val wallOk = SettingsDialogs.isWallpaperActive(this)
-            val battOk = SettingsDialogs.isBatteryUnrestricted(this)
-            val attentionCount = (if (notifOk) 0 else 1) + (if (wallOk) 0 else 1) + (if (battOk) 0 else 1)
-            val subtitle = when (attentionCount) {
-                0 -> "All set"
-                1 -> "1 needs attention"
-                2 -> "2 need attention"
-                else -> "3 need attention"
-            }
-            permissionsNavRow.updateSubtitle(subtitle)
+        isActivityResumed = true
+        stack.lastOrNull()?.onResume()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        isActivityResumed = false
+        stack.lastOrNull()?.onPause()
+    }
+
+    override fun onStop() {
+        super.onStop()
+        stack.lastOrNull()?.onStop()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        animator?.cancel()
+        stack.asReversed().forEach {
+            it.onDestroy()
+            it.isDestroyed = true
         }
     }
 
-    private fun showAboutDialog(title: String, message: String) {
-        val dialog = android.app.Dialog(this).apply {
-            requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
-            setCancelable(true)
-        }
-
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(LS.dpToPx(this@MainActivity, 24f), LS.dpToPx(this@MainActivity, 24f), LS.dpToPx(this@MainActivity, 24f), LS.dpToPx(this@MainActivity, 20f))
-            background = GradientDrawable().apply {
-                setColor(Color.parseColor("#333333"))
-                cornerRadius = LS.dpToPx(this@MainActivity, 16f).toFloat()
-            }
-        }
-
-        val titleText = TextView(this).apply {
-            text = title
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-            setPadding(0, 0, 0, LS.dpToPx(this@MainActivity, 10f))
-        }
-        container.addView(titleText)
-
-        val msgText = TextView(this).apply {
-            text = message
-            textSize = 14f
-            setTextColor(Color.parseColor("#8E8E93"))
-            setPadding(0, 0, 0, LS.dpToPx(this@MainActivity, 20f))
-        }
-        container.addView(msgText)
-
-        val buttonLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.END
-        }
-
-        val closeButton = Button(this).apply {
-            text = "Close"
-            setTextColor(Color.parseColor("#E0E0E0"))
-            transformationMethod = null
-            background = null
-            setOnClickListener { dialog.dismiss() }
-        }
-        buttonLayout.addView(closeButton)
-        container.addView(buttonLayout)
-
-        dialog.setContentView(container)
-
-        dialog.window?.apply {
-            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-            setLayout(
-                (resources.displayMetrics.widthPixels * 0.85f).toInt(),
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        dialog.show()
+    @Deprecated("Pages still use the framework permission request")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        stack.forEach { it.onRequestPermissionsResult(requestCode, permissions, grantResults) }
     }
 
-    private fun sha256(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(input.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+    private companion object {
+        const val KEY_PAGES = "settings_pages"
+        const val OPEN_MS = 450L
+        const val CLOSE_MS = 400L
+        const val MIN_MS = 150L
+        const val PARALLAX = 0.25f
+        const val SCRIM = 0.3f
+        val PAGE_BACKGROUND = Color.parseColor("#242424")
     }
 }

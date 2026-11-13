@@ -9,13 +9,11 @@ import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.widget.LinearLayout
 import android.view.Gravity
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import android.widget.TextView
 import android.widget.EditText
@@ -25,12 +23,11 @@ import android.widget.Button
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
-import android.util.TypedValue
 import android.widget.Toast
 import java.util.Locale
 import com.dnk.wallpaperlyrics.LyricsSettings as LS
 
-class BackgroundSettingsActivity : AppCompatActivity() {
+class BackgroundSettingsPage(activity: MainActivity) : SettingsPage(activity) {
 
     private var palettePreview: ColorPalettePreviewView? = null
     private var previewView: BackgroundPreviewView? = null
@@ -68,8 +65,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    override fun onCreate() {
 
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -77,7 +73,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             val rootLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(LS.dpToPx(this@BackgroundSettingsActivity, 24f), LS.dpToPx(this@BackgroundSettingsActivity, 16f), LS.dpToPx(this@BackgroundSettingsActivity, 24f), LS.dpToPx(this@BackgroundSettingsActivity, 40f))
+                setPadding(LS.dpToPx(this@BackgroundSettingsPage, 24f), LS.dpToPx(this@BackgroundSettingsPage, 16f), LS.dpToPx(this@BackgroundSettingsPage, 24f), LS.dpToPx(this@BackgroundSettingsPage, 40f))
                 setBackgroundColor(Color.parseColor("#242424"))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -85,58 +81,15 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 )
             }
 
-            val headerLayout = android.widget.RelativeLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = LS.dpToPx(this@BackgroundSettingsActivity, 24f)
-                    bottomMargin = LS.dpToPx(this@BackgroundSettingsActivity, 16f)
-                }
-            }
-
-            val backButton = android.widget.ImageView(this).apply {
-                val arrowDrawable = LS.CustomIconDrawable(this@BackgroundSettingsActivity, LS.IconType.ARROW_LEFT)
-                setImageDrawable(arrowDrawable)
-                val size = LS.dpToPx(this@BackgroundSettingsActivity, 48f)
-                layoutParams = android.widget.RelativeLayout.LayoutParams(size, size).apply {
-                    addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT)
-                    addRule(android.widget.RelativeLayout.CENTER_VERTICAL)
-                }
-                setPadding(LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 12f))
-                isClickable = true
-                val outVal = TypedValue()
-                theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
-                setBackgroundResource(outVal.resourceId)
-                setOnClickListener {
-                    finish()
-                }
-            }
-            headerLayout.addView(backButton)
-
-            val titleView = TextView(this).apply {
-                text = "Background & Display"
-                textSize = 24f
-                setTextColor(Color.WHITE)
-                setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD))
-                paint.isFakeBoldText = true
-                gravity = Gravity.CENTER
-                layoutParams = android.widget.RelativeLayout.LayoutParams(
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT,
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    addRule(android.widget.RelativeLayout.CENTER_IN_PARENT)
-                }
-            }
-            headerLayout.addView(titleView)
+            val headerLayout = LS.pageHeader(this, "Background & Display") { finish() }
             rootLayout.addView(headerLayout)
 
-            val bgPreview = BackgroundPreviewView(this@BackgroundSettingsActivity).apply {
+            val bgPreview = BackgroundPreviewView(this@BackgroundSettingsPage).apply {
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    LS.dpToPx(this@BackgroundSettingsActivity, 200f)
+                    LS.dpToPx(this@BackgroundSettingsPage, 200f)
                 ).apply {
-                    bottomMargin = LS.dpToPx(this@BackgroundSettingsActivity, 20f)
+                    bottomMargin = LS.dpToPx(this@BackgroundSettingsPage, 20f)
                 }
                 val initialRadius = prefs.getFloat("album_corner_radius", 48f)
                 val initialSpeed = prefs.getFloat("bg_speed", 1.0f)
@@ -166,7 +119,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     textSize = 13f
                     setTextColor(Color.parseColor("#8E8E93"))
                     setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-                    setPadding(LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 24f), LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 8f))
+                    setPadding(LS.dpToPx(this@BackgroundSettingsPage, 12f), LS.dpToPx(this@BackgroundSettingsPage, 24f), LS.dpToPx(this@BackgroundSettingsPage, 12f), LS.dpToPx(this@BackgroundSettingsPage, 8f))
                 }
                 rootLayout.addView(header)
             }
@@ -174,7 +127,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             addSectionHeader("Visual Style")
             val card1 = LS.SettingsCard(this).apply {
                 val dynRow = LS.SettingsRow(
-                    this@BackgroundSettingsActivity,
+                    this@BackgroundSettingsPage,
                     LS.IconType.PALETTE,
                     "Album Colors On System Theme",
                     "Recolor Quick Settings and the launcher to match the current album art",
@@ -185,12 +138,12 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     }
                 )
                 // Inject palette preview before the switch
-                val preview = ColorPalettePreviewView(this@BackgroundSettingsActivity).apply {
+                val preview = ColorPalettePreviewView(this@BackgroundSettingsPage).apply {
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     ).apply {
-                        rightMargin = LS.dpToPx(this@BackgroundSettingsActivity, 12f)
+                        rightMargin = LS.dpToPx(this@BackgroundSettingsPage, 12f)
                     }
                 }
                 palettePreview = preview
@@ -200,7 +153,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 val initialRadius = prefs.getFloat("album_corner_radius", 48f).toInt()
                 lateinit var radiusRow: LS.SettingsRow
                 radiusRow = LS.SettingsRow(
-                    this@BackgroundSettingsActivity,
+                    this@BackgroundSettingsPage,
                     LS.IconType.CORNER,
                     "Album Corner Radius",
                     "Modify corners from sharp to circular",
@@ -233,7 +186,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 addRow(radiusRow)
 
                 addRow(LS.SettingsRow(
-                    this@BackgroundSettingsActivity,
+                    this@BackgroundSettingsPage,
                     LS.IconType.IMAGE,
                     "Static Background",
                     "Render static blurred artwork without fluid animations",
@@ -252,7 +205,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 val initialSpeed = prefs.getFloat("bg_speed", 1.0f)
                 lateinit var speedRow: LS.SettingsRow
                 speedRow = LS.SettingsRow(
-                    this@BackgroundSettingsActivity,
+                    this@BackgroundSettingsPage,
                     LS.IconType.GAUGE,
                     "Background Speed",
                     "Control velocity of background liquid",
@@ -284,7 +237,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 addRow(speedRow)
 
                 addRow(LS.SettingsRow(
-                    this@BackgroundSettingsActivity,
+                    this@BackgroundSettingsPage,
                     LS.IconType.LIST_MUSIC,
                     "Album/Title/Artist Only Mode",
                     "Disable lyrics fetching and rendering to conserve battery and data",
@@ -305,15 +258,15 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 }
 
                 fun createSwatch(color: Int): View {
-                    val size = LS.dpToPx(this@BackgroundSettingsActivity, 14f)
-                    return View(this@BackgroundSettingsActivity).apply {
+                    val size = LS.dpToPx(this@BackgroundSettingsPage, 14f)
+                    return View(this@BackgroundSettingsPage).apply {
                         background = GradientDrawable().apply {
                             shape = GradientDrawable.OVAL
                             setColor(color)
-                            setStroke(LS.dpToPx(this@BackgroundSettingsActivity, 1f), Color.parseColor("#555555"))
+                            setStroke(LS.dpToPx(this@BackgroundSettingsPage, 1f), Color.parseColor("#555555"))
                         }
                         layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                            rightMargin = LS.dpToPx(this@BackgroundSettingsActivity, 6f)
+                            rightMargin = LS.dpToPx(this@BackgroundSettingsPage, 6f)
                         }
                     }
                 }
@@ -322,17 +275,16 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 val initialTitle = IdleScreenSettings.resolveIdleTitle(currentStoredTitle)
                 lateinit var idleTextRow: LS.SettingsRow
                 idleTextRow = LS.SettingsRow(
-                    this@BackgroundSettingsActivity,
+                    this@BackgroundSettingsPage,
                     LS.IconType.EDIT,
                     "Idle Text",
-                    "Shown when no music is playing",
-                    LS.TrailingType.VALUE,
                     formatIdleTextDisplay(initialTitle),
+                    LS.TrailingType.NONE,
                     onClick = {
                         val currentText = IdleScreenSettings.resolveIdleTitle(prefs.getString(IdleScreenSettings.KEY_IDLE_TITLE, null))
                         showTextEditDialog("Idle Text", currentText) { newText ->
                             prefs.edit().putString(IdleScreenSettings.KEY_IDLE_TITLE, newText).apply()
-                            idleTextRow.updateValue(formatIdleTextDisplay(newText))
+                            idleTextRow.updateSubtitle(formatIdleTextDisplay(newText))
                         }
                     }
                 )
@@ -356,7 +308,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     val swatch = createSwatch(currentColor)
                     lateinit var colorRow: LS.SettingsRow
                     colorRow = LS.SettingsRow(
-                        this@BackgroundSettingsActivity,
+                        this@BackgroundSettingsPage,
                         LS.IconType.PALETTE,
                         title,
                         "",
@@ -433,7 +385,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 }
 
                 val songColorsRow = LS.SettingsRow(
-                    this@BackgroundSettingsActivity,
+                    this@BackgroundSettingsPage,
                     LS.IconType.PALETTE,
                     "Use Song Colors",
                     currentSongColorsSubtitle(),
@@ -444,7 +396,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                         val meta = activeMediaController?.metadata
                         val title = meta?.getString(MediaMetadata.METADATA_KEY_TITLE)
                         if (meta == null || title.isNullOrBlank()) {
-                            Toast.makeText(this@BackgroundSettingsActivity, "Nothing is playing", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@BackgroundSettingsPage, "Nothing is playing", Toast.LENGTH_SHORT).show()
                             return@SettingsRow
                         }
 
@@ -458,7 +410,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                             val uriStr = meta.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI)
                                 ?: meta.getString(MediaMetadata.METADATA_KEY_ART_URI)
                             if (uriStr.isNullOrBlank()) {
-                                Toast.makeText(this@BackgroundSettingsActivity, "This song has no cover art", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@BackgroundSettingsPage, "This song has no cover art", Toast.LENGTH_SHORT).show()
                                 return@SettingsRow
                             }
 
@@ -468,7 +420,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                                     mediaHandler.post {
                                         isExtractingSongColors = false
                                         if (!isFinishing && !isDestroyed) {
-                                            Toast.makeText(this@BackgroundSettingsActivity, "This song has no cover art", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(this@BackgroundSettingsPage, "This song has no cover art", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                     return@fetchBitmap
@@ -480,27 +432,35 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 )
                 useSongColorsRow = songColorsRow
                 addRow(songColorsRow)
+                updateUseSongColorsSubtitle()
 
                 val resetRow = LS.SettingsRow(
-                    this@BackgroundSettingsActivity,
+                    this@BackgroundSettingsPage,
                     LS.IconType.RELOAD,
                     "Reset Colors",
                     "Restore the built in palette",
                     LS.TrailingType.NONE,
                     onClick = {
-                        prefs.edit().apply {
-                            remove(IdleScreenSettings.KEY_IDLE_ACCENT)
-                            remove(IdleScreenSettings.KEY_IDLE_BASE)
-                            remove(IdleScreenSettings.KEY_IDLE_MID)
-                            remove(IdleScreenSettings.KEY_IDLE_HIGHLIGHT)
-                            apply()
+                        SettingsDialogs.showCustomConfirmDialog(
+                            activity,
+                            "Reset colors?",
+                            "Your four idle colors are replaced by the built in palette.",
+                            "Reset"
+                        ) {
+                            prefs.edit().apply {
+                                remove(IdleScreenSettings.KEY_IDLE_ACCENT)
+                                remove(IdleScreenSettings.KEY_IDLE_BASE)
+                                remove(IdleScreenSettings.KEY_IDLE_MID)
+                                remove(IdleScreenSettings.KEY_IDLE_HIGHLIGHT)
+                                apply()
+                            }
+                            updateColorViews(
+                                IdleScreenSettings.DEFAULT_ACCENT,
+                                IdleScreenSettings.DEFAULT_BASE,
+                                IdleScreenSettings.DEFAULT_MID,
+                                IdleScreenSettings.DEFAULT_HIGHLIGHT
+                            )
                         }
-                        updateColorViews(
-                            IdleScreenSettings.DEFAULT_ACCENT,
-                            IdleScreenSettings.DEFAULT_BASE,
-                            IdleScreenSettings.DEFAULT_MID,
-                            IdleScreenSettings.DEFAULT_HIGHLIGHT
-                        )
                     }
                 )
                 addRow(resetRow)
@@ -517,12 +477,11 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 }
                 lateinit var aodRow: LS.SettingsRow
                 aodRow = LS.SettingsRow(
-                    this@BackgroundSettingsActivity,
+                    this@BackgroundSettingsPage,
                     LS.IconType.CLOCK,
                     "Always On Display",
-                    "What shows while the screen is off",
-                    LS.TrailingType.VALUE,
                     aodDisplayValue,
+                    LS.TrailingType.NONE,
                     onClick = {
                         val activePref = prefs.getString(AodMode.KEY, AodMode.toPref(AodMode.METADATA_AND_BACKGROUND)) ?: AodMode.toPref(AodMode.METADATA_AND_BACKGROUND)
                         val options = listOf(
@@ -532,7 +491,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                         )
 
                         SettingsDialogs.showOptionPickerDialog(
-                            this@BackgroundSettingsActivity,
+                            activity,
                             "Always On Display",
                             options,
                             activePref
@@ -543,7 +502,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                                 AodMode.METADATA_ONLY -> "Metadata only"
                                 AodMode.OFF -> "Off"
                             }
-                            aodRow.updateValue(newDisplayValue)
+                            aodRow.updateSubtitle(newDisplayValue)
                         }
                     }
                 )
@@ -582,16 +541,17 @@ class BackgroundSettingsActivity : AppCompatActivity() {
 
     private fun updateUseSongColorsSubtitle(metadata: MediaMetadata? = activeMediaController?.metadata) {
         val subtitle = currentSongColorsSubtitle(metadata)
-        if (Looper.myLooper() == Looper.getMainLooper()) {
+        val playing = !metadata?.getString(MediaMetadata.METADATA_KEY_TITLE).isNullOrBlank()
+        val update = {
             useSongColorsRow?.updateSubtitle(subtitle)
-        } else {
-            mediaHandler.post { useSongColorsRow?.updateSubtitle(subtitle) }
+            useSongColorsRow?.setRowEnabled(playing)
         }
+        if (Looper.myLooper() == Looper.getMainLooper()) update() else mediaHandler.post { update() }
     }
 
     private val mediaControllerCallback = object : MediaController.Callback() {
         override fun onMetadataChanged(metadata: MediaMetadata?) {
-            if (SettingsDialogs.isWallpaperActive(this@BackgroundSettingsActivity)) {
+            if (SettingsDialogs.isWallpaperActive(this@BackgroundSettingsPage)) {
                 refreshMediaSession()
             } else {
                 previewView?.updateSong(hasNotificationAccess = true, metadata = metadata)
@@ -864,13 +824,13 @@ class BackgroundSettingsActivity : AppCompatActivity() {
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(LS.dpToPx(this@BackgroundSettingsActivity, 24f), LS.dpToPx(this@BackgroundSettingsActivity, 24f), LS.dpToPx(this@BackgroundSettingsActivity, 24f), LS.dpToPx(this@BackgroundSettingsActivity, 20f))
+            setPadding(LS.dpToPx(this@BackgroundSettingsPage, 24f), LS.dpToPx(this@BackgroundSettingsPage, 24f), LS.dpToPx(this@BackgroundSettingsPage, 24f), LS.dpToPx(this@BackgroundSettingsPage, 20f))
             // The slider is widened past this padding so its track lines up with the text,
             // which puts half the thumb in the padding at either end of its travel.
             clipToPadding = false
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#333333"))
-                cornerRadius = LS.dpToPx(this@BackgroundSettingsActivity, 16f).toFloat()
+                cornerRadius = LS.dpToPx(this@BackgroundSettingsPage, 16f).toFloat()
             }
         }
 
@@ -879,7 +839,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             textSize = 18f
             setTextColor(Color.WHITE)
             setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-            setPadding(0, 0, 0, LS.dpToPx(this@BackgroundSettingsActivity, 8f))
+            setPadding(0, 0, 0, LS.dpToPx(this@BackgroundSettingsPage, 8f))
         }
         container.addView(titleText)
 
@@ -897,16 +857,16 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                 max = 1000
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
-                    LS.dpToPx(this@BackgroundSettingsActivity, 48f)
+                    LS.dpToPx(this@BackgroundSettingsPage, 48f)
                 ).apply {
                     // The slider insets its track by the thumb radius, so the view is widened
                     // by the same amount to bring the track back out to the content edge.
-                    marginStart = LS.dpToPx(this@BackgroundSettingsActivity, -10f)
-                    marginEnd = LS.dpToPx(this@BackgroundSettingsActivity, -10f)
-                    topMargin = LS.dpToPx(this@BackgroundSettingsActivity, 12f)
+                    marginStart = LS.dpToPx(this@BackgroundSettingsPage, -10f)
+                    marginEnd = LS.dpToPx(this@BackgroundSettingsPage, -10f)
+                    topMargin = LS.dpToPx(this@BackgroundSettingsPage, 12f)
                     // Slider is 48dp for the touch target but draws a 4dp track, so the labels
                     // are pulled up into the slack rather than the view being shrunk
-                    bottomMargin = LS.dpToPx(this@BackgroundSettingsActivity, -12f)
+                    bottomMargin = LS.dpToPx(this@BackgroundSettingsPage, -12f)
                 }
                 val parsedInitial = initialVal.toFloatOrNull()?.coerceIn(minVal, maxVal) ?: minVal
                 progress = (((parsedInitial - minVal) / (maxVal - minVal)) * 1000f).toInt()
@@ -919,7 +879,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    bottomMargin = LS.dpToPx(this@BackgroundSettingsActivity, 16f)
+                    bottomMargin = LS.dpToPx(this@BackgroundSettingsPage, 16f)
                 }
                 setPadding(0, 0, 0, 0)
             }
@@ -955,11 +915,11 @@ class BackgroundSettingsActivity : AppCompatActivity() {
             showSoftInputOnFocus = false
             setTextColor(Color.WHITE)
             textSize = 18f
-            setPadding(LS.dpToPx(this@BackgroundSettingsActivity, 16f), LS.dpToPx(this@BackgroundSettingsActivity, 12f), LS.dpToPx(this@BackgroundSettingsActivity, 16f), LS.dpToPx(this@BackgroundSettingsActivity, 12f))
+            setPadding(LS.dpToPx(this@BackgroundSettingsPage, 16f), LS.dpToPx(this@BackgroundSettingsPage, 12f), LS.dpToPx(this@BackgroundSettingsPage, 16f), LS.dpToPx(this@BackgroundSettingsPage, 12f))
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#242424"))
-                cornerRadius = LS.dpToPx(this@BackgroundSettingsActivity, 10f).toFloat()
-                setStroke(LS.dpToPx(this@BackgroundSettingsActivity, 1f), Color.parseColor("#444444"))
+                cornerRadius = LS.dpToPx(this@BackgroundSettingsPage, 10f).toFloat()
+                setStroke(LS.dpToPx(this@BackgroundSettingsPage, 1f), Color.parseColor("#444444"))
             }
             setSelection(text.length)
 
@@ -1014,7 +974,7 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         val buttonLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
-            setPadding(0, LS.dpToPx(this@BackgroundSettingsActivity, 20f), 0, 0)
+            setPadding(0, LS.dpToPx(this@BackgroundSettingsPage, 20f), 0, 0)
         }
 
         val cancelButton = Button(this).apply {
@@ -1110,6 +1070,6 @@ class BackgroundSettingsActivity : AppCompatActivity() {
         initialColor: Int,
         onColorSaved: (Int) -> Unit
     ) {
-        SettingsDialogs.showColorPickerDialog(this, title, initialColor, onColorSaved)
+        SettingsDialogs.showColorPickerDialog(activity, title, initialColor, onColorSaved)
     }
 }

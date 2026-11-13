@@ -40,7 +40,7 @@ Near white album art has its brightest pixels darkened in OKLab lightness so whi
 
 - Waking the screen shows the lyrics first, then fades in the album art with the title and artist, then goes back to the lyrics.
 - Always On Display has its own setting: the album card over the background, the card on black, or black on its own.
-- Sync offset from -1000 ms to +1000 ms, plus per song offsets of up to 10 seconds either way that stick to the track, plus an offset for each paired Bluetooth device that applies whenever you play to it. Sync is manual: nothing listens to the audio, and the app does not ask for the microphone.
+- Sync offset from -1000 ms to +1000 ms, plus per song offsets of up to 10 seconds either way that stick to the track, plus an offset for each paired Bluetooth device that applies whenever you play to it. Each slider sits over the running wallpaper, so the lyrics move while you drag and you stop when they line up. Sync is manual: nothing listens to the audio, and the app does not ask for the microphone.
 - Lyrics you can edit by hand. Paste LRC for the current track when every source has it wrong, or purge the cache and refetch. Holding Force Re-fetch Lyrics lets you pick a single provider (Musixmatch word sync, Musixmatch line sync, LRCLIB, or the custom provider when one is set up), with no fallback to the others, and a hit replaces the stored lyrics including a hand edit for that song. Hand edits live in the app's own files, so clearing its cache does not lose them.
 - A custom lyrics endpoint, tried ahead of Musixmatch and LRCLIB, if you run your own.
 - An idle screen with its own title and four color palette for when nothing is playing. Clear the title to leave it without text.

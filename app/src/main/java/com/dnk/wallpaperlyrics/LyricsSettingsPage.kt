@@ -8,9 +8,7 @@ import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
-import android.os.Bundle
 import android.text.InputType
-import android.util.TypedValue
 import android.view.Gravity
 import android.view.Window
 import android.view.WindowManager
@@ -21,21 +19,19 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
 import com.dnk.wallpaperlyrics.LyricsSettings as LS
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class LyricsSettingsActivity : AppCompatActivity() {
+class LyricsSettingsPage(activity: MainActivity) : SettingsPage(activity) {
 
     private val lyricsStorage by lazy { LyricsStorage.forContext(this) }
     private lateinit var prefs: SharedPreferences
     private lateinit var contentContainer: LinearLayout
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    override fun onCreate() {
 
         prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -44,10 +40,10 @@ class LyricsSettingsActivity : AppCompatActivity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(
-                    LS.dpToPx(this@LyricsSettingsActivity, 24f),
-                    LS.dpToPx(this@LyricsSettingsActivity, 16f),
-                    LS.dpToPx(this@LyricsSettingsActivity, 24f),
-                    LS.dpToPx(this@LyricsSettingsActivity, 40f)
+                    LS.dpToPx(this@LyricsSettingsPage, 24f),
+                    LS.dpToPx(this@LyricsSettingsPage, 16f),
+                    LS.dpToPx(this@LyricsSettingsPage, 24f),
+                    LS.dpToPx(this@LyricsSettingsPage, 40f)
                 )
                 setBackgroundColor(Color.parseColor("#242424"))
                 layoutParams = LinearLayout.LayoutParams(
@@ -56,55 +52,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
                 )
             }
 
-            val headerLayout = android.widget.RelativeLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = LS.dpToPx(this@LyricsSettingsActivity, 24f)
-                    bottomMargin = LS.dpToPx(this@LyricsSettingsActivity, 16f)
-                }
-            }
-
-            val backButton = android.widget.ImageView(this).apply {
-                val arrowDrawable = LS.CustomIconDrawable(this@LyricsSettingsActivity, LS.IconType.ARROW_LEFT)
-                setImageDrawable(arrowDrawable)
-                val size = LS.dpToPx(this@LyricsSettingsActivity, 48f)
-                layoutParams = android.widget.RelativeLayout.LayoutParams(size, size).apply {
-                    addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT)
-                    addRule(android.widget.RelativeLayout.CENTER_VERTICAL)
-                }
-                setPadding(
-                    LS.dpToPx(this@LyricsSettingsActivity, 12f),
-                    LS.dpToPx(this@LyricsSettingsActivity, 12f),
-                    LS.dpToPx(this@LyricsSettingsActivity, 12f),
-                    LS.dpToPx(this@LyricsSettingsActivity, 12f)
-                )
-                isClickable = true
-                val outVal = TypedValue()
-                theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
-                setBackgroundResource(outVal.resourceId)
-                setOnClickListener {
-                    finish()
-                }
-            }
-            headerLayout.addView(backButton)
-
-            val titleView = TextView(this).apply {
-                text = "Lyrics"
-                textSize = 24f
-                setTextColor(Color.WHITE)
-                setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD))
-                paint.isFakeBoldText = true
-                gravity = Gravity.CENTER
-                layoutParams = android.widget.RelativeLayout.LayoutParams(
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT,
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    addRule(android.widget.RelativeLayout.CENTER_IN_PARENT)
-                }
-            }
-            headerLayout.addView(titleView)
+            val headerLayout = LS.pageHeader(this, "Lyrics") { finish() }
             rootLayout.addView(headerLayout)
 
             contentContainer = LinearLayout(this).apply {
@@ -135,10 +83,10 @@ class LyricsSettingsActivity : AppCompatActivity() {
             setTextColor(Color.parseColor("#8E8E93"))
             setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
             setPadding(
-                LS.dpToPx(this@LyricsSettingsActivity, 12f),
-                LS.dpToPx(this@LyricsSettingsActivity, 16f),
-                LS.dpToPx(this@LyricsSettingsActivity, 12f),
-                LS.dpToPx(this@LyricsSettingsActivity, 8f)
+                LS.dpToPx(this@LyricsSettingsPage, 12f),
+                LS.dpToPx(this@LyricsSettingsPage, 16f),
+                LS.dpToPx(this@LyricsSettingsPage, 12f),
+                LS.dpToPx(this@LyricsSettingsPage, 8f)
             )
         }
     }
@@ -157,7 +105,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
                 }
                 lateinit var playerRow: LS.SettingsRow
                 playerRow = LS.SettingsRow(
-                    this@LyricsSettingsActivity,
+                    this@LyricsSettingsPage,
                     LS.IconType.SQUARE_PLAY,
                     "Preferred Media Player",
                     "Track lyrics from a specific player",
@@ -171,7 +119,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
                         if (isKdeConnectInstalled()) options.add(Pair("KDE Connect", "kdeconnect"))
 
                         SettingsDialogs.showOptionPickerDialog(
-                            this@LyricsSettingsActivity,
+                            activity,
                             "Preferred Media Player",
                             options,
                             activePref
@@ -191,13 +139,13 @@ class LyricsSettingsActivity : AppCompatActivity() {
             }
 
             addRow(LS.SettingsRow(
-                this@LyricsSettingsActivity,
+                this@LyricsSettingsPage,
                 LS.IconType.LIST_MUSIC,
                 "Custom Lyrics Provider",
                 "Configure custom local/remote API override",
                 LS.TrailingType.CHEVRON,
                 onClick = {
-                    startActivity(Intent(this@LyricsSettingsActivity, EnhancedLyricsActivity::class.java))
+                    activity.openPage(EnhancedLyricsPage(activity))
                 }
             ))
         }
@@ -206,16 +154,16 @@ class LyricsSettingsActivity : AppCompatActivity() {
         contentContainer.addView(addSectionHeader("Maintenance"))
         val maintenanceCard = LS.SettingsCard(this).apply {
             addRow(LS.SettingsRow(
-                this@LyricsSettingsActivity,
+                this@LyricsSettingsPage,
                 LS.IconType.RELOAD,
                 "Force Re-fetch Lyrics",
                 "Purge cache and reload active song. Hold to pick a provider",
-                LS.TrailingType.CHEVRON,
+                LS.TrailingType.NONE,
                 onClick = {
                     sendBroadcast(Intent("com.dnk.wallpaperlyrics.FORCE_RELOAD_LYRICS").apply {
                         setPackage(packageName)
                     })
-                    Toast.makeText(this@LyricsSettingsActivity, "Re-fetch command sent", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@LyricsSettingsPage, "Re-fetch command sent", Toast.LENGTH_SHORT).show()
                 },
                 onLongClick = {
                     openProviderPicker()
@@ -224,7 +172,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
             ))
 
             addRow(LS.SettingsRow(
-                this@LyricsSettingsActivity,
+                this@LyricsSettingsPage,
                 LS.IconType.EDIT,
                 "Edit Synced Lyrics",
                 "Override cached lyrics of current song manually",
@@ -235,14 +183,14 @@ class LyricsSettingsActivity : AppCompatActivity() {
             ))
 
             addRow(LS.SettingsRow(
-                this@LyricsSettingsActivity,
+                this@LyricsSettingsPage,
                 LS.IconType.DELETE,
                 "Clear Lyrics Cache",
                 "Delete cached lyrics; preserves hand-edited overrides",
                 LS.TrailingType.NONE,
                 onClick = {
                     SettingsDialogs.showCustomConfirmDialog(
-                        this@LyricsSettingsActivity,
+                        activity,
                         "Clear Lyrics Cache?",
                         "Proceeding will delete all cached lyrics from providers. Hand-edited overrides will not be deleted.",
                         "Clear Cache"
@@ -250,7 +198,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
                         CoroutineScope(Dispatchers.IO).launch {
                             lyricsStorage.clearCache()
                             withContext(Dispatchers.Main) {
-                                Toast.makeText(this@LyricsSettingsActivity, "Cache cleared!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@LyricsSettingsPage, "Cache cleared!", Toast.LENGTH_SHORT).show()
                             }
                         }
                     }
@@ -258,14 +206,14 @@ class LyricsSettingsActivity : AppCompatActivity() {
             ))
 
             addRow(LS.SettingsRow(
-                this@LyricsSettingsActivity,
+                this@LyricsSettingsPage,
                 LS.IconType.DELETE,
                 "Clear Saved Overrides",
                 "Permanently delete all hand-edited lyric overrides",
                 LS.TrailingType.NONE,
                 onClick = {
                     SettingsDialogs.showCustomConfirmDialog(
-                        this@LyricsSettingsActivity,
+                        activity,
                         "Clear Saved Overrides?",
                         "Proceeding will delete all hand-edited lyric overrides. This action cannot be undone.",
                         "Clear Overrides"
@@ -273,7 +221,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
                         CoroutineScope(Dispatchers.IO).launch {
                             lyricsStorage.clearAllOverrides()
                             withContext(Dispatchers.Main) {
-                                Toast.makeText(this@LyricsSettingsActivity, "Saved overrides cleared!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@LyricsSettingsPage, "Saved overrides cleared!", Toast.LENGTH_SHORT).show()
                             }
                             sendBroadcast(Intent("com.dnk.wallpaperlyrics.RELOAD_LYRICS").apply {
                                 setPackage(packageName)
@@ -327,7 +275,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
                         if (newLrc.isBlank()) {
                             lyricsStorage.clearOverride(title, artist)
                             withContext(Dispatchers.Main) {
-                                Toast.makeText(this@LyricsSettingsActivity, "Override cleared!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@LyricsSettingsPage, "Override cleared!", Toast.LENGTH_SHORT).show()
                             }
                             sendBroadcast(Intent("com.dnk.wallpaperlyrics.RELOAD_LYRICS").apply {
                                 setPackage(packageName)
@@ -336,15 +284,15 @@ class LyricsSettingsActivity : AppCompatActivity() {
                             val parsed = LyricsManager.parseLrcText(newLrc, isAuthoritative = true)
                             if (parsed == null) {
                                 withContext(Dispatchers.Main) {
-                                    Toast.makeText(this@LyricsSettingsActivity, "Invalid LRC format. No lines parsed.", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(this@LyricsSettingsPage, "Invalid LRC format. No lines parsed.", Toast.LENGTH_SHORT).show()
                                 }
                             } else {
                                 val saved = lyricsStorage.saveOverride(title, artist, parsed)
                                 withContext(Dispatchers.Main) {
                                     if (saved) {
-                                        Toast.makeText(this@LyricsSettingsActivity, "Lyrics saved!", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(this@LyricsSettingsPage, "Lyrics saved!", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        Toast.makeText(this@LyricsSettingsActivity, "Failed to save lyrics", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(this@LyricsSettingsPage, "Failed to save lyrics", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                                 sendBroadcast(Intent("com.dnk.wallpaperlyrics.RELOAD_LYRICS").apply {
@@ -372,10 +320,10 @@ class LyricsSettingsActivity : AppCompatActivity() {
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(LS.dpToPx(this@LyricsSettingsActivity, 24f), LS.dpToPx(this@LyricsSettingsActivity, 24f), LS.dpToPx(this@LyricsSettingsActivity, 24f), LS.dpToPx(this@LyricsSettingsActivity, 20f))
+            setPadding(LS.dpToPx(this@LyricsSettingsPage, 24f), LS.dpToPx(this@LyricsSettingsPage, 24f), LS.dpToPx(this@LyricsSettingsPage, 24f), LS.dpToPx(this@LyricsSettingsPage, 20f))
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#333333"))
-                cornerRadius = LS.dpToPx(this@LyricsSettingsActivity, 16f).toFloat()
+                cornerRadius = LS.dpToPx(this@LyricsSettingsPage, 16f).toFloat()
             }
         }
 
@@ -384,7 +332,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
             textSize = 18f
             setTextColor(Color.WHITE)
             setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-            setPadding(0, 0, 0, LS.dpToPx(this@LyricsSettingsActivity, 4f))
+            setPadding(0, 0, 0, LS.dpToPx(this@LyricsSettingsPage, 4f))
         }
         container.addView(titleText)
 
@@ -396,7 +344,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
             }
             textSize = 13f
             setTextColor(Color.parseColor("#8E8E93"))
-            setPadding(0, 0, 0, LS.dpToPx(this@LyricsSettingsActivity, 16f))
+            setPadding(0, 0, 0, LS.dpToPx(this@LyricsSettingsPage, 16f))
         }
         container.addView(subtitleText)
 
@@ -407,15 +355,15 @@ class LyricsSettingsActivity : AppCompatActivity() {
             textSize = 14f
             isVerticalScrollBarEnabled = true
             gravity = Gravity.TOP or Gravity.START
-            setPadding(LS.dpToPx(this@LyricsSettingsActivity, 16f), LS.dpToPx(this@LyricsSettingsActivity, 12f), LS.dpToPx(this@LyricsSettingsActivity, 16f), LS.dpToPx(this@LyricsSettingsActivity, 12f))
+            setPadding(LS.dpToPx(this@LyricsSettingsPage, 16f), LS.dpToPx(this@LyricsSettingsPage, 12f), LS.dpToPx(this@LyricsSettingsPage, 16f), LS.dpToPx(this@LyricsSettingsPage, 12f))
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#242424"))
-                cornerRadius = LS.dpToPx(this@LyricsSettingsActivity, 10f).toFloat()
+                cornerRadius = LS.dpToPx(this@LyricsSettingsPage, 10f).toFloat()
             }
 
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LS.dpToPx(this@LyricsSettingsActivity, 220f)
+                LS.dpToPx(this@LyricsSettingsPage, 220f)
             )
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -428,14 +376,14 @@ class LyricsSettingsActivity : AppCompatActivity() {
             text = "Format: [minutes:seconds.centiseconds] lyric line\nExample: [00:15.50] In the beginning..."
             textSize = 11f
             setTextColor(Color.parseColor("#8E8E93"))
-            setPadding(0, LS.dpToPx(this@LyricsSettingsActivity, 8f), 0, 0)
+            setPadding(0, LS.dpToPx(this@LyricsSettingsPage, 8f), 0, 0)
         }
         container.addView(tipText)
 
         val buttonLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
-            setPadding(0, LS.dpToPx(this@LyricsSettingsActivity, 16f), 0, 0)
+            setPadding(0, LS.dpToPx(this@LyricsSettingsPage, 16f), 0, 0)
         }
 
         val cancelButton = Button(this).apply {
@@ -485,7 +433,7 @@ class LyricsSettingsActivity : AppCompatActivity() {
         val customEndpoint = prefs.getString("custom_lyrics_endpoint", null)
         val options = LyricsProviders.getPickerOptions(customEnabled, customEndpoint)
         SettingsDialogs.showOptionPickerDialog(
-            activity = this,
+            activity = activity,
             title = "Fetch from provider",
             options = options,
             currentValue = "",

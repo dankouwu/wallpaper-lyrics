@@ -492,6 +492,10 @@ class LyricsWallpaperService : WallpaperService() {
         @Volatile
         private var detectedBluetoothLatency = 0L
 
+        private val bluetoothConnections by lazy {
+            BluetoothConnections(this@LyricsWallpaperService) { updateBluetoothLatency() }
+        }
+
         private val audioDeviceCallback = object : android.media.AudioDeviceCallback() {
             override fun onAudioDevicesAdded(addedDevices: Array<out android.media.AudioDeviceInfo>?) {
                 updateBluetoothLatency()
@@ -827,7 +831,7 @@ class LyricsWallpaperService : WallpaperService() {
             }
             val position = getExtrapolatedPosition()
             val userOffset = prefSyncOffset.toLong() + songSyncOffset
-            val totalOffset = userOffset + detectedBluetoothLatency
+            val totalOffset = userOffset + detectedBluetoothLatency + OffsetPreview.deltaMs
             val leadTime = 50L
             val adjustedPos = position - totalOffset + leadTime
 
@@ -1248,6 +1252,7 @@ class LyricsWallpaperService : WallpaperService() {
                 val audioManager = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
                 audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
             } catch (e: Exception) {}
+            bluetoothConnections.stop()
 
             currentBgArt?.recycle()
             currentBgArt = null
@@ -1590,19 +1595,9 @@ class LyricsWallpaperService : WallpaperService() {
                     return
                 }
 
-                val devices = audioManager.getDevices(android.media.AudioManager.GET_DEVICES_OUTPUTS)
-                val btDevice = devices.firstOrNull { dev ->
-                    dev.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                    dev.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
-                    dev.type == android.media.AudioDeviceInfo.TYPE_HEARING_AID ||
-                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && (
-                        dev.type == android.media.AudioDeviceInfo.TYPE_BLE_HEADSET ||
-                        dev.type == android.media.AudioDeviceInfo.TYPE_BLE_SPEAKER ||
-                        dev.type == android.media.AudioDeviceInfo.TYPE_BLE_BROADCAST
-                    ))
-                }
-
-                val address = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) btDevice?.address else null
+                // Started here rather than in onCreate, so it also starts once the permission is granted later.
+                bluetoothConnections.start()
+                val address = bluetoothConnections.mediaAddress() ?: DeviceOffsets.activeOutputAddress(audioManager)
                 if (address.isNullOrBlank()) {
                     detectedBluetoothLatency = 0L
                     return
@@ -2036,7 +2031,7 @@ class LyricsWallpaperService : WallpaperService() {
                 lineOffsets = offsets
 
                 // Initialize scrollY to the active line position instantly to prevent rapid snap-scrolling on load!
-                val initialPos = position - (prefSyncOffset.toLong() + songSyncOffset + detectedBluetoothLatency) + 50L
+                val initialPos = position - (prefSyncOffset.toLong() + songSyncOffset + detectedBluetoothLatency + OffsetPreview.deltaMs) + 50L
                 var initialIndex = lines.indexOfLast { it.startTime <= initialPos }
                 if (initialIndex == -1) initialIndex = 0
                 scrollY = offsets[initialIndex]
@@ -2068,7 +2063,7 @@ class LyricsWallpaperService : WallpaperService() {
                 val offsets = lineOffsets ?: return
 
                 val userOffset = prefSyncOffset.toLong() + songSyncOffset
-                val totalOffset = userOffset + detectedBluetoothLatency
+                val totalOffset = userOffset + detectedBluetoothLatency + OffsetPreview.deltaMs
                 val leadTime = 50L
                 val adjustedPos = position - totalOffset + leadTime
 

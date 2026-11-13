@@ -6,4 +6,11 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
+
+    <!-- Transparent from the start so the offset preview can show the wallpaper through the
+         window: making it transparent once open left an opaque surface showing its last frame.
+         The pages are opaque and cover it, also while two of them slide. -->
+    <style name="Theme.WallpaperLyrics.Settings">
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
 </resources>

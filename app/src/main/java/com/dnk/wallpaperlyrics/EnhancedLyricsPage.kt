@@ -2,7 +2,6 @@ package com.dnk.wallpaperlyrics
 
 import android.content.Context
 import android.content.Intent
-import android.os.Bundle
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
@@ -11,16 +10,14 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import com.dnk.wallpaperlyrics.LyricsSettings as LS
 
-class EnhancedLyricsActivity : AppCompatActivity() {
+class EnhancedLyricsPage(activity: MainActivity) : SettingsPage(activity) {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    override fun onCreate() {
 
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -28,7 +25,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
             val rootLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 16f), LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 40f))
+                setPadding(LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 16f), LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 40f))
                 setBackgroundColor(Color.parseColor("#242424"))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
@@ -36,50 +33,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
                 )
             }
 
-            val headerLayout = android.widget.RelativeLayout(this).apply {
-                layoutParams = LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = LS.dpToPx(this@EnhancedLyricsActivity, 24f)
-                    bottomMargin = LS.dpToPx(this@EnhancedLyricsActivity, 16f)
-                }
-            }
-
-            val backButton = android.widget.ImageView(this).apply {
-                val arrowDrawable = LS.CustomIconDrawable(this@EnhancedLyricsActivity, LS.IconType.ARROW_LEFT)
-                setImageDrawable(arrowDrawable)
-                val size = LS.dpToPx(this@EnhancedLyricsActivity, 48f)
-                layoutParams = android.widget.RelativeLayout.LayoutParams(size, size).apply {
-                    addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT)
-                    addRule(android.widget.RelativeLayout.CENTER_VERTICAL)
-                }
-                setPadding(LS.dpToPx(this@EnhancedLyricsActivity, 12f), LS.dpToPx(this@EnhancedLyricsActivity, 12f), LS.dpToPx(this@EnhancedLyricsActivity, 12f), LS.dpToPx(this@EnhancedLyricsActivity, 12f))
-                isClickable = true
-                val outVal = TypedValue()
-                theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, outVal, true)
-                setBackgroundResource(outVal.resourceId)
-                setOnClickListener {
-                    finish()
-                }
-            }
-            headerLayout.addView(backButton)
-
-            val titleView = TextView(this).apply {
-                text = "Custom Lyrics Provider"
-                textSize = 24f
-                setTextColor(Color.WHITE)
-                setTypeface(android.graphics.Typeface.create("sans-serif-black", android.graphics.Typeface.BOLD))
-                paint.isFakeBoldText = true
-                gravity = Gravity.CENTER
-                layoutParams = android.widget.RelativeLayout.LayoutParams(
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT,
-                    android.widget.RelativeLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    addRule(android.widget.RelativeLayout.CENTER_IN_PARENT)
-                }
-            }
-            headerLayout.addView(titleView)
+            val headerLayout = LS.pageHeader(this, "Custom Lyrics Provider") { finish() }
             rootLayout.addView(headerLayout)
 
             fun addSectionHeader(title: String) {
@@ -88,7 +42,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
                     textSize = 13f
                     setTextColor(Color.parseColor("#8E8E93"))
                     setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-                    setPadding(LS.dpToPx(this@EnhancedLyricsActivity, 12f), LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 12f), LS.dpToPx(this@EnhancedLyricsActivity, 8f))
+                    setPadding(LS.dpToPx(this@EnhancedLyricsPage, 12f), LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 12f), LS.dpToPx(this@EnhancedLyricsPage, 8f))
                 }
                 rootLayout.addView(header)
             }
@@ -100,7 +54,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
                 lateinit var timeoutRow: LS.SettingsRow
 
                 addRow(LS.SettingsRow(
-                    this@EnhancedLyricsActivity,
+                    this@EnhancedLyricsPage,
                     LS.IconType.LIST_MUSIC,
                     "Enable Custom Provider",
                     "Try your own server first, then fall back to LRCLIB and Musixmatch",
@@ -116,7 +70,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
 
                 val initialEndpoint = prefs.getString("custom_lyrics_endpoint", "") ?: ""
                 endpointRow = LS.SettingsRow(
-                    this@EnhancedLyricsActivity,
+                    this@EnhancedLyricsPage,
                     LS.IconType.LINK,
                     "API Endpoint URL",
                     "Address of your own lyrics server",
@@ -134,7 +88,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
 
                 val initialFormat = prefs.getString("custom_lyrics_format", "LRC") ?: "LRC"
                 formatRow = LS.SettingsRow(
-                    this@EnhancedLyricsActivity,
+                    this@EnhancedLyricsPage,
                     LS.IconType.BRACES,
                     "Response Format",
                     "Expected payload response container",
@@ -156,7 +110,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
 
                 val initialTimeout = prefs.getFloat("custom_lyrics_timeout", 5f)
                 timeoutRow = LS.SettingsRow(
-                    this@EnhancedLyricsActivity,
+                    this@EnhancedLyricsPage,
                     LS.IconType.TIMER,
                     "Request Timeout",
                     "How long to wait before giving up",
@@ -207,10 +161,10 @@ class EnhancedLyricsActivity : AppCompatActivity() {
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 20f))
+            setPadding(LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 20f))
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#333333"))
-                cornerRadius = LS.dpToPx(this@EnhancedLyricsActivity, 16f).toFloat()
+                cornerRadius = LS.dpToPx(this@EnhancedLyricsPage, 16f).toFloat()
             }
         }
 
@@ -219,7 +173,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
             textSize = 18f
             setTextColor(Color.WHITE)
             setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-            setPadding(0, 0, 0, LS.dpToPx(this@EnhancedLyricsActivity, 16f))
+            setPadding(0, 0, 0, LS.dpToPx(this@EnhancedLyricsPage, 16f))
         }
         container.addView(titleText)
 
@@ -236,11 +190,11 @@ class EnhancedLyricsActivity : AppCompatActivity() {
             }
             setTextColor(Color.WHITE)
             textSize = 16f
-            setPadding(LS.dpToPx(this@EnhancedLyricsActivity, 16f), LS.dpToPx(this@EnhancedLyricsActivity, 12f), LS.dpToPx(this@EnhancedLyricsActivity, 16f), LS.dpToPx(this@EnhancedLyricsActivity, 12f))
+            setPadding(LS.dpToPx(this@EnhancedLyricsPage, 16f), LS.dpToPx(this@EnhancedLyricsPage, 12f), LS.dpToPx(this@EnhancedLyricsPage, 16f), LS.dpToPx(this@EnhancedLyricsPage, 12f))
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#242424"))
-                cornerRadius = LS.dpToPx(this@EnhancedLyricsActivity, 10f).toFloat()
-                setStroke(LS.dpToPx(this@EnhancedLyricsActivity, 1f), Color.parseColor("#444444"))
+                cornerRadius = LS.dpToPx(this@EnhancedLyricsPage, 10f).toFloat()
+                setStroke(LS.dpToPx(this@EnhancedLyricsPage, 1f), Color.parseColor("#444444"))
             }
             setSelection(text.length)
 
@@ -253,7 +207,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
         val buttonLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.END
-            setPadding(0, LS.dpToPx(this@EnhancedLyricsActivity, 20f), 0, 0)
+            setPadding(0, LS.dpToPx(this@EnhancedLyricsPage, 20f), 0, 0)
         }
 
         val cancelButton = Button(this).apply {
@@ -319,10 +273,10 @@ class EnhancedLyricsActivity : AppCompatActivity() {
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 20f))
+            setPadding(LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 20f))
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#333333"))
-                cornerRadius = LS.dpToPx(this@EnhancedLyricsActivity, 16f).toFloat()
+                cornerRadius = LS.dpToPx(this@EnhancedLyricsPage, 16f).toFloat()
             }
         }
 
@@ -331,7 +285,7 @@ class EnhancedLyricsActivity : AppCompatActivity() {
             textSize = 18f
             setTextColor(Color.WHITE)
             setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD))
-            setPadding(0, 0, 0, LS.dpToPx(this@EnhancedLyricsActivity, 16f))
+            setPadding(0, 0, 0, LS.dpToPx(this@EnhancedLyricsPage, 16f))
         }
         container.addView(titleText)
 
@@ -339,8 +293,8 @@ class EnhancedLyricsActivity : AppCompatActivity() {
             val optionLayout = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                val p12 = LS.dpToPx(this@EnhancedLyricsActivity, 12f)
-                val p16 = LS.dpToPx(this@EnhancedLyricsActivity, 16f)
+                val p12 = LS.dpToPx(this@EnhancedLyricsPage, 12f)
+                val p16 = LS.dpToPx(this@EnhancedLyricsPage, 16f)
                 setPadding(p16, p12, p16, p12)
                 isClickable = true
 
@@ -355,9 +309,9 @@ class EnhancedLyricsActivity : AppCompatActivity() {
             }
 
             val iconView = View(this).apply {
-                background = LS.CustomIconDrawable(this@EnhancedLyricsActivity, LS.IconType.BRACES)
-                layoutParams = LinearLayout.LayoutParams(LS.dpToPx(this@EnhancedLyricsActivity, 24f), LS.dpToPx(this@EnhancedLyricsActivity, 24f)).apply {
-                    rightMargin = LS.dpToPx(this@EnhancedLyricsActivity, 16f)
+                background = LS.CustomIconDrawable(this@EnhancedLyricsPage, LS.IconType.BRACES)
+                layoutParams = LinearLayout.LayoutParams(LS.dpToPx(this@EnhancedLyricsPage, 24f), LS.dpToPx(this@EnhancedLyricsPage, 24f)).apply {
+                    rightMargin = LS.dpToPx(this@EnhancedLyricsPage, 16f)
                 }
             }
             optionLayout.addView(iconView)
@@ -372,9 +326,9 @@ class EnhancedLyricsActivity : AppCompatActivity() {
 
             if (value == currentValue) {
                 val checkView = android.widget.ImageView(this).apply {
-                    val checkDrawable = LS.CustomIconDrawable(this@EnhancedLyricsActivity, LS.IconType.CHECK)
+                    val checkDrawable = LS.CustomIconDrawable(this@EnhancedLyricsPage, LS.IconType.CHECK)
                     setImageDrawable(checkDrawable)
-                    layoutParams = LinearLayout.LayoutParams(LS.dpToPx(this@EnhancedLyricsActivity, 20f), LS.dpToPx(this@EnhancedLyricsActivity, 20f))
+                    layoutParams = LinearLayout.LayoutParams(LS.dpToPx(this@EnhancedLyricsPage, 20f), LS.dpToPx(this@EnhancedLyricsPage, 20f))
                 }
                 optionLayout.addView(checkView)
             }
