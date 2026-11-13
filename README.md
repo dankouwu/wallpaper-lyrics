@@ -47,6 +47,7 @@ Near white album art has its brightest pixels darkened in OKLab lightness so whi
 - After a reboot it waits for a player to start. A session Android restores on its own is ignored until it has played once.
 - Static mode, which keeps the blurred album art and drops the animation when you want the battery back.
 - Optional playback controls in the status bar, and optional Material You highlight colors.
+- Other apps can read what the wallpaper shows, so a launcher can match it. Query `content://com.dnk.wallpaperlyrics.state/current` for one row: `state` (`idle` or `track`), `player_package`, `title`, `artist`, and the four colors `accent`, `base`, `mid`, `highlight` as ARGB ints. No row means the wallpaper is not running. Register a `ContentObserver` on the same URI to hear when it changes. It needs no permission.
 - An update check, off by default. When on, it asks the GitHub releases API once a day around 12:00, posts a notification and shows a popup on launch when a newer release exists, once per version, and it never downloads or installs anything itself.
 
 Fetched lyrics are stored in the app's files rather than its cache, so Android reclaiming space does not throw them away. A miss is remembered for 24 hours so an instrumental stops hitting the network every time it comes round.

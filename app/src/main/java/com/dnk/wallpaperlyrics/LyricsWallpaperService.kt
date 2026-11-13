@@ -1225,6 +1225,9 @@ class LyricsWallpaperService : WallpaperService() {
             cancelPendingArtRetry()
             trackArtGeneration++
             unregisterNotificationEngine(this, isPreview)
+            if (WallpaperState.clear(this)) {
+                WallpaperStateProvider.notifyReaders(this@LyricsWallpaperService)
+            }
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
             TrackResolution.clearTrack(prefs, isPreview)
             prefs.unregisterOnSharedPreferenceChangeListener(prefChangeListener)
@@ -2708,6 +2711,19 @@ class LyricsWallpaperService : WallpaperService() {
             return flat != null && flat.contains(cn.flattenToString())
         }
 
+        private fun publishWallpaperState() {
+            if (isPreview) return
+            val snapshot = WallpaperState.Snapshot(
+                mediaObserver.getActivePackageName(),
+                currentTitle,
+                currentArtist,
+                targetColors.toList()
+            )
+            if (WallpaperState.publish(this, snapshot)) {
+                WallpaperStateProvider.notifyReaders(this@LyricsWallpaperService)
+            }
+        }
+
         private fun triggerBgTransition(newBlurred: Bitmap, incomingGeneration: Int) {
             val isIdle = currentTitle.isNullOrBlank()
             val isDebugDemo = isDebugDemoActive()
@@ -2741,6 +2757,7 @@ class LyricsWallpaperService : WallpaperService() {
                 newBlurred.recycle()
                 return
             }
+            publishWallpaperState()
 
             if (TransitionSettle.shouldSettle(isScreenOff)) {
                 val oldCurrent = currentBgArt

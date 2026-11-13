@@ -82,6 +82,11 @@
             android:name=".TimingActivity"
             android:exported="false" />
 
+        <provider
+            android:name=".WallpaperStateProvider"
+            android:authorities="com.dnk.wallpaperlyrics.state"
+            android:exported="true" />
+
     </application>
 
 </manifest>
