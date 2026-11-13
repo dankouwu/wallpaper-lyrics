@@ -28,7 +28,7 @@ Musixmatch publishes per word timing for a good part of the catalog. When a trac
 
 ## The background
 
-The album art is scaled to 512px, tinted along its own luminance, blurred twice, and pushed toward the edge of what sRGB can show at each pixel's own lightness, in OKLCh so the hue does not drift. That goes to an AGSL shader which warps it with two octaves of simplex noise at 0.35 and 0.9 frequency. It ends up moving like liquid and keeps the album art's palette without ever looking like the album art.
+The album art is scaled to 512px, tinted along its own luminance, blurred twice, and pushed toward the edge of what sRGB can show at each pixel's own lightness, in OKLCh so the hue does not drift. All of that runs in floating point and is rounded to 8 bit once at the end, with a dither, so dark album art does not band. That goes to an AGSL shader which warps it with two octaves of simplex noise at 0.35 and 0.9 frequency. It ends up moving like liquid and keeps the album art's palette without ever looking like the album art.
 
 That path needs Android 13, the first version with AGSL. Android 8 through 12 get animated radial gradient meshes built from a palette sampled off the same album art. It is a visible downgrade, not a subtle one.
 
@@ -40,13 +40,14 @@ Near white album art has its brightest pixels darkened in OKLab lightness so whi
 
 - Waking the screen shows the lyrics first, then fades in the album art with the title and artist, then goes back to the lyrics.
 - Always On Display has its own setting: the album card over the background, the card on black, or black on its own.
-- Sync offset from -1000 ms to +1000 ms, plus per song offsets of up to 10 seconds either way that stick to the track, plus an offset for each paired Bluetooth device that applies whenever you play to it. Each slider sits over the running wallpaper, so the lyrics move while you drag and you stop when they line up. Sync is manual: nothing listens to the audio, and the app does not ask for the microphone.
+- Sync offset from -1000 ms to +1000 ms, plus per song offsets of up to 10 seconds either way that stick to the track, plus an offset for each paired Bluetooth device that applies whenever you play to it. Devices connected right now are listed in their own section above the rest. Each slider sits over the running wallpaper, so the lyrics move while you drag and you stop when they line up. Sync is manual: nothing listens to the audio, and the app does not ask for the microphone.
 - Lyrics you can edit by hand. Paste LRC for the current track when every source has it wrong, or purge the cache and refetch. Holding Force Re-fetch Lyrics lets you pick a single provider (Musixmatch word sync, Musixmatch line sync, LRCLIB, or the custom provider when one is set up), with no fallback to the others, and a hit replaces the stored lyrics including a hand edit for that song. Hand edits live in the app's own files, so clearing its cache does not lose them.
 - A custom lyrics endpoint, tried ahead of Musixmatch and LRCLIB, if you run your own.
 - An idle screen with its own title and four color palette for when nothing is playing. Clear the title to leave it without text.
 - After a reboot it waits for a player to start. A session Android restores on its own is ignored until it has played once.
 - Static mode, which keeps the blurred album art and drops the animation when you want the battery back.
-- Optional playback controls in the status bar, and optional Material You highlight colors.
+- Optional playback controls in the status bar, and optional Material You highlight colors. Android asks for the notification permission when you turn the controls on, not before.
+- A Running switch at the top of the settings. Off sets the system wallpaper back and closes the app, the same as a force stop. On opens the wallpaper picker.
 - Other apps can read what the wallpaper shows, so a launcher can match it. Query `content://com.dnk.wallpaperlyrics.state/current` for one row: `state` (`idle` or `track`), `player_package`, `title`, `artist`, and the four colors `accent`, `base`, `mid`, `highlight` as ARGB ints. No row means the wallpaper is not running. Register a `ContentObserver` on the same URI to hear when it changes. It needs no permission.
 - An update check, off by default. When on, it asks the GitHub releases API once a day around 12:00, posts a notification and shows a popup on launch when a newer release exists, once per version, and it never downloads or installs anything itself.
 
@@ -56,7 +57,7 @@ Fetched lyrics are stored in the app's files rather than its cache, so Android r
 
 Open the [Releases](https://github.com/dankouwu/wallpaper-lyrics/releases) page on the phone and download the `wallpaper-lyrics_<version>.apk` attached to the newest one. Tap the file once it has downloaded, and allow your browser or file manager to install unknown apps if Android asks.
 
-Then open Wallpaper Lyrics, tap **Activate Live Wallpaper**, and pick **Lyrics Wallpaper** in the system picker.
+Then open Wallpaper Lyrics, turn on **Running** at the top, and pick **Lyrics Wallpaper** in the system picker.
 
 From a computer instead:
 
