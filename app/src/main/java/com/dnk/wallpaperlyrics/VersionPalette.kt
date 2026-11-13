@@ -17,6 +17,12 @@ object VersionPalette {
             0xFF00858A.toInt(),
             0xFFFA812A.toInt(),
             0xFF86D773.toInt()
+        ),
+        "2.4.0" to intArrayOf(
+            0xFF9F5E67.toInt(),
+            0xFFB55300.toInt(),
+            0xFFEC7CC4.toInt(),
+            0xFFF4B527.toInt()
         )
     )
 

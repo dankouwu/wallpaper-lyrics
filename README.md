@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1><img src=".github/previews/version.png" alt="Wallpaper Lyrics 2.3.0"></h1>
+<h1><img src=".github/previews/version.png" alt="Wallpaper Lyrics 2.4.0"></h1>
 
 An Android live wallpaper that shows the lyrics of whatever you are playing, in time with the music, over a background painted from the album art.
 
@@ -61,7 +61,7 @@ Then open Wallpaper Lyrics, tap **Activate Live Wallpaper**, and pick **Lyrics W
 From a computer instead:
 
 ```bash
-adb install -r wallpaper-lyrics_2.3.0.apk
+adb install -r wallpaper-lyrics_2.4.0.apk
 ```
 
 > [!WARNING]

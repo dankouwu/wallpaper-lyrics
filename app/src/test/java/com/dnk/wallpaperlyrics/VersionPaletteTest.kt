@@ -23,6 +23,13 @@ class VersionPaletteTest {
         0xFF86D773.toInt()
     )
 
+    private val pinned240 = intArrayOf(
+        0xFF9F5E67.toInt(),
+        0xFFB55300.toInt(),
+        0xFFEC7CC4.toInt(),
+        0xFFF4B527.toInt()
+    )
+
     @Test
     fun `forVersion 2 2 0 returns pinned four colors`() {
         val palette = VersionPalette.forVersion("2.2.0")
@@ -36,12 +43,17 @@ class VersionPaletteTest {
     }
 
     @Test
+    fun `forVersion 2 4 0 returns pinned four colors`() {
+        assertArrayEquals(pinned240, VersionPalette.forVersion("2.4.0"))
+    }
+
+    @Test
     fun `forVersion with unpinned name returns palette of highest pinned version`() {
         val palette999 = VersionPalette.forVersion("9.9.9")
-        assertArrayEquals(pinned230, palette999)
+        assertArrayEquals(pinned240, palette999)
 
         val palette100 = VersionPalette.forVersion("1.0.0")
-        assertArrayEquals(pinned230, palette100)
+        assertArrayEquals(pinned240, palette100)
     }
 
     @Test
@@ -140,7 +152,8 @@ class VersionPaletteTest {
         fun toHex(palette: IntArray) = palette.map { String.format("#%06X", it and 0x00FFFFFF) }
         assertEquals(listOf("#805D93", "#D31277", "#56BD54", "#00DFFF"), toHex(VersionPalette.forVersion("2.2.0")))
         assertEquals(listOf("#5A6F33", "#00858A", "#FA812A", "#86D773"), toHex(VersionPalette.forVersion("2.3.0")))
-        assertEquals(listOf("#5A6F33", "#00858A", "#FA812A", "#86D773"), toHex(VersionPalette.forVersion("9.9.9")))
+        assertEquals(listOf("#9F5E67", "#B55300", "#EC7CC4", "#F4B527"), toHex(VersionPalette.forVersion("2.4.0")))
+        assertEquals(listOf("#9F5E67", "#B55300", "#EC7CC4", "#F4B527"), toHex(VersionPalette.forVersion("9.9.9")))
     }
 
     private fun srgbToLinear(c: Float): Float {
